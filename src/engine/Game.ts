@@ -521,7 +521,7 @@ export class Game implements EntityContext, ContainerHost {
   private bindControls(): void {
     this.controls.onLockChange = (locked) => {
       this.store.patch({ isPointerLocked: locked });
-      if (!locked && this.store.get().screen === Screen.NONE && !this.isDisposed) {
+      if (!locked && !this.isTouch && this.store.get().screen === Screen.NONE && !this.isDisposed) {
         this.openScreen(Screen.PAUSE);
       }
     };
@@ -621,9 +621,40 @@ export class Game implements EntityContext, ContainerHost {
     this.store.patch({ selectedSlot: index });
   }
 
-  /** 由 UI 请求锁定指针（点击画面）。 */
+  /** 由 UI 请求锁定指针（点击画面）。触屏设备没有指针锁定，直接忽略。 */
   requestPointerLock(): void {
+    if (this.isTouch) {
+      return;
+    }
     this.controls.requestLock();
+  }
+
+  // ---------------------------------------------------------------- 触屏输入转发
+
+  /** 触屏按钮：按下按键（与键盘走同一条处理链）。 */
+  pressKey(code: string): void {
+    this.controls.pressVirtualKey(code);
+  }
+
+  /** 触屏按钮：抬起按键。 */
+  releaseKey(code: string): void {
+    this.controls.releaseVirtualKey(code);
+  }
+
+  /** 触屏按钮：按下/抬起鼠标键（挖掘、放置）。 */
+  setMouseInput(button: number, down: boolean): void {
+    this.controls.setVirtualMouse(button, down);
+  }
+
+  /** 触屏摇杆：移动输入（各分量 -1~1）。 */
+  setMoveInput(forward: number, strafe: number): void {
+    this.controls.setVirtualMove(forward, strafe);
+  }
+
+  /** 触屏拖动：按像素位移转动视角。 */
+  lookBy(dxPixels: number, dyPixels: number): void {
+    const sensitivity = settingsStore.get().touchLookSensitivity;
+    this.controls.look(dxPixels * sensitivity, dyPixels * sensitivity);
   }
 
   /** 打开界面。 */
@@ -649,7 +680,7 @@ export class Game implements EntityContext, ContainerHost {
     }
     this.isPaused = false;
     this.store.patch({ screen: Screen.NONE, openBlock: null, cursorStack: null });
-    this.controls.requestLock();
+    this.requestPointerLock();
   }
 
   /** 恢复游戏（暂停菜单）。 */

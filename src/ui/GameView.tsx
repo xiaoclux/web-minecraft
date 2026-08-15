@@ -91,7 +91,7 @@ function GameOverlays({ game }: { game: Game }) {
       {showInventory && <InventoryScreen game={game} state={state} />}
       {state.screen === Screen.PAUSE && <PauseMenu game={game} />}
       {state.screen === Screen.DEATH && <DeathScreen game={game} state={state} />}
-      {!state.isPointerLocked && state.screen === Screen.NONE && (
+      {!game.isTouch && !state.isPointerLocked && state.screen === Screen.NONE && (
         <div className="overlay center click-hint" onClick={() => game.requestPointerLock()}>
           <div className="loading-text">点击画面开始</div>
         </div>
