@@ -2,6 +2,7 @@ import { BlockId, RenderType, getBlock, type BlockDef, type BlockFaceTextures } 
 import { CHUNK_SIZE, MAX_LIGHT } from '../constants/world';
 import type { TextureAtlas } from '../textures/TextureAtlas';
 import { localIndex } from './Chunk';
+import { waterHeight } from './FluidSimulator';
 import type { World } from './World';
 
 /** 一个 chunk 的三层网格数据。 */
@@ -251,8 +252,7 @@ export class ChunkMesher {
 
   private water(builder: BufferBuilder, def: BlockDef, x: number, y: number, z: number): void {
     const world = this.world;
-    const aboveIsWater = world.getBlock(x, y + 1, z) === def.id;
-    const top = aboveIsWater ? 1 : WATER_SURFACE_HEIGHT;
+    const heights = this.waterCornerHeights(x, y, z);
     for (const face of FACES) {
       const nx = x + face.normal[0];
       const ny = y + face.normal[1];
@@ -261,12 +261,56 @@ export class ChunkMesher {
         continue;
       }
       const region = this.atlas.region(def.textures[face.textureKey]);
-      const corners = face.corners.map(([cx, cy, cz]) => [x + cx, y + (cy === 1 ? top : 0), z + cz] as const);
+      const corners = face.corners.map(([cx, cy, cz]) => {
+        const top = heights[cx * 2 + cz];
+        return [x + cx, y + (cy === 1 ? top : 0), z + cz] as const;
+      });
       const sky = world.getSkyLight(nx, ny, nz) / MAX_LIGHT;
       const block = world.getBlockLight(nx, ny, nz) / MAX_LIGHT;
       const light = [sky, block, face.shade] as const;
       builder.quad(corners, region, [light, light, light, light], false);
     }
+  }
+
+  /**
+   * 水面四角高度（索引 cx*2+cz）：取该角周围 4 个水块高度的平均，形成 1.8 式斜面；
+   * 任一相邻水块上方仍是水则该角为满高。
+   */
+  private waterCornerHeights(x: number, y: number, z: number): [number, number, number, number] {
+    const world = this.world;
+    const heightAt = (bx: number, bz: number): number | null => {
+      if (world.getBlock(bx, y, bz) !== BlockId.WATER) {
+        return null;
+      }
+      return waterHeight(world.getMeta(bx, y, bz), world.getBlock(bx, y + 1, bz) === BlockId.WATER);
+    };
+    const own = heightAt(x, z) ?? WATER_SURFACE_HEIGHT;
+    const corner = (dx: number, dz: number): number => {
+      let sum = 0;
+      let count = 0;
+      let full = false;
+      for (const [ox, oz] of [
+        [0, 0],
+        [dx, 0],
+        [0, dz],
+        [dx, dz],
+      ]) {
+        const h = heightAt(x + ox, z + oz);
+        if (h === null) {
+          continue;
+        }
+        if (h >= 1) {
+          full = true;
+        }
+        sum += h;
+        count++;
+      }
+      if (full) {
+        return 1;
+      }
+      return count === 0 ? own : sum / count;
+    };
+    return [corner(-1, -1), corner(-1, 1), corner(1, -1), corner(1, 1)];
   }
 
   private cross(builder: BufferBuilder, def: BlockDef, x: number, y: number, z: number): void {

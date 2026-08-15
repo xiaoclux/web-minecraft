@@ -34,7 +34,15 @@ import {
 } from './constants/keys';
 import { AUTOSAVE_INTERVAL_TICKS, SAVE_FORMAT_VERSION } from './constants/save';
 import { CREEPER_EXPLOSION_MAX_DAMAGE } from './constants/mobs';
-import { DAY_LENGTH_TICKS, DEFAULT_RENDER_DISTANCE, MAX_LIGHT, SPAWN_PRELOAD_RADIUS } from './constants/world';
+import { WATER_TICK_INTERVAL } from './constants/fluids';
+import {
+  CHUNK_AREA,
+  CHUNK_SIZE,
+  DAY_LENGTH_TICKS,
+  DEFAULT_RENDER_DISTANCE,
+  MAX_LIGHT,
+  SPAWN_PRELOAD_RADIUS,
+} from './constants/world';
 import { ArrowEntity } from './entities/ArrowEntity';
 import { Entity, allocateEntityId, resetEntityIds, type EntitySaveData } from './entities/Entity';
 import type { EntityContext } from './entities/EntityContext';
@@ -66,6 +74,7 @@ import { createRng, hashString } from './textures/PixelCanvas';
 import { Chunk, toChunkCoord } from './world/Chunk';
 import { createChunkGenerator, type ChunkGenerator } from './world/ChunkGenerator';
 import { ChunkManager } from './world/ChunkManager';
+import { FluidSimulator } from './world/FluidSimulator';
 import { LightEngine } from './world/LightEngine';
 import { TerrainGenerator } from './world/TerrainGenerator';
 import { World } from './world/World';
@@ -111,6 +120,7 @@ export class Game implements EntityContext, ContainerHost {
 
   private readonly generator: ChunkGenerator;
   private readonly chunkManager: ChunkManager;
+  private readonly fluids: FluidSimulator;
   private readonly light: LightEngine;
   private readonly atlas: TextureAtlas;
   private readonly renderer: Renderer;
@@ -157,6 +167,7 @@ export class Game implements EntityContext, ContainerHost {
     this.generator = createChunkGenerator(options.meta);
     this.light = new LightEngine(this.world);
     this.chunkManager = new ChunkManager(this.world, this.generator, this.light);
+    this.fluids = new FluidSimulator(this.world);
     this.atlas = new TextureAtlas();
     this.renderer = new Renderer(options.canvas, this.world, this.atlas);
     this.controls = new Controls(options.canvas);
@@ -195,9 +206,16 @@ export class Game implements EntityContext, ContainerHost {
     } else {
       this.createNewWorld();
     }
-    this.world.onBlockChange((x, _y, z) => this.light.updateAround(x, z));
+    this.world.onBlockChange((x, y, z) => {
+      this.light.updateAround(x, z);
+      this.fluids.scheduleAround(x, y, z);
+    });
+    this.fluids.onWashed((x, y, z, id) => this.onBlockWashed(x, y, z, id));
     this.world.onChunkUnload((chunk) => this.onChunkUnloaded(chunk));
-    this.world.onBatchChange((minX, maxX, minZ, maxZ) => this.light.updateArea(minX, maxX, minZ, maxZ));
+    this.world.onBatchChange((minX, maxX, minZ, maxZ) => {
+      this.light.updateArea(minX, maxX, minZ, maxZ);
+      this.fluids.scheduleArea(minX - 1, maxX + 1, 0, this.world.sizeY - 1, minZ - 1, maxZ + 1);
+    });
     this.player.inventory.subscribe(() =>
       this.store.patch({ inventoryVersion: this.store.get().inventoryVersion + 1 }),
     );
@@ -262,6 +280,7 @@ export class Game implements EntityContext, ContainerHost {
       chunk.meta.set(rleDecode(data.meta, chunk.meta.length));
       chunk.isModified = true;
       this.chunkManager.addLoadedChunk(chunk);
+      this.rescheduleFlowingWater(chunk);
     }
     this.chunkManager.ensureLoaded(save.player.x, save.player.z, SPAWN_PRELOAD_RADIUS);
     this.tick = save.tick;
@@ -284,6 +303,18 @@ export class Game implements EntityContext, ContainerHost {
     }
     if (this.player.health <= 0) {
       this.player.respawn();
+    }
+  }
+
+  /** 读档后让 chunk 内未静止的流动水继续更新。 */
+  private rescheduleFlowingWater(chunk: Chunk): void {
+    for (let idx = 0; idx < chunk.blocks.length; idx++) {
+      if (chunk.blocks[idx] === BlockId.WATER && chunk.meta[idx] !== 0) {
+        const lx = idx % CHUNK_SIZE;
+        const lz = Math.floor(idx / CHUNK_SIZE) % CHUNK_SIZE;
+        const y = Math.floor(idx / CHUNK_AREA);
+        this.fluids.scheduleAround(chunk.originX + lx, y, chunk.originZ + lz);
+      }
     }
   }
 
@@ -459,6 +490,9 @@ export class Game implements EntityContext, ContainerHost {
     this.tickTnt();
     this.tickFurnaces();
     this.tickGravityBlocks();
+    if (this.tick % WATER_TICK_INTERVAL === 0) {
+      this.fluids.tick();
+    }
     if (this.player.health <= 0 && this.store.get().screen !== Screen.DEATH) {
       this.onPlayerDeath();
     }
@@ -910,6 +944,16 @@ export class Game implements EntityContext, ContainerHost {
     }
   }
 
+  /** 植物等被水冲走时掉落物品。 */
+  private onBlockWashed(x: number, y: number, z: number, id: number): void {
+    if (this.rules.infiniteItems) {
+      return;
+    }
+    for (const drop of rollDrops(getBlock(id), null, this.rng)) {
+      this.dropItem(x + 0.5, y + 0.5, z + 0.5, drop, 0.2);
+    }
+  }
+
   private pendingGravity: { x: number; y: number; z: number }[] = [];
 
   private tickGravityBlocks(): void {
@@ -1324,6 +1368,10 @@ export class Game implements EntityContext, ContainerHost {
   }
 
   // ---------------------------------------------------------------- EntityContext 实现
+
+  waterFlowAt(x: number, y: number, z: number): { x: number; z: number } {
+    return this.fluids.flowVector(x, y, z);
+  }
 
   get canMobsTargetPlayer(): boolean {
     return this.rules.mobsHostile && this.difficulty !== Difficulty.PEACEFUL && this.player.health > 0;

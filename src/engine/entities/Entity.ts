@@ -5,6 +5,7 @@ import {
   WATER_GRAVITY,
   WATER_TERMINAL_VELOCITY,
 } from '../constants/game';
+import { WATER_PUSH_ACCEL } from '../constants/fluids';
 import { AABB } from '../physics/AABB';
 import { isBoxBlocked, isBoxInLiquid, isBoxTouchingLiquid, moveWithCollisions } from '../physics/collision';
 import type { EntityContext } from './EntityContext';
@@ -34,6 +35,8 @@ const WATER_BODY_MIN_HEIGHT = 0.2;
 const WATER_CLIMB_PROBE_DISTANCE = 0.3;
 const WATER_CLIMB_MAX_HEIGHT = 1.8;
 const WATER_CLIMB_MIN_MOVE = 1e-4;
+/** 采样水流方向的高度（脚上方）。 */
+const WATER_FLOW_SAMPLE_HEIGHT = 0.3;
 
 /** 实体基类：位置、速度、包围盒、基础物理。 */
 export abstract class Entity {
@@ -134,6 +137,13 @@ export abstract class Entity {
     }
     if (this.inWater) {
       this.vy *= Math.pow(WATER_DRAG, dt * DRAG_TICK_BASE);
+      const flow = ctx.waterFlowAt(
+        Math.floor(this.x),
+        Math.floor(this.y + WATER_FLOW_SAMPLE_HEIGHT),
+        Math.floor(this.z),
+      );
+      this.vx += flow.x * WATER_PUSH_ACCEL * dt;
+      this.vz += flow.z * WATER_PUSH_ACCEL * dt;
     }
     this.updateWaterClimb(world, wantedDx, wantedDz);
   }

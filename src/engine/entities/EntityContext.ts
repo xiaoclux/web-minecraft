@@ -22,4 +22,6 @@ export interface EntityContext {
   onEntityKilled(entity: Entity, byPlayer: boolean): void;
   random(): number;
   playSound(name: string, x: number, y: number, z: number): void;
+  /** 该方块位置的水流方向（单位向量；静水为 0）。 */
+  waterFlowAt(x: number, y: number, z: number): { x: number; z: number };
 }

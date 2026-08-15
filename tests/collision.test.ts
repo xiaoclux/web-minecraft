@@ -61,7 +61,7 @@ describe('raycast', () => {
 describe('water climb', () => {
   /** 只提供物理所需字段的最小上下文。 */
   function physicsContext(world: World): EntityContext {
-    return { world } as unknown as EntityContext;
+    return { world, waterFlowAt: () => ({ x: 0, z: 0 }) } as unknown as EntityContext;
   }
 
   /** 两格深的水池（y=4..5），x=13 处是岸，岸顶高度由 shoreTop 决定。 */
