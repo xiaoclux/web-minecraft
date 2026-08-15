@@ -36,3 +36,7 @@ export const TOUCH_LONG_PRESS_MS = 350;
 export const BOOT_MIN_DURATION_MS = 500;
 /** 引擎预加载的超时：超过则不再阻塞进入主菜单（进入世界时 lazy 会重试）。 */
 export const BOOT_ENGINE_TIMEOUT_MS = 15000;
+
+/** 箱子容量（3×9，与 1.8.9 一致）。 */
+export const CHEST_SLOT_COUNT = 27;
+export const CHEST_COLUMNS = 9;

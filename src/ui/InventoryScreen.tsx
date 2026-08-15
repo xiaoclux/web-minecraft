@@ -9,7 +9,7 @@ import {
 import type { Game, SlotRef } from '../engine/Game';
 import { GameMode, HOTBAR_SIZE, INVENTORY_SIZE } from '../engine/constants/game';
 import { MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT } from '../engine/constants/keys';
-import { TOUCH_LONG_PRESS_MS } from '../engine/constants/ui';
+import { CHEST_COLUMNS, TOUCH_LONG_PRESS_MS } from '../engine/constants/ui';
 import { Screen, type GameUiState } from '../engine/events/GameState';
 import { SMELT_TICKS } from '../engine/items/Furnace';
 import { ITEM_DEFS, ItemKind } from '../engine/items/ItemRegistry';
@@ -161,6 +161,24 @@ function FurnaceArea({ game }: { game: Game }) {
   );
 }
 
+function ChestArea({ game }: { game: Game }) {
+  const items = game.openChestItems;
+  const indices = useMemo(() => (items ? Array.from({ length: items.length }, (_, i) => i) : []), [items]);
+  if (!items) {
+    return null;
+  }
+  return (
+    <div className="chest-area">
+      <div className="section-title">箱子</div>
+      <div className={`slot-grid cols-${CHEST_COLUMNS}`}>
+        {indices.map((i) => (
+          <Slot key={i} game={game} refer={{ kind: 'chest', index: i }} stack={items[i]} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CreativeList({ game }: { game: Game }) {
   const [tab, setTab] = useState<(typeof CREATIVE_TABS)[number]['key']>('blocks');
   const items = useMemo(() => {
@@ -193,7 +211,7 @@ function CreativeList({ game }: { game: Game }) {
   );
 }
 
-/** 背包 / 工作台 / 熔炉 界面。 */
+/** 背包 / 工作台 / 熔炉 / 箱子 界面。 */
 export function InventoryScreen({ game, state }: InventoryScreenProps) {
   const isCreative = state.mode === GameMode.CREATIVE;
   const cursorRef = useRef<HTMLDivElement>(null);
@@ -221,6 +239,7 @@ export function InventoryScreen({ game, state }: InventoryScreenProps) {
           {state.screen === Screen.INVENTORY && !isCreative && <CraftingArea game={game} size={2} />}
           {state.screen === Screen.CRAFTING && <CraftingArea game={game} size={3} />}
           {state.screen === Screen.FURNACE && <FurnaceArea game={game} />}
+          {state.screen === Screen.CHEST && <ChestArea game={game} />}
           <div className="section-title">物品栏</div>
           <InventoryGrid game={game} />
         </div>

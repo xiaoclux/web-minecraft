@@ -80,6 +80,7 @@ export const RECIPES: Recipe[] = [
   shaped(['P', 'P'], { P: 'planks' }, 'stick', 4),
   shaped(['PP', 'PP'], { P: 'planks' }, 'crafting_table'),
   shaped(['CCC', 'C C', 'CCC'], { C: 'cobblestone' }, 'furnace'),
+  shaped(['PPP', 'P P', 'PPP'], { P: 'planks' }, 'chest'),
   shaped(['C', 'S'], { C: 'coal', S: 'stick' }, 'torch', 4),
   shaped(['C', 'S'], { C: 'charcoal', S: 'stick' }, 'torch', 4),
   shaped(['SS', 'SS'], { S: 'sand' }, 'sandstone'),

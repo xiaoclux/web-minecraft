@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Game } from '../engine/Game';
-import { Screen } from '../engine/events/GameState';
+import { isContainerScreen, Screen } from '../engine/events/GameState';
 import type { SaveManager, WorldMeta, WorldSave } from '../engine/save/SaveManager';
 import { DeathScreen } from './DeathScreen';
 import { DebugOverlay } from './DebugOverlay';
@@ -85,8 +85,7 @@ function GameOverlays({ game }: { game: Game }) {
   const state = useStore(game.store);
   const settings = useStore(settingsStore);
   const showTouchControls = game.isTouch && settings.touchControlsEnabled;
-  const showInventory =
-    state.screen === Screen.INVENTORY || state.screen === Screen.CRAFTING || state.screen === Screen.FURNACE;
+  const showInventory = isContainerScreen(state.screen);
   return (
     <>
       {state.isUnderwater && <div className="underwater-tint" />}

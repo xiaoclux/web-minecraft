@@ -98,6 +98,11 @@ export interface BlockDef {
   noItem?: boolean;
   /** 半砖专用：两块合并后变成的双层方块 id。 */
   doubleSlabId?: number;
+  /**
+   * 有正面朝向：meta 低 2 位记录正面朝哪，放置时正面朝向玩家。
+   * 贴图上用 north 表示正面、south 表示其余侧面。
+   */
+  hasFacing?: boolean;
 }
 
 export const BlockId = {
@@ -130,6 +135,7 @@ export const BlockId = {
   OBSIDIAN: 49,
   TORCH: 50,
   DIAMOND_ORE: 56,
+  CHEST: 54,
   CRAFTING_TABLE: 58,
   FURNACE: 61,
   SNOW: 80,
@@ -402,6 +408,18 @@ export const BLOCK_DEFS: BlockDef[] = [
   cube(BlockId.MELON, 'melon', '西瓜', topSide('melon_top', 'melon_side'), 1, ToolType.AXE, {
     drops: [{ item: 'melon_slice', min: 3, max: 7 }],
   }),
+  {
+    ...cube(
+      BlockId.CHEST,
+      'chest',
+      '箱子',
+      { top: 'chest_top', bottom: 'chest_top', north: 'chest_front', south: 'chest_side', east: 'chest_side', west: 'chest_side' },
+      2.5,
+      ToolType.AXE,
+      { interactive: true },
+    ),
+    hasFacing: true,
+  },
   slab(BlockId.STONE_SLAB, 'stone_slab', '石半砖', same('stone'), 2, ToolType.PICKAXE, {
     minTier: ToolTier.WOOD,
     doubleSlabId: BlockId.DOUBLE_STONE_SLAB,

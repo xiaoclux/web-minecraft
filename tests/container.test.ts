@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ContainerController, type ContainerHost } from '../src/engine/items/ContainerController';
 import { createFurnace, type FurnaceState } from '../src/engine/items/Furnace';
+import { CHEST_SLOT_COUNT } from '../src/engine/constants/ui';
 import { Inventory } from '../src/engine/items/Inventory';
 import { maxStackOf, type ItemStack } from '../src/engine/items/ItemStack';
 
@@ -8,22 +9,24 @@ const LEFT = 0;
 const RIGHT = 2;
 const INVENTORY_SLOTS = 36;
 
-function setup(screen: 'inventory' | 'crafting' | 'furnace' = 'inventory', isCreative = false) {
+function setup(screen: 'inventory' | 'crafting' | 'furnace' | 'chest' = 'inventory', isCreative = false) {
   const inventory = new Inventory();
   const craftingGrid: (ItemStack | null)[] = new Array<ItemStack | null>(9).fill(null);
   const furnace: FurnaceState = createFurnace();
+  const chestItems: (ItemStack | null)[] = new Array<ItemStack | null>(CHEST_SLOT_COUNT).fill(null);
   let changes = 0;
   const host: ContainerHost = {
     inventory,
     craftingGrid,
     craftGridSize: screen === 'crafting' ? 3 : 2,
     openFurnace: screen === 'furnace' ? furnace : null,
+    openChestItems: screen === 'chest' ? chestItems : null,
     currentScreen: screen,
     isCreative,
     notifyChanged: () => changes++,
   };
   const ctrl = new ContainerController(host);
-  return { inventory, craftingGrid, furnace, ctrl, changes: () => changes };
+  return { inventory, craftingGrid, furnace, chestItems, ctrl, changes: () => changes };
 }
 
 describe('ContainerController', () => {
@@ -134,5 +137,41 @@ describe('ContainerController', () => {
     expect(ctrl.cursor).toBeNull();
     ctrl.handleSlotClick({ kind: 'creative', index: 0, itemId: 'torch' }, LEFT, true);
     expect(inventory.countOf('torch')).toBe(64);
+  });
+});
+
+describe('箱子容器', () => {
+  it('左键把物品放进箱子格再取出', () => {
+    const { inventory, chestItems, ctrl } = setup('chest');
+    inventory.set(0, { id: 'stone', count: 10 });
+    ctrl.handleSlotClick({ kind: 'inventory', index: 0 }, LEFT, false);
+    ctrl.handleSlotClick({ kind: 'chest', index: 5 }, LEFT, false);
+    expect(chestItems[5]).toEqual({ id: 'stone', count: 10 });
+    expect(inventory.get(0)).toBeNull();
+    ctrl.handleSlotClick({ kind: 'chest', index: 5 }, LEFT, false);
+    ctrl.handleSlotClick({ kind: 'inventory', index: 0 }, LEFT, false);
+    expect(inventory.get(0)).toEqual({ id: 'stone', count: 10 });
+    expect(chestItems[5]).toBeNull();
+  });
+
+  it('Shift 点击把背包物品快速塞进箱子，再点回背包', () => {
+    const { inventory, chestItems, ctrl } = setup('chest');
+    inventory.set(0, { id: 'stone', count: 30 });
+    ctrl.handleSlotClick({ kind: 'inventory', index: 0 }, LEFT, true);
+    expect(inventory.get(0)).toBeNull();
+    expect(chestItems[0]).toEqual({ id: 'stone', count: 30 });
+    ctrl.handleSlotClick({ kind: 'chest', index: 0 }, LEFT, true);
+    expect(chestItems[0]).toBeNull();
+    expect(inventory.get(0)).toEqual({ id: 'stone', count: 30 });
+  });
+
+  it('箱子装满时 Shift 点击不会丢失物品', () => {
+    const { inventory, chestItems, ctrl } = setup('chest');
+    for (let i = 0; i < CHEST_SLOT_COUNT; i++) {
+      chestItems[i] = { id: 'dirt', count: 64 };
+    }
+    inventory.set(0, { id: 'stone', count: 5 });
+    ctrl.handleSlotClick({ kind: 'inventory', index: 0 }, LEFT, true);
+    expect(inventory.get(0)?.count ?? 0).toBe(5);
   });
 });

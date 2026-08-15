@@ -7,10 +7,24 @@ export const Screen = {
   INVENTORY: 'inventory',
   CRAFTING: 'crafting',
   FURNACE: 'furnace',
+  CHEST: 'chest',
   PAUSE: 'pause',
   DEATH: 'death',
 } as const;
 export type Screen = (typeof Screen)[keyof typeof Screen];
+
+/** 会显示背包面板的界面（背包 / 工作台 / 熔炉 / 箱子）。 */
+const CONTAINER_SCREENS: ReadonlySet<Screen> = new Set<Screen>([
+  Screen.INVENTORY,
+  Screen.CRAFTING,
+  Screen.FURNACE,
+  Screen.CHEST,
+]);
+
+/** 该界面是否是带背包面板的容器界面。 */
+export function isContainerScreen(screen: Screen): boolean {
+  return CONTAINER_SCREENS.has(screen);
+}
 
 /** 引擎暴露给 React 的 UI 状态快照。 */
 export interface GameUiState {

@@ -3,7 +3,7 @@ import { emptyWorld } from './helpers';
 import { BlockId, getBlock } from '../src/engine/blocks/BlockRegistry';
 import {
   SLAB_TOP_BIT,
-  STAIRS_FACINGS,
+  FACINGS,
   STAIRS_FLIP_BIT,
   collisionBoxes,
   outlineBox,
@@ -24,7 +24,7 @@ describe('方块形状', () => {
   });
 
   it('楼梯由底层半砖与半格台阶组成，朝向决定台阶在哪一侧', () => {
-    const eastFacing = STAIRS_FACINGS.findIndex(([dx]) => dx === 1);
+    const eastFacing = FACINGS.findIndex(([dx]) => dx === 1);
     const boxes = shapeBoxes(STAIRS, eastFacing);
     expect(boxes).toHaveLength(2);
     expect(boxes[0]).toMatchObject({ y0: 0, y1: 0.5 });

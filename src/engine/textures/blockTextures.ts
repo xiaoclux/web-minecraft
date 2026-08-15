@@ -277,6 +277,36 @@ const furnaceFront: Painter = (c, rng) => {
   c.rect(6, 8, 4, 2, hex('#ffd24a'));
 };
 
+/** 箱子：木板底 + 深色包边、金属锁扣。 */
+const CHEST_WOOD = hex('#a3762f');
+const CHEST_EDGE = hex('#5d4218');
+const CHEST_LATCH = hex('#4c4c4c');
+
+const chestBase: Painter = (c, rng) => {
+  c.noise(CHEST_WOOD, 0.08, rng);
+  c.rect(0, 0, 16, 1, CHEST_EDGE);
+  c.rect(0, 15, 16, 1, CHEST_EDGE);
+  c.rect(0, 0, 1, 16, CHEST_EDGE);
+  c.rect(15, 0, 1, 16, CHEST_EDGE);
+};
+
+const chestTop: Painter = (c, rng) => {
+  chestBase(c, rng);
+  c.rect(0, 7, 16, 1, CHEST_EDGE);
+};
+
+const chestSide: Painter = (c, rng) => {
+  chestBase(c, rng);
+  // 上方是箱盖，与箱身之间留一道缝
+  c.rect(0, 4, 16, 1, CHEST_EDGE);
+};
+
+const chestFront: Painter = (c, rng) => {
+  chestSide(c, rng);
+  c.rect(7, 3, 2, 4, CHEST_LATCH);
+  c.rect(7, 4, 2, 1, shade(CHEST_LATCH, 1.6));
+};
+
 const glowstone: Painter = (c, rng) => {
   c.noise(GLOW, 0.2, rng);
   c.speckle(hex('#ffe9a8'), 40, rng);
@@ -461,6 +491,9 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   furnace_top: furnaceTop,
   furnace_front: furnaceFront,
   furnace_side: furnaceSide,
+  chest_top: chestTop,
+  chest_front: chestFront,
+  chest_side: chestSide,
   snow: noiseBase(SNOW, 0.03),
   glowstone,
   stone_bricks: stoneBricks,

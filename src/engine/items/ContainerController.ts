@@ -8,7 +8,15 @@ import { matchRecipe } from './Recipes';
 
 /** 容器格引用。 */
 export interface SlotRef {
-  kind: 'inventory' | 'craft' | 'craftResult' | 'furnaceInput' | 'furnaceFuel' | 'furnaceOutput' | 'creative';
+  kind:
+    | 'inventory'
+    | 'craft'
+    | 'craftResult'
+    | 'furnaceInput'
+    | 'furnaceFuel'
+    | 'furnaceOutput'
+    | 'chest'
+    | 'creative';
   index: number;
   /** 创造模式列表中点击的物品 id。 */
   itemId?: string;
@@ -20,6 +28,8 @@ export interface ContainerHost {
   readonly craftingGrid: (ItemStack | null)[];
   readonly craftGridSize: number;
   readonly openFurnace: FurnaceState | null;
+  /** 打开中的箱子内容（未打开箱子时为 null）。 */
+  readonly openChestItems: (ItemStack | null)[] | null;
   readonly currentScreen: Screen;
   readonly isCreative: boolean;
   /** 通知 UI 刷新。 */
@@ -72,6 +82,8 @@ export class ContainerController {
         return this.host.openFurnace?.fuel ?? null;
       case 'furnaceOutput':
         return this.host.openFurnace?.output ?? null;
+      case 'chest':
+        return this.host.openChestItems?.[ref.index] ?? null;
       case 'creative':
         return ref.itemId ? { id: ref.itemId, count: 1 } : null;
       default:
@@ -106,6 +118,13 @@ export class ContainerController {
         const f = this.host.openFurnace;
         if (f) {
           f.output = value;
+        }
+        break;
+      }
+      case 'chest': {
+        const items = this.host.openChestItems;
+        if (items) {
+          items[ref.index] = value;
         }
         break;
       }
@@ -302,6 +321,14 @@ export class ContainerController {
           }
         }
       }
+      if (screen === 'chest') {
+        // 箱子界面里 shift 只在背包与箱子之间搬运；箱子满了就原地不动
+        const moved = this.moveIntoChest(slot);
+        if (moved === null || moved.count < slot.count) {
+          this.setSlot(ref, moved);
+        }
+        return;
+      }
       // 快捷栏 <-> 背包主体
       const isHotbar = ref.index < HOTBAR_END;
       const start = isHotbar ? HOTBAR_END : 0;
@@ -313,6 +340,32 @@ export class ContainerController {
     // 从容器/合成格移回背包
     const remaining = this.host.inventory.add(slot);
     this.setSlot(ref, remaining > 0 ? { ...slot, count: remaining } : null);
+  }
+
+  /** 把物品塞进打开中的箱子；返回剩下的部分（没有箱子或塞不下时原样返回）。 */
+  private moveIntoChest(stack: ItemStack): ItemStack | null {
+    const items = this.host.openChestItems;
+    if (!items) {
+      return stack;
+    }
+    let remaining = stack.count;
+    const max = maxStackOf(stack.id);
+    for (let i = 0; i < items.length && remaining > 0; i++) {
+      const s = items[i];
+      if (s && canMerge(s, stack) && s.count < max) {
+        const move = Math.min(max - s.count, remaining);
+        items[i] = { ...s, count: s.count + move };
+        remaining -= move;
+      }
+    }
+    for (let i = 0; i < items.length && remaining > 0; i++) {
+      if (!items[i]) {
+        const move = Math.min(max, remaining);
+        items[i] = { ...stack, count: move };
+        remaining -= move;
+      }
+    }
+    return remaining > 0 ? { ...stack, count: remaining } : null;
   }
 
   private moveIntoRange(stack: ItemStack, start: number, end: number): ItemStack | null {

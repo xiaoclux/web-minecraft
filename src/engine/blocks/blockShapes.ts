@@ -30,17 +30,23 @@ export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
 /** 半砖 meta：该位为 1 表示贴在格子上半（1.8.9 同位）。 */
 export const SLAB_TOP_BIT = 8;
-/** 楼梯 meta：低 2 位为朝向序号（台阶高的一侧）。 */
-export const STAIRS_FACING_MASK = 3;
+/** 带朝向的方块 meta：低 2 位为水平朝向序号（楼梯是台阶高的一侧，箱子等是正面朝向）。 */
+export const FACING_MASK = 3;
 /** 楼梯 meta：该位为 1 表示上下颠倒（贴在格子上半）。 */
 export const STAIRS_FLIP_BIT = 4;
-/** 楼梯朝向序号 → 水平单位方向。 */
-export const STAIRS_FACINGS: readonly (readonly [number, number])[] = [
+/** 水平朝向序号 → 单位方向。 */
+export const FACINGS: readonly (readonly [number, number])[] = [
   [1, 0],
   [-1, 0],
   [0, 1],
   [0, -1],
 ];
+
+/** 水平方向 → 朝向序号；不是水平单位方向时返回 0。 */
+export function facingIndexOf(dx: number, dz: number): number {
+  const index = FACINGS.findIndex(([fx, fz]) => fx === dx && fz === dz);
+  return index < 0 ? 0 : index;
+}
 
 const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): BlockBox => ({
   x0,
@@ -62,7 +68,7 @@ const SLAB_BOTTOM: readonly BlockBox[] = [box(0, 0, 0, 1, 0.5, 1)];
 const SLAB_TOP: readonly BlockBox[] = [box(0, 0.5, 0, 1, 1, 1)];
 
 /** 楼梯：[朝向][是否颠倒] → 子盒列表。 */
-const STAIRS_BOXES: readonly BlockBox[][][] = STAIRS_FACINGS.map(([dx, dz]) => {
+const STAIRS_BOXES: readonly BlockBox[][][] = FACINGS.map(([dx, dz]) => {
   const step =
     dx === 1
       ? box(0.5, 0.5, 0, 1, 1, 1)
@@ -84,7 +90,7 @@ export function shapeBoxes(def: BlockDef, meta: number): readonly BlockBox[] {
     case BlockShape.SLAB:
       return (meta & SLAB_TOP_BIT) === 0 ? SLAB_BOTTOM : SLAB_TOP;
     case BlockShape.STAIRS:
-      return STAIRS_BOXES[meta & STAIRS_FACING_MASK][(meta & STAIRS_FLIP_BIT) === 0 ? 0 : 1];
+      return STAIRS_BOXES[meta & FACING_MASK][(meta & STAIRS_FLIP_BIT) === 0 ? 0 : 1];
     default:
       return FULL_BOXES;
   }

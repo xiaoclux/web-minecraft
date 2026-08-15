@@ -4,10 +4,10 @@ import { breakTicks, rollDrops, rollXp } from './blocks/blockBreaking';
 import {
   BlockShape,
   FULL_BOX,
-  collisionBoxes,
   SLAB_TOP_BIT,
-  STAIRS_FACINGS,
   STAIRS_FLIP_BIT,
+  collisionBoxes,
+  facingIndexOf,
   outlineBox,
 } from './blocks/blockShapes';
 import {
@@ -34,6 +34,7 @@ import { KEY_ESCAPE, KEY_HOTBAR_PREFIX, MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT } 
 import { actionForCode, isTouchDevice, settingsStore, type BindingAction } from './settings/Settings';
 import { AUTOSAVE_INTERVAL_TICKS, SAVE_FORMAT_VERSION } from './constants/save';
 import { CREEPER_EXPLOSION_MAX_DAMAGE } from './constants/mobs';
+import { CHEST_SLOT_COUNT } from './constants/ui';
 import { WATER_TICK_INTERVAL } from './constants/fluids';
 import { DAY_LENGTH_TICKS, DEFAULT_RENDER_DISTANCE, MAX_LIGHT, SPAWN_PRELOAD_RADIUS } from './constants/world';
 import { BlockEntityStore, BlockEntityType } from './world/BlockEntityStore';
@@ -45,7 +46,7 @@ import { LivingEntity } from './entities/LivingEntity';
 import { Mob } from './entities/Mob';
 import { isMobType } from './entities/MobDefs';
 import { MobSpawner } from './entities/MobSpawner';
-import { Screen, type DebugInfo, type GameUiState } from './events/GameState';
+import { Screen, isContainerScreen, type DebugInfo, type GameUiState } from './events/GameState';
 import { Store } from './events/Store';
 import { ContainerController, type ContainerHost, type SlotRef } from './items/ContainerController';
 import { createFurnace, tickFurnace, type FurnaceState } from './items/Furnace';
@@ -566,7 +567,7 @@ export class Game implements EntityContext, ContainerHost {
     if (action === 'inventory') {
       if (screen === Screen.NONE) {
         this.openScreen(Screen.INVENTORY);
-      } else if (screen === Screen.INVENTORY || screen === Screen.CRAFTING || screen === Screen.FURNACE) {
+      } else if (isContainerScreen(screen)) {
         this.closeScreen();
       }
       return;
@@ -820,6 +821,18 @@ export class Game implements EntityContext, ContainerHost {
     }
   }
 
+  /** 视线在水平面上的主方向（单位方向，x 与 z 只有一个非零）。 */
+  private lookHorizontal(): readonly [number, number] {
+    const dir = this.lookDirection();
+    return Math.abs(dir.x) >= Math.abs(dir.z) ? [Math.sign(dir.x), 0] : [0, Math.sign(dir.z)];
+  }
+
+  /** 视线主方向对应的朝向序号。 */
+  private lookFacingIndex(): number {
+    const [dx, dz] = this.lookHorizontal();
+    return facingIndexOf(dx, dz);
+  }
+
   private lookDirection(): THREE.Vector3 {
     const p = this.player;
     const cp = Math.cos(p.pitch);
@@ -1027,6 +1040,13 @@ export class Game implements EntityContext, ContainerHost {
       case BlockId.CRAFTING_TABLE:
         this.openScreen(Screen.CRAFTING, { x: hit.x, y: hit.y, z: hit.z });
         return true;
+      case BlockId.CHEST:
+        this.blockEntities.getOrCreate(hit.x, hit.y, hit.z, () => ({
+          type: BlockEntityType.CHEST,
+          items: new Array<ItemStack | null>(CHEST_SLOT_COUNT).fill(null),
+        }));
+        this.openScreen(Screen.CHEST, { x: hit.x, y: hit.y, z: hit.z });
+        return true;
       case BlockId.FURNACE:
         this.blockEntities.getOrCreate(hit.x, hit.y, hit.z, () => ({
           type: BlockEntityType.FURNACE,
@@ -1047,6 +1067,11 @@ export class Game implements EntityContext, ContainerHost {
    * 半砖分上下半，楼梯的高侧朝玩家视线方向、点在上半则上下颠倒。
    */
   private placementMeta(def: BlockDef, hit: RayHit): number {
+    if (def.hasFacing) {
+      // 正面朝向玩家：与视线方向相反
+      const [dx, dz] = this.lookHorizontal();
+      return facingIndexOf(-dx, -dz);
+    }
     if (def.shape !== BlockShape.SLAB && def.shape !== BlockShape.STAIRS) {
       return 0;
     }
@@ -1054,12 +1079,7 @@ export class Game implements EntityContext, ContainerHost {
     if (def.shape === BlockShape.SLAB) {
       return upperHalf ? SLAB_TOP_BIT : 0;
     }
-    const dir = this.lookDirection();
-    const facing =
-      Math.abs(dir.x) >= Math.abs(dir.z)
-        ? STAIRS_FACINGS.findIndex(([fx]) => fx === Math.sign(dir.x))
-        : STAIRS_FACINGS.findIndex(([, fz]) => fz === Math.sign(dir.z));
-    return Math.max(0, facing) | (upperHalf ? STAIRS_FLIP_BIT : 0);
+    return this.lookFacingIndex() | (upperHalf ? STAIRS_FLIP_BIT : 0);
   }
 
   /** 对着同种半砖的开放面再放一块 → 合并成双层方块；返回是否已处理。 */
@@ -1291,6 +1311,16 @@ export class Game implements EntityContext, ContainerHost {
     }
     const entity = this.blockEntities.get(pos.x, pos.y, pos.z);
     return entity?.type === BlockEntityType.FURNACE ? entity.state : null;
+  }
+
+  /** 当前打开的箱子内容。 */
+  get openChestItems(): (ItemStack | null)[] | null {
+    const pos = this.store.get().openBlock;
+    if (!pos) {
+      return null;
+    }
+    const entity = this.blockEntities.get(pos.x, pos.y, pos.z);
+    return entity?.type === BlockEntityType.CHEST ? entity.items : null;
   }
 
   /** 方块被破坏时清掉它的方块实体，并把里面的物品掉出来。 */
