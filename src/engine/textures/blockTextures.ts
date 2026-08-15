@@ -373,6 +373,43 @@ const doorUpper: Painter = (c, rng) => {
   c.rect(1, 12, 2, 2, DOOR_HINGE);
 };
 
+/** 耕地：干湿两种顶面 + 泥土侧面；小麦按生长阶段从矮嫩到高黄。 */
+const farmlandDry: Painter = (c, rng) => {
+  c.noise(shade(DIRT, 0.95), 0.06, rng);
+  for (const x of [3, 8, 13]) {
+    c.rect(x, 0, 1, 16, shade(DIRT, 0.75));
+  }
+};
+const farmlandWet: Painter = (c, rng) => {
+  c.noise(shade(DIRT, 0.6), 0.05, rng);
+  for (const x of [3, 8, 13]) {
+    c.rect(x, 0, 1, 16, shade(DIRT, 0.45));
+  }
+};
+
+const WHEAT_YOUNG = hex('#5f9b32');
+const WHEAT_RIPE = hex('#d8bb54');
+/** 第 stage 阶段的小麦：越大越高、越黄。 */
+function wheatStage(stage: number): Painter {
+  return (c) => {
+    c.fill(TRANSPARENT);
+    const t = stage / 7;
+    const height = 4 + Math.round(t * 11);
+    const color = [
+      Math.round(WHEAT_YOUNG[0] + (WHEAT_RIPE[0] - WHEAT_YOUNG[0]) * t),
+      Math.round(WHEAT_YOUNG[1] + (WHEAT_RIPE[1] - WHEAT_YOUNG[1]) * t),
+      Math.round(WHEAT_YOUNG[2] + (WHEAT_RIPE[2] - WHEAT_YOUNG[2]) * t),
+      255,
+    ] as Rgba;
+    for (const x of [2, 6, 10, 14]) {
+      c.rect(x, 16 - height, 1, height, color);
+      if (stage >= 4) {
+        c.rect(x - 1, 16 - height, 3, 2, shade(color, 1.15));
+      }
+    }
+  };
+}
+
 const glowstone: Painter = (c, rng) => {
   c.noise(GLOW, 0.2, rng);
   c.speckle(hex('#ffe9a8'), 40, rng);
@@ -569,6 +606,16 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   ladder,
   door_lower: doorLower,
   door_upper: doorUpper,
+  farmland_dry: farmlandDry,
+  farmland_wet: farmlandWet,
+  wheat_stage_0: wheatStage(0),
+  wheat_stage_1: wheatStage(1),
+  wheat_stage_2: wheatStage(2),
+  wheat_stage_3: wheatStage(3),
+  wheat_stage_4: wheatStage(4),
+  wheat_stage_5: wheatStage(5),
+  wheat_stage_6: wheatStage(6),
+  wheat_stage_7: wheatStage(7),
   snow: noiseBase(SNOW, 0.03),
   glowstone,
   stone_bricks: stoneBricks,

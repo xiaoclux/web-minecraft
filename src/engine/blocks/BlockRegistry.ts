@@ -9,6 +9,7 @@ export const ToolType = {
   AXE: 'axe',
   SHOVEL: 'shovel',
   SWORD: 'sword',
+  HOE: 'hoe',
 } as const;
 export type ToolType = (typeof ToolType)[keyof typeof ToolType];
 
@@ -37,7 +38,7 @@ export const RenderType = {
 } as const;
 export type RenderType = (typeof RenderType)[keyof typeof RenderType];
 
-import { BED_HEAD_BIT, BlockShape, DOOR_UPPER_BIT } from './blockShapes';
+import { BED_HEAD_BIT, BlockShape, CROP_MAX_STAGE, DOOR_UPPER_BIT } from './blockShapes';
 
 /** 六个面各自的贴图 key。 */
 export interface BlockFaceTextures {
@@ -142,6 +143,8 @@ export const BlockId = {
   TORCH: 50,
   DIAMOND_ORE: 56,
   BED: 26,
+  WHEAT: 59,
+  FARMLAND: 60,
   FENCE: 85,
   FENCE_GATE: 107,
   WOODEN_DOOR: 64,
@@ -422,6 +425,21 @@ export const BLOCK_DEFS: BlockDef[] = [
   cube(BlockId.MELON, 'melon', '西瓜', topSide('melon_top', 'melon_side'), 1, ToolType.AXE, {
     drops: [{ item: 'melon_slice', min: 3, max: 7 }],
   }),
+  {
+    ...cube(BlockId.FARMLAND, 'farmland', '耕地', topSide('farmland_dry', 'dirt'), 0.6, ToolType.SHOVEL, {
+      drops: [{ item: 'dirt', min: 1, max: 1 }],
+      noItem: true,
+    }),
+    shape: BlockShape.FARMLAND,
+    texturesForMeta: (meta: number) => topSide(meta > 0 ? 'farmland_wet' : 'farmland_dry', 'dirt'),
+  },
+  {
+    ...cross(BlockId.WHEAT, 'wheat_crop', '小麦', 'wheat_stage_0', {
+      noItem: true,
+      drops: [],
+    }),
+    texturesForMeta: (meta: number) => same(`wheat_stage_${Math.min(CROP_MAX_STAGE, meta)}`),
+  },
   {
     ...cube(BlockId.FENCE, 'fence', '橡木栅栏', same('planks'), 2, ToolType.AXE, {
       render: RenderType.CUTOUT,

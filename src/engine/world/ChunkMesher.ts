@@ -607,8 +607,8 @@ export class ChunkMesher {
 
   private cross(builder: BufferBuilder, def: BlockDef, x: number, y: number, z: number): void {
     const snap = this.snap;
-    const region = this.atlas.region(def.textures.north);
     const idx = snap.at(x, y, z);
+    const region = this.atlas.region(texturesFor(def, snap.meta[idx]).north);
     const sky = snap.sky[idx] / MAX_LIGHT;
     const block = Math.max(snap.blockLight[idx], def.light) / MAX_LIGHT;
     const light = [sky, block, 1] as const;

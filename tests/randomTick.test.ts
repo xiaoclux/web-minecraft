@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyWorld } from './helpers';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
+import { CROP_MAX_STAGE, FARMLAND_MAX_MOISTURE } from '../src/engine/blocks/blockShapes';
 import { MAX_LIGHT } from '../src/engine/constants/world';
 import { RandomTickSystem } from '../src/engine/systems/RandomTickSystem';
 import type { World } from '../src/engine/world/World';
@@ -76,6 +77,48 @@ describe('随机 tick', () => {
       }
     }
     expect(leaves).toBeGreaterThan(10);
+  });
+
+  it('小麦在湿耕地上会一阶段一阶段长到成熟', () => {
+    const world = emptyWorld(0);
+    world.setBlock(0, 10, 0, BlockId.FARMLAND, FARMLAND_MAX_MOISTURE);
+    world.setBlock(0, 11, 0, BlockId.WHEAT, 0);
+    const system = new RandomTickSystem(host(world));
+    expect(runUntil(system, [0, 11, 0], () => world.getMeta(0, 11, 0) === CROP_MAX_STAGE)).toBe(true);
+    // 成熟后不再变化
+    system.tickBlock(0, 11, 0);
+    expect(world.getMeta(0, 11, 0)).toBe(CROP_MAX_STAGE);
+  });
+
+  it('太暗的小麦不会生长', () => {
+    const world = emptyWorld(0);
+    world.setBlock(0, 10, 0, BlockId.FARMLAND, FARMLAND_MAX_MOISTURE);
+    world.setBlock(0, 11, 0, BlockId.WHEAT, 0);
+    const system = new RandomTickSystem(host(world, 5));
+    runUntil(system, [0, 11, 0], () => false, 500);
+    expect(world.getMeta(0, 11, 0)).toBe(0);
+  });
+
+  it('附近有水的耕地保持湿润，没水会变干并最终退回泥土', () => {
+    const world = emptyWorld(0);
+    world.setBlock(0, 10, 0, BlockId.FARMLAND, 0);
+    world.setBlock(3, 10, 0, BlockId.WATER);
+    const system = new RandomTickSystem(host(world));
+    system.tickBlock(0, 10, 0);
+    expect(world.getMeta(0, 10, 0)).toBe(FARMLAND_MAX_MOISTURE);
+    // 把水挪走后逐渐变干
+    world.setBlock(3, 10, 0, BlockId.AIR);
+    runUntil(system, [0, 10, 0], () => world.getBlock(0, 10, 0) === BlockId.DIRT, 100);
+    expect(world.getBlock(0, 10, 0)).toBe(BlockId.DIRT);
+  });
+
+  it('种了东西的干耕地不会退回泥土', () => {
+    const world = emptyWorld(0);
+    world.setBlock(0, 10, 0, BlockId.FARMLAND, 0);
+    world.setBlock(0, 11, 0, BlockId.WHEAT, 0);
+    const system = new RandomTickSystem(host(world));
+    runUntil(system, [0, 10, 0], () => false, 100);
+    expect(world.getBlock(0, 10, 0)).toBe(BlockId.FARMLAND);
   });
 
   it('上方被挡住的树苗不会长大', () => {

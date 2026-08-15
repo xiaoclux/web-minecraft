@@ -35,6 +35,8 @@ export const BlockShape = {
   FENCE: 'fence',
   /** 栅栏门：关着时挡住通道，开着时两扇转到两侧、可以走过去。 */
   FENCE_GATE: 'fence_gate',
+  /** 耕地：比整格矮 1/16。 */
+  FARMLAND: 'farmland',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -50,6 +52,13 @@ export const BED_HEAD_BIT = 8;
 export const DOOR_OPEN_BIT = 4;
 /** 门 meta：该位为 1 表示这格是门的上半扇。 */
 export const DOOR_UPPER_BIT = 8;
+/** 耕地高度（1.8.9 为 15/16，站上去会矮一点）。 */
+export const FARMLAND_HEIGHT = 15 / 16;
+/** 耕地 meta：湿润度 0~7，0 表示干燥。 */
+export const FARMLAND_MAX_MOISTURE = 7;
+/** 作物 meta：生长阶段 0~7，7 为成熟。 */
+export const CROP_MAX_STAGE = 7;
+
 /** 门板厚度（1.8.9 为 3/16）。 */
 export const DOOR_THICKNESS = 3 / 16;
 /** 栅栏的碰撞高度（1.8.9 为 1.5 格，防止跳过去）。 */
@@ -102,6 +111,7 @@ const CROSS_BOXES: readonly BlockBox[] = [box(CROSS_INSET, 0, CROSS_INSET, 1 - C
 
 const SLAB_BOTTOM: readonly BlockBox[] = [box(0, 0, 0, 1, 0.5, 1)];
 const BED_BOXES: readonly BlockBox[] = [box(0, 0, 0, 1, BED_HEIGHT, 1)];
+const FARMLAND_BOXES: readonly BlockBox[] = [box(0, 0, 0, 1, FARMLAND_HEIGHT, 1)];
 /** 贴在格子某一侧面的薄板（厚度 t，方向 (dx,dz) 指向该侧面）。 */
 function panelBox(dx: number, dz: number, t: number): BlockBox {
   if (dx === 1) {
@@ -239,6 +249,8 @@ export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readon
       return STAIRS_BOXES[meta & FACING_MASK][(meta & STAIRS_FLIP_BIT) === 0 ? 0 : 1];
     case BlockShape.BED:
       return BED_BOXES;
+    case BlockShape.FARMLAND:
+      return FARMLAND_BOXES;
     case BlockShape.LADDER:
       return LADDER_BOXES[meta & FACING_MASK];
     case BlockShape.DOOR:

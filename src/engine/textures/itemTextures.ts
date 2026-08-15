@@ -47,6 +47,24 @@ const AXE = [
   '................',
   '................',
 ];
+const HOE = [
+  '......HHHHHH....',
+  '......HHHHHH....',
+  '......HH..HH....',
+  '..........SH....',
+  '.........SS.....',
+  '........SS......',
+  '.......SS.......',
+  '......SS........',
+  '.....SS.........',
+  '....SS..........',
+  '...SS...........',
+  '..SS............',
+  '.SS.............',
+  'SS..............',
+  '................',
+  '................',
+];
 const SHOVEL = [
   '...........HHH..',
   '..........HHHHH.',
@@ -137,6 +155,7 @@ const HAND_DRAWN_ICONS: Record<string, Painter> = {
   ...drawTool('axe', AXE),
   ...drawTool('shovel', SHOVEL),
   ...drawTool('sword', SWORD),
+  ...drawTool('hoe', HOE),
   stick: (c) =>
     c.draw(
       [
@@ -337,6 +356,24 @@ const HAND_DRAWN_ICONS: Record<string, Painter> = {
       ],
       { X: hex('#d8342c'), S: hex('#5b4326') },
       2,
+      3,
+    ),
+  wheat: (c) =>
+    c.draw(
+      [
+        '.......X........',
+        '..X....X....X...',
+        '.XXX..XXX..XXX..',
+        '..X.X..X..X.X...',
+        '..X.XX.X.XX.X...',
+        '..X..X.X.X..X...',
+        '.....X.X.X......',
+        '.....XXXXX......',
+        '.......X........',
+        '.......X........',
+      ],
+      { X: hex('#d8bb54') },
+      1,
       3,
     ),
   bread: blob(hex('#c98f4a'), [

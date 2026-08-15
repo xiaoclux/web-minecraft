@@ -2,6 +2,7 @@ import { BlockId, getBlock } from '../blocks/BlockRegistry';
 import { CHUNK_SIZE, SECTION_COUNT, SECTION_HEIGHT, WORLD_SIZE_Y } from '../constants/world';
 import { toChunkCoord } from '../world/Chunk';
 import type { World } from '../world/World';
+import { CROP_MAX_STAGE, FARMLAND_MAX_MOISTURE } from '../blocks/blockShapes';
 import { TREE_HEIGHT_VARIANCE, TREE_MIN_HEIGHT, forEachTreeBlock } from '../world/treeShape';
 
 /** 每个已分配段每 tick 随机抽取的方块数（1.8.9 是 3）。 */
@@ -18,6 +19,13 @@ const SAPLING_GROW_CHANCE = 0.15;
 const SAPLING_CLEARANCE = 6;
 /** 树冠缺角随机种子的取值上限。 */
 const MAX_TREE_SEED = 0xffffffff;
+/** 作物生长所需的最低光照。 */
+const CROP_MIN_LIGHT = 9;
+/** 每次随机 tick 的生长概率：湿耕地上更快。 */
+const CROP_GROW_CHANCE_WET = 0.25;
+const CROP_GROW_CHANCE_DRY = 0.1;
+/** 耕地找水的水平半径与向上的格数（1.8.9 是 4 格半径）。 */
+const FARMLAND_WATER_RADIUS = 4;
 
 /** 随机 tick 需要从游戏取的上下文。 */
 export interface RandomTickHost {
@@ -73,6 +81,12 @@ export class RandomTickSystem {
       case BlockId.SAPLING:
         this.tickSapling(x, y, z);
         break;
+      case BlockId.FARMLAND:
+        this.tickFarmland(x, y, z);
+        break;
+      case BlockId.WHEAT:
+        this.tickCrop(x, y, z);
+        break;
       default:
         break;
     }
@@ -107,6 +121,57 @@ export class RandomTickSystem {
       return;
     }
     world.setBlock(x, y, z, BlockId.GRASS);
+  }
+
+  /** 耕地：附近有水就保持湿润，没水就慢慢变干，干透且没种东西时退回泥土。 */
+  private tickFarmland(x: number, y: number, z: number): void {
+    const world = this.host.world;
+    const moisture = world.getMeta(x, y, z);
+    if (this.hasWaterNearby(x, y, z)) {
+      if (moisture < FARMLAND_MAX_MOISTURE) {
+        world.setMeta(x, y, z, FARMLAND_MAX_MOISTURE);
+      }
+      return;
+    }
+    if (moisture > 0) {
+      world.setMeta(x, y, z, moisture - 1);
+      return;
+    }
+    if (world.getBlock(x, y + 1, z) !== BlockId.WHEAT) {
+      world.setBlock(x, y, z, BlockId.DIRT);
+    }
+  }
+
+  /** 耕地水平 4 格内、同层或上一层是否有水。 */
+  private hasWaterNearby(x: number, y: number, z: number): boolean {
+    const world = this.host.world;
+    for (let dz = -FARMLAND_WATER_RADIUS; dz <= FARMLAND_WATER_RADIUS; dz++) {
+      for (let dx = -FARMLAND_WATER_RADIUS; dx <= FARMLAND_WATER_RADIUS; dx++) {
+        for (let dy = 0; dy <= 1; dy++) {
+          if (world.getBlock(x + dx, y + dy, z + dz) === BlockId.WATER) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /** 作物：够亮就按耕地湿度决定的概率长一阶段。 */
+  private tickCrop(x: number, y: number, z: number): void {
+    const world = this.host.world;
+    const stage = world.getMeta(x, y, z);
+    if (stage >= CROP_MAX_STAGE) {
+      return;
+    }
+    if (this.host.lightLevelAt(x, y, z) < CROP_MIN_LIGHT) {
+      return;
+    }
+    const wet = world.getMeta(x, y - 1, z) > 0 && world.getBlock(x, y - 1, z) === BlockId.FARMLAND;
+    if (this.host.random() >= (wet ? CROP_GROW_CHANCE_WET : CROP_GROW_CHANCE_DRY)) {
+      return;
+    }
+    world.setMeta(x, y, z, stage + 1);
   }
 
   /** 树苗在够亮、上方够空旷时长成树。 */

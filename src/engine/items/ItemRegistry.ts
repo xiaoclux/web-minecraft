@@ -71,9 +71,9 @@ const TIER_DURABILITY: Record<number, number> = { 0: 59, 1: 131, 2: 250, 3: 1561
 const TIER_ATTACK_BASE: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3 };
 const TIER_LABEL: Record<number, string> = { 0: '木', 1: '石', 2: '铁', 3: '钻石' };
 const TIER_NAME: Record<number, string> = { 0: 'wooden', 1: 'stone', 2: 'iron', 3: 'diamond' };
-const TOOL_LABEL: Record<ToolType, string> = { pickaxe: '镐', axe: '斧', shovel: '锹', sword: '剑' };
+const TOOL_LABEL: Record<ToolType, string> = { pickaxe: '镐', axe: '斧', shovel: '锹', sword: '剑', hoe: '锄' };
 /** 各工具类型的基础伤害（在材质加成之上）。 */
-const TOOL_ATTACK: Record<ToolType, number> = { sword: 4, axe: 3, pickaxe: 2, shovel: 1 };
+const TOOL_ATTACK: Record<ToolType, number> = { sword: 4, axe: 3, pickaxe: 2, shovel: 1, hoe: 1 };
 const HAND_ATTACK_DAMAGE = 1;
 const FURNACE_ITEM_BURN_TICKS = 1600;
 const LOG_BURN_TICKS = 300;
@@ -174,7 +174,7 @@ function blockItem(def: BlockDef): ItemDef {
   };
 }
 
-const TOOL_TYPES: ToolType[] = [ToolType.SWORD, ToolType.PICKAXE, ToolType.AXE, ToolType.SHOVEL];
+const TOOL_TYPES: ToolType[] = [ToolType.SWORD, ToolType.PICKAXE, ToolType.AXE, ToolType.SHOVEL, ToolType.HOE];
 const TIERS: ToolTier[] = [ToolTier.WOOD, ToolTier.STONE, ToolTier.IRON, ToolTier.DIAMOND];
 
 /** 全部物品定义。 */
@@ -189,6 +189,7 @@ export const ITEM_DEFS: ItemDef[] = [
   material('gold_ingot', '金锭'),
   material('diamond', '钻石'),
   material('wheat_seeds', '小麦种子'),
+  material('wheat', '小麦'),
   material('string', '线'),
   material('feather', '羽毛'),
   material('leather', '皮革'),

@@ -46,6 +46,7 @@ function toolRecipes(): ShapedRecipe[] {
     out.push(shaped(['MM', 'MS', ' S'], key, `${tier}_axe`));
     out.push(shaped(['M', 'S', 'S'], key, `${tier}_shovel`));
     out.push(shaped(['M', 'M', 'S'], key, `${tier}_sword`));
+    out.push(shaped(['MM', ' S', ' S'], key, `${tier}_hoe`));
   }
   return out;
 }
@@ -121,6 +122,7 @@ export const RECIPES: Recipe[] = [
   shaped(['GSG', 'SGS', 'GSG'], { G: 'gunpowder', S: 'sand' }, 'tnt'),
   shaped([' SF', 'S F', ' SF'], { S: 'stick', F: 'string' }, 'bow'),
   shaped(['F', 'S', 'E'], { F: 'cobblestone', S: 'stick', E: 'feather' }, 'arrow', 4),
+  shaped(['WWW'], { W: 'wheat' }, 'bread'),
   shapeless(['pumpkin'], 'wheat_seeds', 4),
   shapeless(['melon_slice'], 'wheat_seeds'),
   shaped(['MMM', 'MMM', 'MMM'], { M: 'melon_slice' }, 'melon'),

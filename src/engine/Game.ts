@@ -9,6 +9,7 @@ import {
   FACINGS,
   FACING_MASK,
   FULL_BOX,
+  CROP_MAX_STAGE,
   SLAB_TOP_BIT,
   STAIRS_FLIP_BIT,
   collisionBoxes,
@@ -116,6 +117,8 @@ const FACING_LABELS = ['南 (+Z)', '西 (-X)', '北 (-Z)', '东 (+X)'];
 const XP_PER_MOB_KILL_MULTIPLIER = 1;
 const SPAWN_PROTECTION_TICKS = 40;
 const REPLACEABLE_BLOCKS: ReadonlySet<number> = new Set<number>([BlockId.AIR, BlockId.WATER, BlockId.TALL_GRASS]);
+/** 成熟小麦额外掉落的种子上限。 */
+const WHEAT_MAX_SEED_DROP = 3;
 /** 破坏一个方块炸出的碎屑数量。 */
 const BREAK_PARTICLE_COUNT = 12;
 /** 爆炸粒子数量与取样贴图（用石头的灰色当烟）。 */
@@ -989,7 +992,20 @@ export class Game implements EntityContext, ContainerHost {
     }
     this.sound.play('break');
     this.renderer.hand.swing();
-    if (withDrops && !this.rules.infiniteItems) {
+    if (withDrops && !this.rules.infiniteItems && id === BlockId.WHEAT) {
+      // 成熟的小麦掉 1 小麦 + 0~3 种子，没长成只掉回 1 颗种子
+      const mature = this.world.getMeta(x, y, z) >= CROP_MAX_STAGE;
+      if (mature) {
+        this.dropItem(x + 0.5, y + 0.5, z + 0.5, { id: 'wheat', count: 1 }, 0.2);
+        const seeds = Math.floor(this.rng() * (WHEAT_MAX_SEED_DROP + 1));
+        if (seeds > 0) {
+          this.dropItem(x + 0.5, y + 0.5, z + 0.5, { id: 'wheat_seeds', count: seeds }, 0.2);
+        }
+      } else {
+        this.dropItem(x + 0.5, y + 0.5, z + 0.5, { id: 'wheat_seeds', count: 1 }, 0.2);
+      }
+      this.player.onBlockBroken();
+    } else if (withDrops && !this.rules.infiniteItems) {
       const held = this.player.heldItem;
       for (const drop of rollDrops(def, held, this.rng)) {
         this.dropItem(x + 0.5, y + 0.5, z + 0.5, drop, 0.2);
@@ -1110,9 +1126,54 @@ export class Game implements EntityContext, ContainerHost {
       }
       return;
     }
+    if (def.tool?.type === ToolType.HOE && hit && this.tryTill(hit)) {
+      return;
+    }
+    if (def.id === 'wheat_seeds' && hit && this.tryPlantSeeds(hit)) {
+      return;
+    }
     if (def.kind === ItemKind.BLOCK && def.blockId !== undefined && hit) {
       this.tryPlaceBlock(def.blockId, hit);
     }
+  }
+
+  /** 锄地：对着草方块或泥土的顶面用锄，且上方是空的，变成耕地。 */
+  private tryTill(hit: RayHit): boolean {
+    if (!this.rules.canModifyBlocks || hit.ny !== 1) {
+      return false;
+    }
+    const id = this.world.getBlock(hit.x, hit.y, hit.z);
+    if (id !== BlockId.GRASS && id !== BlockId.DIRT) {
+      return false;
+    }
+    if (this.world.getBlock(hit.x, hit.y + 1, hit.z) !== BlockId.AIR) {
+      return false;
+    }
+    this.world.setBlock(hit.x, hit.y, hit.z, BlockId.FARMLAND);
+    this.sound.play('place');
+    this.renderer.hand.swing();
+    this.damageHeldTool(1);
+    return true;
+  }
+
+  /** 播种：对着耕地顶面撒小麦种子。 */
+  private tryPlantSeeds(hit: RayHit): boolean {
+    if (!this.rules.canModifyBlocks || hit.ny !== 1) {
+      return false;
+    }
+    if (this.world.getBlock(hit.x, hit.y, hit.z) !== BlockId.FARMLAND) {
+      return false;
+    }
+    if (this.world.getBlock(hit.x, hit.y + 1, hit.z) !== BlockId.AIR) {
+      return false;
+    }
+    this.world.setBlock(hit.x, hit.y + 1, hit.z, BlockId.WHEAT, 0);
+    this.sound.play('place');
+    this.renderer.hand.swing();
+    if (!this.rules.infiniteItems) {
+      this.player.inventory.consume(this.player.selectedSlot, 1);
+    }
+    return true;
   }
 
   private interactWithBlock(def: BlockDef, hit: RayHit): boolean {
