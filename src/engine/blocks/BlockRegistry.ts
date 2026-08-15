@@ -143,6 +143,7 @@ export const BlockId = {
   DIAMOND_ORE: 56,
   BED: 26,
   FENCE: 85,
+  FENCE_GATE: 107,
   WOODEN_DOOR: 64,
   LADDER: 65,
   CHEST: 54,
@@ -427,6 +428,15 @@ export const BLOCK_DEFS: BlockDef[] = [
       opaque: false,
     }),
     shape: BlockShape.FENCE,
+    connectGroup: 'fence',
+  },
+  {
+    ...cube(BlockId.FENCE_GATE, 'fence_gate', '橡木栅栏门', same('planks'), 2, ToolType.AXE, {
+      render: RenderType.CUTOUT,
+      opaque: false,
+      interactive: true,
+    }),
+    shape: BlockShape.FENCE_GATE,
     connectGroup: 'fence',
   },
   {

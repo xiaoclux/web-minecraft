@@ -1133,6 +1133,7 @@ export class Game implements EntityContext, ContainerHost {
         this.useBed(hit.x, hit.y, hit.z);
         return true;
       case BlockId.WOODEN_DOOR:
+      case BlockId.FENCE_GATE:
         this.toggleDoor(hit.x, hit.y, hit.z);
         return true;
       case BlockId.TNT:
@@ -1148,8 +1149,8 @@ export class Game implements EntityContext, ContainerHost {
    * 半砖分上下半，楼梯的高侧朝玩家视线方向、点在上半则上下颠倒。
    */
   private placementMeta(def: BlockDef, hit: RayHit): number {
-    if (def.shape === BlockShape.BED) {
-      // 床头朝视线方向（放在玩家前方），meta 记录床尾 → 床头的方向
+    if (def.shape === BlockShape.BED || def.shape === BlockShape.FENCE_GATE) {
+      // 床头朝视线方向（放在玩家前方）；栅栏门的门板横在视线方向上
       return this.lookFacingIndex();
     }
     if (def.shape === BlockShape.LADDER) {
@@ -1591,7 +1592,7 @@ export class Game implements EntityContext, ContainerHost {
     this.controls.requestLock();
   }
 
-  /** 开 / 关一扇门：两半的开合状态一起翻转。 */
+  /** 开 / 关一扇门或栅栏门：门的两半开合状态一起翻转。 */
   private toggleDoor(x: number, y: number, z: number): void {
     const meta = this.world.getMeta(x, y, z);
     const opened = (meta & DOOR_OPEN_BIT) === 0;
@@ -1601,7 +1602,7 @@ export class Game implements EntityContext, ContainerHost {
       this.world.setMeta(bx, by, bz, opened ? m | DOOR_OPEN_BIT : m & ~DOOR_OPEN_BIT);
     };
     apply(x, y, z);
-    if (partner && this.world.getBlock(partner.x, partner.y, partner.z) === BlockId.WOODEN_DOOR) {
+    if (partner && this.world.getBlock(partner.x, partner.y, partner.z) === this.world.getBlock(x, y, z)) {
       apply(partner.x, partner.y, partner.z);
     }
     this.sound.play('place');

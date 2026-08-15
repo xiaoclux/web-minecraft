@@ -33,6 +33,8 @@ export const BlockShape = {
   DOOR: 'door',
   /** 栅栏：中心柱 + 朝已连接方向伸出的横杆。 */
   FENCE: 'fence',
+  /** 栅栏门：关着时挡住通道，开着时两扇转到两侧、可以走过去。 */
+  FENCE_GATE: 'fence_gate',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -52,6 +54,8 @@ export const DOOR_UPPER_BIT = 8;
 export const DOOR_THICKNESS = 3 / 16;
 /** 栅栏的碰撞高度（1.8.9 为 1.5 格，防止跳过去）。 */
 export const FENCE_COLLISION_HEIGHT = 1.5;
+/** 栅栏门 meta：该位为 1 表示门是开着的（与门共用同一位）。 */
+export const GATE_OPEN_BIT = DOOR_OPEN_BIT;
 /** 连接掩码的位：按 FACINGS 顺序。 */
 export function connectionBit(facing: number): number {
   return 1 << facing;
@@ -161,6 +165,35 @@ const FENCE_COLLISION_BOXES: readonly BlockBox[][] = Array.from({ length: CONNEC
   buildFenceBoxes(mask, FENCE_COLLISION_HEIGHT),
 );
 
+/** 栅栏门：门板厚 2/16、下沿离地 5/16；开着时两扇缩到通道两侧。 */
+const GATE_THICKNESS_MIN = 7 / 16;
+const GATE_THICKNESS_MAX = 9 / 16;
+const GATE_BOTTOM = 5 / 16;
+const GATE_SIDE_DEPTH = 2 / 16;
+
+function buildGateBoxes(top: number): readonly BlockBox[][][] {
+  return FACINGS.map(([fx]) => {
+    const alongX = fx !== 0;
+    const closed = alongX
+      ? [box(GATE_THICKNESS_MIN, GATE_BOTTOM, 0, GATE_THICKNESS_MAX, top, 1)]
+      : [box(0, GATE_BOTTOM, GATE_THICKNESS_MIN, 1, top, GATE_THICKNESS_MAX)];
+    const open = alongX
+      ? [
+          box(GATE_THICKNESS_MIN, GATE_BOTTOM, 0, GATE_THICKNESS_MAX, top, GATE_SIDE_DEPTH),
+          box(GATE_THICKNESS_MIN, GATE_BOTTOM, 1 - GATE_SIDE_DEPTH, GATE_THICKNESS_MAX, top, 1),
+        ]
+      : [
+          box(0, GATE_BOTTOM, GATE_THICKNESS_MIN, GATE_SIDE_DEPTH, top, GATE_THICKNESS_MAX),
+          box(1 - GATE_SIDE_DEPTH, GATE_BOTTOM, GATE_THICKNESS_MIN, 1, top, GATE_THICKNESS_MAX),
+        ];
+    return [closed, open];
+  });
+}
+
+const GATE_BOXES = buildGateBoxes(1);
+/** 关着的栅栏门和栅栏一样有 1.5 格碰撞高度，跳不过去。 */
+const GATE_COLLISION_BOXES = buildGateBoxes(FENCE_COLLISION_HEIGHT);
+
 /** 梯子厚度（1.8.9 为 2/16）。 */
 const LADDER_THICKNESS = 2 / 16;
 /** 按朝向序号索引：朝向是梯子正面对着的方向，背面贴墙。 */
@@ -210,6 +243,8 @@ export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readon
       return LADDER_BOXES[meta & FACING_MASK];
     case BlockShape.DOOR:
       return DOOR_BOXES[meta & FACING_MASK][(meta & DOOR_OPEN_BIT) === 0 ? 0 : 1];
+    case BlockShape.FENCE_GATE:
+      return GATE_BOXES[meta & FACING_MASK][(meta & GATE_OPEN_BIT) === 0 ? 0 : 1];
     default:
       return FULL_BOXES;
   }
@@ -222,6 +257,10 @@ export function collisionBoxes(def: BlockDef, meta: number, connections = 0): re
   }
   if (def.shape === BlockShape.FENCE) {
     return FENCE_COLLISION_BOXES[connections & (CONNECTION_COUNT - 1)];
+  }
+  if (def.shape === BlockShape.FENCE_GATE) {
+    // 开着的栅栏门可以直接走过去
+    return (meta & GATE_OPEN_BIT) !== 0 ? NO_BOXES : GATE_COLLISION_BOXES[meta & FACING_MASK][0];
   }
   return shapeBoxes(def, meta, connections);
 }
