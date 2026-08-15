@@ -24,6 +24,7 @@ interface InventoryScreenProps {
 const CREATIVE_TABS = [
   { key: 'blocks', label: '方块', filter: (kind: string) => kind === ItemKind.BLOCK },
   { key: 'tools', label: '工具', filter: (kind: string) => kind === ItemKind.TOOL },
+  { key: 'armor', label: '盔甲', filter: (kind: string) => kind === ItemKind.ARMOR },
   { key: 'food', label: '食物', filter: (kind: string) => kind === ItemKind.FOOD },
   { key: 'materials', label: '材料', filter: (kind: string) => kind === ItemKind.MATERIAL },
 ] as const;

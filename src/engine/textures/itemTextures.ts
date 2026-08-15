@@ -131,7 +131,8 @@ function meatPainter(raw: Rgba, cooked: boolean): Painter {
 }
 
 /** 物品图标生成器表。 */
-export const ITEM_ICON_PAINTERS: Record<string, Painter> = {
+/** 手绘的物品图标（盔甲那类批量生成的在下面合并进来）。 */
+const HAND_DRAWN_ICONS: Record<string, Painter> = {
   ...drawTool('pickaxe', PICKAXE),
   ...drawTool('axe', AXE),
   ...drawTool('shovel', SHOVEL),
@@ -393,6 +394,75 @@ export const ITEM_ICON_PAINTERS: Record<string, Painter> = {
     '................',
   ]),
 };
+
+/** 盔甲：四种材质 × 四个部位，同一套像素图换个主色。 */
+const ARMOR_TIER_COLORS: Record<string, Rgba> = {
+  leather: hex('#8a5a35'),
+  iron: hex('#d8d8d8'),
+  golden: hex('#f0c040'),
+  diamond: hex('#4be3d6'),
+};
+
+const HELMET_ROWS = [
+  '...XXXXXXXXXX...',
+  '..XXXXXXXXXXXX..',
+  '..XXXXXXXXXXXX..',
+  '..XXXDDDDDDXXX..',
+  '..XXXDDDDDDXXX..',
+  '..XXXXXXXXXXXX..',
+  '..XXX......XXX..',
+  '..XX........XX..',
+];
+const CHESTPLATE_ROWS = [
+  '..XX........XX..',
+  '.XXXXXXXXXXXXXX.',
+  'XXXXXXXXXXXXXXXX',
+  'XXXXXXDDDDXXXXXX',
+  'XXXXXXDDDDXXXXXX',
+  '.XXXXXXXXXXXXXX.',
+  '..XXXXXXXXXXXX..',
+  '..XXXXXXXXXXXX..',
+  '..XXXXXXXXXXXX..',
+  '...XXXXXXXXXX...',
+];
+const LEGGINGS_ROWS = [
+  '..XXXXXXXXXXXX..',
+  '..XXXXXXXXXXXX..',
+  '..XXXXDDDDXXXX..',
+  '..XXXXXXXXXXXX..',
+  '..XXXXX..XXXXX..',
+  '..XXXX....XXXX..',
+  '..XXXX....XXXX..',
+  '..XXXX....XXXX..',
+  '..XXX......XXX..',
+];
+const BOOTS_ROWS = [
+  '..XXXX....XXXX..',
+  '..XXXX....XXXX..',
+  '.XXXXXX..XXXXXX.',
+  '.XXXXXXXXXXXXXX.',
+  '.XXXXXXXXXXXXXX.',
+  '..XXXXX..XXXXX..',
+];
+const ARMOR_PIECE_ROWS: Record<string, { rows: string[]; offsetY: number }> = {
+  helmet: { rows: HELMET_ROWS, offsetY: 3 },
+  chestplate: { rows: CHESTPLATE_ROWS, offsetY: 3 },
+  leggings: { rows: LEGGINGS_ROWS, offsetY: 4 },
+  boots: { rows: BOOTS_ROWS, offsetY: 6 },
+};
+
+function armorPainters(): Record<string, Painter> {
+  const out: Record<string, Painter> = {};
+  for (const [tier, color] of Object.entries(ARMOR_TIER_COLORS)) {
+    for (const [piece, { rows, offsetY }] of Object.entries(ARMOR_PIECE_ROWS)) {
+      out[`${tier}_${piece}`] = (c) => c.draw(rows, { X: color, D: shade(color, 0.75) }, 0, offsetY);
+    }
+  }
+  return out;
+}
+
+/** 全部物品图标。 */
+export const ITEM_ICON_PAINTERS: Record<string, Painter> = { ...HAND_DRAWN_ICONS, ...armorPainters() };
 
 /** 生成物品图标；未知 key 返回品红方块。 */
 export function paintItemIcon(key: string): PixelCanvas {

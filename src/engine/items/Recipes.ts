@@ -63,6 +63,30 @@ const STAIRS_MATERIAL: Record<string, string> = {
   sandstone_stairs: 'sandstone',
 };
 
+/** 盔甲：四种材质各四件，图案与 1.8.9 一致。 */
+const ARMOR_MATERIAL: Record<string, string> = {
+  leather: 'leather',
+  iron: 'iron_ingot',
+  golden: 'gold_ingot',
+  diamond: 'diamond',
+};
+const ARMOR_PATTERNS: Record<string, string[]> = {
+  helmet: ['MMM', 'M M'],
+  chestplate: ['M M', 'MMM', 'MMM'],
+  leggings: ['MMM', 'M M', 'M M'],
+  boots: ['M M', 'M M'],
+};
+
+function armorRecipes(): ShapedRecipe[] {
+  const out: ShapedRecipe[] = [];
+  for (const [tier, mat] of Object.entries(ARMOR_MATERIAL)) {
+    for (const [piece, pattern] of Object.entries(ARMOR_PATTERNS)) {
+      out.push(shaped(pattern, { M: mat }, `${tier}_${piece}`));
+    }
+  }
+  return out;
+}
+
 function slabAndStairsRecipes(): ShapedRecipe[] {
   const out: ShapedRecipe[] = [];
   for (const [result, material] of Object.entries(SLAB_MATERIAL)) {
@@ -102,6 +126,7 @@ export const RECIPES: Recipe[] = [
   shaped(['MMM', 'MMM', 'MMM'], { M: 'melon_slice' }, 'melon'),
   ...toolRecipes(),
   ...slabAndStairsRecipes(),
+  ...armorRecipes(),
 ];
 
 for (const recipe of RECIPES) {

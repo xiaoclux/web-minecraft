@@ -6,6 +6,7 @@ export const ItemKind = {
   BLOCK: 'block',
   TOOL: 'tool',
   FOOD: 'food',
+  ARMOR: 'armor',
   MATERIAL: 'material',
 } as const;
 export type ItemKind = (typeof ItemKind)[keyof typeof ItemKind];
@@ -18,6 +19,25 @@ export interface ToolProps {
   attackDamage: number;
   /** 挖掘速度倍率。 */
   speed: number;
+  durability: number;
+}
+
+/** 盔甲部位（同时也是装备栏的顺序：头、胸、腿、脚）。 */
+export const ArmorSlot = {
+  HELMET: 0,
+  CHESTPLATE: 1,
+  LEGGINGS: 2,
+  BOOTS: 3,
+} as const;
+export type ArmorSlot = (typeof ArmorSlot)[keyof typeof ArmorSlot];
+/** 装备栏格子数。 */
+export const ARMOR_SLOT_COUNT = 4;
+
+/** 盔甲属性。 */
+export interface ArmorProps {
+  slot: ArmorSlot;
+  /** 护甲点数（每点减伤 4%）。 */
+  defense: number;
   durability: number;
 }
 
@@ -37,6 +57,7 @@ export interface ItemDef {
   blockId?: number;
   tool?: ToolProps;
   food?: FoodProps;
+  armor?: ArmorProps;
   /** 图标贴图 key（非方块物品）。 */
   icon?: string;
   /** 燃料燃烧 tick（用于熔炉）。 */
@@ -73,6 +94,38 @@ const tool = (type: ToolType, tier: ToolTier): ItemDef => ({
     durability: TIER_DURABILITY[tier],
   },
 });
+
+/** 盔甲材质：护甲点数与耐久都取自 1.8.9（顺序为头/胸/腿/脚）。 */
+const ARMOR_MATERIALS: Record<string, { label: string; defense: number[]; durability: number[] }> = {
+  leather: { label: '皮革', defense: [1, 3, 2, 1], durability: [55, 80, 75, 65] },
+  iron: { label: '铁', defense: [2, 6, 5, 2], durability: [165, 240, 225, 195] },
+  golden: { label: '金', defense: [2, 5, 3, 1], durability: [77, 112, 105, 91] },
+  diamond: { label: '钻石', defense: [3, 8, 6, 3], durability: [363, 528, 495, 429] },
+};
+const ARMOR_PIECES = ['helmet', 'chestplate', 'leggings', 'boots'] as const;
+const ARMOR_PIECE_LABEL: Record<(typeof ARMOR_PIECES)[number], string> = {
+  helmet: '头盔',
+  chestplate: '胸甲',
+  leggings: '护腿',
+  boots: '靴子',
+};
+
+function armorItems(): ItemDef[] {
+  const out: ItemDef[] = [];
+  for (const [tier, spec] of Object.entries(ARMOR_MATERIALS)) {
+    ARMOR_PIECES.forEach((piece, index) => {
+      out.push({
+        id: `${tier}_${piece}`,
+        label: `${spec.label}${ARMOR_PIECE_LABEL[piece]}`,
+        kind: ItemKind.ARMOR,
+        maxStack: 1,
+        icon: `${tier}_${piece}`,
+        armor: { slot: index as ArmorSlot, defense: spec.defense[index], durability: spec.durability[index] },
+      });
+    });
+  }
+  return out;
+}
 
 const material = (id: string, label: string, extra: Partial<ItemDef> = {}): ItemDef => ({
   id,
@@ -128,6 +181,7 @@ const TIERS: ToolTier[] = [ToolTier.WOOD, ToolTier.STONE, ToolTier.IRON, ToolTie
 export const ITEM_DEFS: ItemDef[] = [
   ...BLOCK_DEFS.filter((b) => b.name !== 'air' && b.name !== 'water' && !b.noItem).map(blockItem),
   ...TIERS.flatMap((tier) => TOOL_TYPES.map((type) => tool(type, tier))),
+  ...armorItems(),
   material('stick', '木棍', { burnTicks: STICK_BURN_TICKS }),
   material('coal', '煤炭', { burnTicks: FURNACE_ITEM_BURN_TICKS }),
   material('charcoal', '木炭', { burnTicks: FURNACE_ITEM_BURN_TICKS }),
