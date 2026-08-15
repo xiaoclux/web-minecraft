@@ -32,3 +32,12 @@ export function rleDecode(encoded: Uint32Array, length: number): Uint8Array {
   }
   return out;
 }
+
+/** RLE 解压，长度由数据本身决定（各段长度之和）。 */
+export function rleDecodeAuto(encoded: Uint32Array): Uint8Array {
+  let length = 0;
+  for (let i = 0; i + 1 < encoded.length; i += 2) {
+    length += encoded[i];
+  }
+  return rleDecode(encoded, length);
+}

@@ -1,4 +1,19 @@
-import { CHUNK_AREA, CHUNK_KEY_LIMIT, CHUNK_SIZE, CHUNK_VOLUME, WORLD_SIZE_Y } from '../constants/world';
+import { BlockId } from '../blocks/BlockRegistry';
+import {
+  CHUNK_AREA,
+  CHUNK_KEY_LIMIT,
+  CHUNK_SIZE,
+  MAX_LIGHT,
+  SECTION_COUNT,
+  SECTION_HEIGHT,
+  SECTION_MASK,
+  SECTION_SHIFT,
+  SECTION_VOLUME,
+  WORLD_SIZE_Y,
+} from '../constants/world';
+
+/** 未分配段的默认天空光：段内全是空气且在地表之上，天光满值。 */
+export const DEFAULT_SKY_LIGHT = MAX_LIGHT;
 
 /** chunk 坐标 → Map 键（支持负坐标）。 */
 export function chunkKey(cx: number, cz: number): number {
@@ -10,25 +25,52 @@ export function toChunkCoord(v: number): number {
   return Math.floor(v / CHUNK_SIZE);
 }
 
-/** chunk 内局部索引。调用方保证 0≤lx,lz<16、0≤y<64。 */
+/** chunk 内跨全高的线性索引（y 主序，用于存档等整列遍历）。 */
 export function localIndex(lx: number, y: number, lz: number): number {
   return (y * CHUNK_SIZE + lz) * CHUNK_SIZE + lx;
 }
 
-/** 一个 16×64×16 的世界分块：方块 id、附加数据、光照与高度图。 */
+/** 段内索引。调用方保证 0≤lx,lz<16。 */
+export function sectionIndex(lx: number, y: number, lz: number): number {
+  return (((y & SECTION_MASK) * CHUNK_SIZE) + lz) * CHUNK_SIZE + lx;
+}
+
+/**
+ * chunk 的一段（16×16×16）：方块 id、附加数据与两个光照通道。
+ * 只有真正写入过非默认值的段才会被分配，空气段不占内存。
+ */
+export class ChunkSection {
+  readonly blocks = new Uint8Array(SECTION_VOLUME);
+  /** 方块附加数据（如水位、朝向）。 */
+  readonly meta = new Uint8Array(SECTION_VOLUME);
+  readonly skyLight = new Uint8Array(SECTION_VOLUME);
+  readonly blockLight = new Uint8Array(SECTION_VOLUME);
+
+  constructor(readonly sy: number) {
+    // 与"未分配段"保持一致的初值，段被分配的瞬间不改变任何可见状态
+    this.skyLight.fill(DEFAULT_SKY_LIGHT);
+  }
+
+  /** 段底部的世界 y。 */
+  get baseY(): number {
+    return this.sy * SECTION_HEIGHT;
+  }
+}
+
+/** 一个 16×WORLD_SIZE_Y×16 的世界分块：按段存方块与光照，另有整块共用的高度图。 */
 export class Chunk {
   readonly key: number;
-  readonly blocks = new Uint8Array(CHUNK_VOLUME);
-  /** 方块附加数据（如水位）。 */
-  readonly meta = new Uint8Array(CHUNK_VOLUME);
-  readonly skyLight = new Uint8Array(CHUNK_VOLUME);
-  readonly blockLight = new Uint8Array(CHUNK_VOLUME);
-  /** 每列最高不透光方块之上的 y。 */
-  readonly heightMap = new Uint8Array(CHUNK_AREA);
+  /** 按段号索引；null 表示该段全是空气、天光满值。 */
+  readonly sections: (ChunkSection | null)[] = new Array(SECTION_COUNT).fill(null);
+  /** 每列最高不透光方块之上的 y（0~WORLD_SIZE_Y，需要 16 位）。 */
+  readonly heightMap = new Uint16Array(CHUNK_AREA);
   /** 玩家 / 实体改动过 → 必须存档、不可卸载。 */
   isModified = false;
   /** 光照是否已计算。 */
   isLit = false;
+  /** 已分配段的段号范围；无任何分配时 lowestSection > highestSection。 */
+  private lowestSection = SECTION_COUNT;
+  private highestSection = -1;
 
   constructor(
     readonly cx: number,
@@ -46,16 +88,63 @@ export class Chunk {
     return this.cz * CHUNK_SIZE;
   }
 
-  /** 读取局部方块。 */
-  getLocal(lx: number, y: number, lz: number): number {
-    return this.blocks[localIndex(lx, y, lz)];
+  /** 已分配段中最低的方块 y（没有已分配段时返回 WORLD_SIZE_Y）。 */
+  get filledMinY(): number {
+    return this.highestSection < 0 ? WORLD_SIZE_Y : this.lowestSection * SECTION_HEIGHT;
   }
 
-  /** 写入局部方块（不做任何标记）。 */
+  /** 已分配段中最高的方块 y + 1（没有已分配段时返回 0）。 */
+  get filledMaxY(): number {
+    return this.highestSection < 0 ? 0 : (this.highestSection + 1) * SECTION_HEIGHT;
+  }
+
+  /** 取 y 所在的段；未分配返回 null。调用方保证 0≤y<WORLD_SIZE_Y。 */
+  sectionAt(y: number): ChunkSection | null {
+    return this.sections[y >> SECTION_SHIFT];
+  }
+
+  /** 取 y 所在的段，未分配则分配。调用方保证 0≤y<WORLD_SIZE_Y。 */
+  ensureSectionAt(y: number): ChunkSection {
+    const sy = y >> SECTION_SHIFT;
+    const existing = this.sections[sy];
+    if (existing) {
+      return existing;
+    }
+    const section = new ChunkSection(sy);
+    this.sections[sy] = section;
+    if (sy < this.lowestSection) {
+      this.lowestSection = sy;
+    }
+    if (sy > this.highestSection) {
+      this.highestSection = sy;
+    }
+    return section;
+  }
+
+  /** 读取局部方块。 */
+  getLocal(lx: number, y: number, lz: number): number {
+    const section = this.sections[y >> SECTION_SHIFT];
+    return section ? section.blocks[sectionIndex(lx, y, lz)] : BlockId.AIR;
+  }
+
+  /** 读取局部附加数据。 */
+  getLocalMeta(lx: number, y: number, lz: number): number {
+    const section = this.sections[y >> SECTION_SHIFT];
+    return section ? section.meta[sectionIndex(lx, y, lz)] : 0;
+  }
+
+  /** 写入局部方块（不做任何标记）。写空气到未分配段是空操作。 */
   setLocal(lx: number, y: number, lz: number, id: number, meta = 0): void {
-    const idx = localIndex(lx, y, lz);
-    this.blocks[idx] = id;
-    this.meta[idx] = meta;
+    let section = this.sections[y >> SECTION_SHIFT];
+    if (!section) {
+      if (id === BlockId.AIR && meta === 0) {
+        return;
+      }
+      section = this.ensureSectionAt(y);
+    }
+    const idx = sectionIndex(lx, y, lz);
+    section.blocks[idx] = id;
+    section.meta[idx] = meta;
   }
 
   /** 用世界坐标写入；落在本 chunk 外或 y 越界则忽略。生成器裁剪用。 */
@@ -78,5 +167,57 @@ export class Chunk {
     const lx = x - this.originX;
     const lz = z - this.originZ;
     return lx >= 0 && lz >= 0 && lx < CHUNK_SIZE && lz < CHUNK_SIZE;
+  }
+
+  /** 把全部方块 id 展开成跨全高的线性数组（存档 / 测试用，长度按已分配段截断）。 */
+  toFlatBlocks(): Uint8Array {
+    const height = this.filledMaxY;
+    const out = new Uint8Array(CHUNK_AREA * height);
+    for (let y = 0; y < height; y++) {
+      const section = this.sections[y >> SECTION_SHIFT];
+      if (!section) {
+        continue;
+      }
+      const base = sectionIndex(0, y, 0);
+      out.set(section.blocks.subarray(base, base + CHUNK_AREA), localIndex(0, y, 0));
+    }
+    return out;
+  }
+
+  /** 同 toFlatBlocks，但取附加数据。 */
+  toFlatMeta(): Uint8Array {
+    const height = this.filledMaxY;
+    const out = new Uint8Array(CHUNK_AREA * height);
+    for (let y = 0; y < height; y++) {
+      const section = this.sections[y >> SECTION_SHIFT];
+      if (!section) {
+        continue;
+      }
+      const base = sectionIndex(0, y, 0);
+      out.set(section.meta.subarray(base, base + CHUNK_AREA), localIndex(0, y, 0));
+    }
+    return out;
+  }
+
+  /** 从跨全高的线性数组还原方块与附加数据（长度可短于世界高度，其余保持空气）。 */
+  loadFlat(blocks: Uint8Array, meta: Uint8Array): void {
+    const height = Math.min(WORLD_SIZE_Y, Math.floor(blocks.length / CHUNK_AREA));
+    for (let y = 0; y < height; y++) {
+      const src = localIndex(0, y, 0);
+      let empty = true;
+      for (let i = 0; i < CHUNK_AREA; i++) {
+        if (blocks[src + i] !== BlockId.AIR || meta[src + i] !== 0) {
+          empty = false;
+          break;
+        }
+      }
+      if (empty) {
+        continue;
+      }
+      const section = this.ensureSectionAt(y);
+      const dst = sectionIndex(0, y, 0);
+      section.blocks.set(blocks.subarray(src, src + CHUNK_AREA), dst);
+      section.meta.set(meta.subarray(src, src + CHUNK_AREA), dst);
+    }
   }
 }

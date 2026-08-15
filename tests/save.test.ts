@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { bytesEqual } from './helpers';
 import { LEGACY_WORLD_SIZE_X, LEGACY_WORLD_SIZE_Z, SAVE_FORMAT_VERSION } from '../src/engine/constants/save';
 import { GameMode, Difficulty } from '../src/engine/constants/game';
-import { CHUNK_VOLUME, WORLD_SIZE_Y, WorldType } from '../src/engine/constants/world';
+import { WORLD_SIZE_Y, WorldType } from '../src/engine/constants/world';
 import { migrateLegacySave, type LegacyWorldSave } from '../src/engine/save/migrate';
+import { deserializeChunk } from '../src/engine/save/chunkSerializer';
 import { rleDecode, rleEncode } from '../src/engine/save/serialize';
 import { Chunk } from '../src/engine/world/Chunk';
 import { TerrainGenerator } from '../src/engine/world/TerrainGenerator';
@@ -18,10 +19,11 @@ describe('RLE 序列化', () => {
   it('真实 chunk 压缩后可还原且明显变小', () => {
     const chunk = new Chunk(3, -2);
     new TerrainGenerator('save-test').generateChunk(chunk);
-    const encoded = rleEncode(chunk.blocks);
-    expect(encoded.byteLength).toBeLessThan(chunk.blocks.byteLength);
-    const decoded = rleDecode(encoded, chunk.blocks.length);
-    expect(bytesEqual(decoded, chunk.blocks)).toBe(true);
+    const flat = chunk.toFlatBlocks();
+    const encoded = rleEncode(flat);
+    expect(encoded.byteLength).toBeLessThan(flat.byteLength);
+    const decoded = rleDecode(encoded, flat.length);
+    expect(bytesEqual(decoded, flat)).toBe(true);
   });
 
   it('长度不匹配时抛错', () => {
@@ -60,13 +62,9 @@ describe('旧存档迁移', () => {
     expect(migrated.chunks).toHaveLength(256);
     const chunkA = migrated.chunks.find((c) => c.cx === 1 && c.cz === 2);
     expect(chunkA).toBeDefined();
-    const decodedA = rleDecode(chunkA!.blocks, CHUNK_VOLUME);
-    const chunkObj = new Chunk(1, 2);
-    chunkObj.blocks.set(decodedA);
+    const chunkObj = deserializeChunk(chunkA!);
     expect(chunkObj.getLocal(1, 5, 1)).toBe(7);
     const chunkB = migrated.chunks.find((c) => c.cx === 15 && c.cz === 15)!;
-    const objB = new Chunk(15, 15);
-    objB.blocks.set(rleDecode(chunkB.blocks, CHUNK_VOLUME));
-    expect(objB.getLocal(15, 63, 15)).toBe(9);
+    expect(deserializeChunk(chunkB).getLocal(15, 63, 15)).toBe(9);
   });
 });

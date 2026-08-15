@@ -1,6 +1,7 @@
 import { BlockId, getBlock } from '../blocks/BlockRegistry';
-import { CHUNK_SIZE, MAX_LIGHT, WORLD_SIZE_Y } from '../constants/world';
-import { Chunk, chunkKey, localIndex, toChunkCoord } from './Chunk';
+import { CHUNK_SIZE, MAX_LIGHT, SECTION_SHIFT, WORLD_SIZE_Y } from '../constants/world';
+import type { ChunkSection } from './Chunk';
+import { Chunk, DEFAULT_SKY_LIGHT, chunkKey, sectionIndex, toChunkCoord } from './Chunk';
 
 /** 一次方块变更。 */
 export interface BlockChange {
@@ -34,6 +35,8 @@ export class World {
   private lastChunk: Chunk | null = null;
   /** locate() 的输出槽（避免每次访问分配对象；调用后立即消费）。 */
   private hitChunk: Chunk | null = null;
+  /** 命中的段；null 表示该段未分配（全空气、天光满值）。 */
+  private hitSection: ChunkSection | null = null;
   private hitIndex = 0;
 
   // ---------------------------------------------------------------- chunk 管理
@@ -138,7 +141,7 @@ export class World {
     return y >= 0 && y < this.sizeY && this.hasChunkAt(x, z);
   }
 
-  /** 定位坐标所在 chunk 与局部索引，写入 hitChunk / hitIndex；未加载或 y 越界返回 false。 */
+  /** 定位坐标所在 chunk / 段与段内索引，写入 hitChunk / hitSection / hitIndex；未加载或 y 越界返回 false。 */
   private locate(x: number, y: number, z: number): boolean {
     if (y < 0 || y >= this.sizeY) {
       return false;
@@ -154,26 +157,38 @@ export class World {
       this.lastChunk = chunk;
     }
     this.hitChunk = chunk;
-    this.hitIndex = (y * CHUNK_SIZE + (z - chunk.originZ)) * CHUNK_SIZE + (x - chunk.originX);
+    this.hitSection = chunk.sectionAt(y);
+    this.hitIndex = sectionIndex(x - chunk.originX, y, z - chunk.originZ);
     return true;
   }
 
   /** 读取方块；未加载 / 越界返回空气。 */
   getBlock(x: number, y: number, z: number): number {
-    return this.locate(x, y, z) ? this.hitChunk!.blocks[this.hitIndex] : BlockId.AIR;
+    if (!this.locate(x, y, z) || !this.hitSection) {
+      return BlockId.AIR;
+    }
+    return this.hitSection.blocks[this.hitIndex];
   }
 
   /** 读取方块附加数据；未加载返回 0。 */
   getMeta(x: number, y: number, z: number): number {
-    return this.locate(x, y, z) ? this.hitChunk!.meta[this.hitIndex] : 0;
+    if (!this.locate(x, y, z) || !this.hitSection) {
+      return 0;
+    }
+    return this.hitSection.meta[this.hitIndex];
   }
 
   /** 直接写入方块（不触发光照与脏标记、不标记修改），用于世界生成 / 测试搭建。 */
   setBlockRaw(x: number, y: number, z: number, id: number, meta = 0): void {
-    if (this.locate(x, y, z)) {
-      this.hitChunk!.blocks[this.hitIndex] = id;
-      this.hitChunk!.meta[this.hitIndex] = meta;
+    if (!this.locate(x, y, z)) {
+      return;
     }
+    const section = this.hitSection ?? (id === BlockId.AIR && meta === 0 ? null : this.hitChunk!.ensureSectionAt(y));
+    if (!section) {
+      return;
+    }
+    section.blocks[this.hitIndex] = id;
+    section.meta[this.hitIndex] = meta;
   }
 
   /**
@@ -185,13 +200,15 @@ export class World {
     }
     const chunk = this.hitChunk!;
     const idx = this.hitIndex;
-    const old = chunk.blocks[idx];
-    const oldMeta = chunk.meta[idx];
+    let section = this.hitSection;
+    const old = section ? section.blocks[idx] : BlockId.AIR;
+    const oldMeta = section ? section.meta[idx] : 0;
     if (old === id && oldMeta === meta) {
       return false;
     }
-    chunk.blocks[idx] = id;
-    chunk.meta[idx] = meta;
+    section ??= chunk.ensureSectionAt(y);
+    section.blocks[idx] = id;
+    section.meta[idx] = meta;
     chunk.isModified = true;
     this.markDirtyAround(x, y, z);
     if (this.batchDepth > 0) {
@@ -206,10 +223,14 @@ export class World {
 
   /** 只修改附加数据（不触发光照重算，但标脏网格与修改标记）。 */
   setMeta(x: number, y: number, z: number, meta: number): boolean {
-    if (!this.locate(x, y, z) || this.hitChunk!.meta[this.hitIndex] === meta) {
+    if (!this.locate(x, y, z)) {
       return false;
     }
-    this.hitChunk!.meta[this.hitIndex] = meta;
+    const current = this.hitSection ? this.hitSection.meta[this.hitIndex] : 0;
+    if (current === meta) {
+      return false;
+    }
+    (this.hitSection ?? this.hitChunk!.ensureSectionAt(y)).meta[this.hitIndex] = meta;
     this.hitChunk!.isModified = true;
     this.markDirtyAround(x, y, z);
     return true;
@@ -296,29 +317,40 @@ export class World {
     if (y < 0) {
       return 0;
     }
-    if (!this.locate(x, y, z)) {
+    if (!this.locate(x, y, z) || !this.hitSection) {
       return MAX_LIGHT;
     }
-    return this.hitChunk!.skyLight[this.hitIndex];
+    return this.hitSection.skyLight[this.hitIndex];
   }
 
   /** 读取方块光；未加载 / 越界返回 0。 */
   getBlockLight(x: number, y: number, z: number): number {
-    return this.locate(x, y, z) ? this.hitChunk!.blockLight[this.hitIndex] : 0;
+    if (!this.locate(x, y, z) || !this.hitSection) {
+      return 0;
+    }
+    return this.hitSection.blockLight[this.hitIndex];
   }
 
   /** 写入天空光（LightEngine 用）；未加载忽略。 */
   setSkyLight(x: number, y: number, z: number, level: number): void {
-    if (this.locate(x, y, z)) {
-      this.hitChunk!.skyLight[this.hitIndex] = level;
+    if (!this.locate(x, y, z)) {
+      return;
     }
+    if (!this.hitSection && level === DEFAULT_SKY_LIGHT) {
+      return;
+    }
+    (this.hitSection ?? this.hitChunk!.ensureSectionAt(y)).skyLight[this.hitIndex] = level;
   }
 
   /** 写入方块光（LightEngine 用）；未加载忽略。 */
   setBlockLight(x: number, y: number, z: number, level: number): void {
-    if (this.locate(x, y, z)) {
-      this.hitChunk!.blockLight[this.hitIndex] = level;
+    if (!this.locate(x, y, z)) {
+      return;
     }
+    if (!this.hitSection && level === 0) {
+      return;
+    }
+    (this.hitSection ?? this.hitChunk!.ensureSectionAt(y)).blockLight[this.hitIndex] = level;
   }
 
   /** 该位置是否为不透光方块。 */
@@ -337,7 +369,10 @@ export class World {
     if (!this.locate(x, y, z)) {
       return true;
     }
-    return getBlock(this.hitChunk!.blocks[this.hitIndex]).solid;
+    if (!this.hitSection) {
+      return false;
+    }
+    return getBlock(this.hitSection.blocks[this.hitIndex]).solid;
   }
 
   /** 该位置是否为液体。 */
@@ -353,8 +388,17 @@ export class World {
     }
     const lx = x - chunk.originX;
     const lz = z - chunk.originZ;
-    let y = this.sizeY - 1;
-    while (y >= 0 && !getBlock(chunk.blocks[localIndex(lx, y, lz)]).opaque) {
+    // 从最高已分配段往下找，段未分配说明整段都是空气
+    let y = chunk.filledMaxY - 1;
+    while (y >= 0) {
+      const section = chunk.sectionAt(y);
+      if (!section) {
+        y = ((y >> SECTION_SHIFT) << SECTION_SHIFT) - 1;
+        continue;
+      }
+      if (getBlock(section.blocks[sectionIndex(lx, y, lz)]).opaque) {
+        break;
+      }
       y--;
     }
     chunk.heightMap[lz * CHUNK_SIZE + lx] = y + 1;
@@ -371,7 +415,9 @@ export class World {
 
   /** 找到该列最高的实心方块之上的 y（用于出生点/生成）。 */
   getSurfaceY(x: number, z: number): number {
-    for (let y = this.sizeY - 1; y >= 0; y--) {
+    const chunk = this.getChunkAt(x, z);
+    const top = chunk ? chunk.filledMaxY : this.sizeY;
+    for (let y = top - 1; y >= 0; y--) {
       if (getBlock(this.getBlock(x, y, z)).solid) {
         return y + 1;
       }

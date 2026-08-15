@@ -1,7 +1,7 @@
 import { BlockId, RenderType, getBlock, type BlockDef, type BlockFaceTextures } from '../blocks/BlockRegistry';
-import { CHUNK_SIZE, MAX_LIGHT, WORLD_SIZE_Y } from '../constants/world';
+import { CHUNK_SIZE, MAX_LIGHT, SECTION_HEIGHT, SECTION_SHIFT, WORLD_SIZE_Y } from '../constants/world';
 import type { TextureAtlas } from '../textures/TextureAtlas';
-import { localIndex } from './Chunk';
+import { sectionIndex } from './Chunk';
 import { waterHeight } from '../blocks/waterShape';
 import type { World } from './World';
 
@@ -189,47 +189,75 @@ class ChunkSnapshot {
   readonly blockLight = new Uint8Array(SNAP_VOLUME);
   readonly opaque = new Uint8Array(SNAP_VOLUME);
   readonly columnLoaded = new Uint8Array(SNAP_SIZE_XZ * SNAP_SIZE_XZ);
+  /** 本次快照覆盖的方块 y 范围（中心 chunk 有方块的段，闭区间）；lowY > highY 表示整块是空的。 */
+  lowY = 0;
+  highY = -1;
   private originX = 0;
   private originZ = 0;
 
-  /** 从世界复制 (cx,cz) 周围的数据；返回是否成功（中心 chunk 不存在则失败）。 */
+  /**
+   * 从世界复制 (cx,cz) 周围的数据；返回是否成功（中心 chunk 不存在或整块为空则失败）。
+   * 只复制中心 chunk 已分配段所在的 y 区间（上下各多 1 格供面剔除与 AO 采样），空段整体跳过。
+   */
   capture(world: World, cx: number, cz: number): boolean {
-    if (!world.getChunk(cx, cz)) {
+    const center = world.getChunk(cx, cz);
+    if (!center) {
+      return false;
+    }
+    this.lowY = center.filledMinY;
+    this.highY = center.filledMaxY - 1;
+    if (this.lowY > this.highY) {
       return false;
     }
     this.originX = cx * CHUNK_SIZE - PAD;
     this.originZ = cz * CHUNK_SIZE - PAD;
-    // 世界外（y<0 / y≥64）的默认值：下方无光、上方满天光；方块都是空气
-    this.blocks.fill(BlockId.AIR);
-    this.meta.fill(0);
-    this.opaque.fill(0);
-    this.blockLight.fill(0);
+    // 快照的 y 区间（含上下各 1 格的边界），可越出世界上下边界
+    const padLoY = this.lowY - 1;
+    const padHiY = this.highY + 1;
+    const slabFrom = padLoY + PAD;
+    const slabTo = padHiY + PAD;
+    const from = slabFrom * SNAP_SIZE_XZ * SNAP_SIZE_XZ;
+    const to = (slabTo + 1) * SNAP_SIZE_XZ * SNAP_SIZE_XZ;
+    // 默认值：空气、无方块光、满天光（未加载列与未分配段都按满天光处理）
+    this.blocks.fill(BlockId.AIR, from, to);
+    this.meta.fill(0, from, to);
+    this.opaque.fill(0, from, to);
+    this.blockLight.fill(0, from, to);
+    this.sky.fill(MAX_LIGHT, from, to);
+    if (padLoY < 0) {
+      // 世界底面之下无光
+      this.sky.fill(0, from, from + SNAP_SIZE_XZ * SNAP_SIZE_XZ);
+    }
+    const copyLoY = Math.max(0, padLoY);
+    const copyHiY = Math.min(WORLD_SIZE_Y - 1, padHiY);
     for (let sz = 0; sz < SNAP_SIZE_XZ; sz++) {
       for (let sx = 0; sx < SNAP_SIZE_XZ; sx++) {
         const wx = this.originX + sx;
         const wz = this.originZ + sz;
         const chunk = world.getChunkAt(wx, wz);
-        const col = sz * SNAP_SIZE_XZ + sx;
-        this.columnLoaded[col] = chunk ? 1 : 0;
-        this.sky[this.index(sx, 0, sz)] = 0;
-        this.sky[this.index(sx, SNAP_SIZE_Y - 1, sz)] = MAX_LIGHT;
+        this.columnLoaded[sz * SNAP_SIZE_XZ + sx] = chunk ? 1 : 0;
         if (!chunk) {
-          for (let y = 0; y < WORLD_SIZE_Y; y++) {
-            this.sky[this.index(sx, y + PAD, sz)] = MAX_LIGHT;
-          }
           continue;
         }
         const lx = wx - chunk.originX;
         const lz = wz - chunk.originZ;
-        for (let y = 0; y < WORLD_SIZE_Y; y++) {
-          const src = localIndex(lx, y, lz);
-          const dst = this.index(sx, y + PAD, sz);
-          const id = chunk.blocks[src];
-          this.blocks[dst] = id;
-          this.meta[dst] = chunk.meta[src];
-          this.sky[dst] = chunk.skyLight[src];
-          this.blockLight[dst] = chunk.blockLight[src];
-          this.opaque[dst] = OPAQUE_BY_ID[id];
+        for (let sy = copyLoY >> SECTION_SHIFT; sy <= copyHiY >> SECTION_SHIFT; sy++) {
+          const section = chunk.sections[sy];
+          if (!section) {
+            continue;
+          }
+          const yFrom = Math.max(copyLoY, sy * SECTION_HEIGHT);
+          const yTo = Math.min(copyHiY, sy * SECTION_HEIGHT + SECTION_HEIGHT - 1);
+          for (let y = yFrom; y <= yTo; y++) {
+            const src = sectionIndex(lx, y, lz);
+            const dst = this.index(sx, y + PAD, sz);
+            const id = section.blocks[src];
+            this.blocks[dst] = id;
+            this.meta[dst] = section.meta[src];
+            this.sky[dst] = section.skyLight[src];
+            this.blockLight[dst] = section.blockLight[src];
+            this.opaque[dst] = OPAQUE_BY_ID[id];
+          }
         }
       }
     }
@@ -277,7 +305,7 @@ export class ChunkMesher {
     const snap = this.snap;
     const x0 = cx * CHUNK_SIZE;
     const z0 = cz * CHUNK_SIZE;
-    for (let y = 0; y < WORLD_SIZE_Y; y++) {
+    for (let y = snap.lowY; y <= snap.highY; y++) {
       for (let z = z0; z < z0 + CHUNK_SIZE; z++) {
         for (let x = x0; x < x0 + CHUNK_SIZE; x++) {
           const id = snap.blocks[snap.at(x, y, z)];

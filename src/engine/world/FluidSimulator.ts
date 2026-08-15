@@ -9,7 +9,7 @@ import {
 } from '../constants/fluids';
 import { CHUNK_SIZE, WORLD_SIZE_Y } from '../constants/world';
 import type { Chunk } from './Chunk';
-import { localIndex } from './Chunk';
+import { sectionIndex } from './Chunk';
 import type { World } from './World';
 
 /** 位置打包为数字键：x/z 各占 ±2^21，y 占 64。 */
@@ -77,11 +77,15 @@ export class FluidSimulator {
 
   /** chunk 加载（读档 / 生成）后：让其中未静止的流动水继续更新（生成的海水全是源，不会被调度）。 */
   private scheduleFlowingIn(chunk: Chunk): void {
-    for (let y = 0; y < WORLD_SIZE_Y; y++) {
+    for (let y = chunk.filledMinY; y < chunk.filledMaxY; y++) {
+      const section = chunk.sectionAt(y);
+      if (!section) {
+        continue;
+      }
       for (let lz = 0; lz < CHUNK_SIZE; lz++) {
         for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-          const idx = localIndex(lx, y, lz);
-          if (chunk.blocks[idx] === BlockId.WATER && chunk.meta[idx] !== WATER_SOURCE_META) {
+          const idx = sectionIndex(lx, y, lz);
+          if (section.blocks[idx] === BlockId.WATER && section.meta[idx] !== WATER_SOURCE_META) {
             this.pending.add(packPos(chunk.originX + lx, y, chunk.originZ + lz));
           }
         }
@@ -229,10 +233,14 @@ export class FluidSimulator {
     if (!chunk) {
       return false;
     }
-    const idx = localIndex(x - chunk.originX, y, z - chunk.originZ);
-    const id = chunk.blocks[idx];
+    const section = chunk.sectionAt(y);
+    if (!section) {
+      return true;
+    }
+    const idx = sectionIndex(x - chunk.originX, y, z - chunk.originZ);
+    const id = section.blocks[idx];
     if (id === BlockId.WATER) {
-      return chunk.meta[idx] !== WATER_SOURCE_META;
+      return section.meta[idx] !== WATER_SOURCE_META;
     }
     return !getBlock(id).solid;
   }

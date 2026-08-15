@@ -1,8 +1,15 @@
-/** 世界高度与分块常量（方块单位）。水平方向无限，按 16×64×16 的 chunk 流式生成。 */
+/** 世界高度与分块常量（方块单位）。水平方向无限，按 16×N×16 的 chunk 流式生成，chunk 内再按 16 高分段。 */
 export const WORLD_SIZE_Y = 64;
 export const CHUNK_SIZE = 16;
 export const CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE;
 export const CHUNK_VOLUME = CHUNK_AREA * WORLD_SIZE_Y;
+/** 分段高度：chunk 沿 y 切成若干 16×16×16 的段，空段不分配内存。 */
+export const SECTION_HEIGHT = 16;
+/** y >> SECTION_SHIFT = 段号；y & SECTION_MASK = 段内 y。 */
+export const SECTION_SHIFT = 4;
+export const SECTION_MASK = SECTION_HEIGHT - 1;
+export const SECTION_COUNT = WORLD_SIZE_Y / SECTION_HEIGHT;
+export const SECTION_VOLUME = CHUNK_AREA * SECTION_HEIGHT;
 /** chunk 坐标的绝对值上限（键空间 (2·LIMIT)² 必须落在安全整数内）。 */
 export const CHUNK_KEY_LIMIT = 32768;
 export const SEA_LEVEL = 32;

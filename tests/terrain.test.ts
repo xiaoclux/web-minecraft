@@ -15,11 +15,11 @@ function generate(seed: string, cx: number, cz: number): Chunk {
 
 describe('TerrainGenerator', () => {
   it('同种子同 chunk 生成结果一致（含负坐标）', () => {
-    expect(bytesEqual(generate('seed-123', -3, 7).blocks, generate('seed-123', -3, 7).blocks)).toBe(true);
+    expect(bytesEqual(generate('seed-123', -3, 7).toFlatBlocks(), generate('seed-123', -3, 7).toFlatBlocks())).toBe(true);
   });
 
   it('不同种子生成结果不同', () => {
-    expect(bytesEqual(generate('alpha', 0, 0).blocks, generate('beta', 0, 0).blocks)).toBe(false);
+    expect(bytesEqual(generate('alpha', 0, 0).toFlatBlocks(), generate('beta', 0, 0).toFlatBlocks())).toBe(false);
   });
 
   it('底层为基岩且出生点在海平面之上的草地', () => {

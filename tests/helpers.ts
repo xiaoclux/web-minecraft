@@ -46,8 +46,13 @@ export function generateArea(generator: ChunkGenerator, c0: number, c1: number):
 export function collectBlockIds(world: World): Set<number> {
   const ids = new Set<number>();
   for (const chunk of world.chunks.values()) {
-    for (const id of chunk.blocks) {
-      ids.add(id);
+    for (const section of chunk.sections) {
+      if (!section) {
+        continue;
+      }
+      for (const id of section.blocks) {
+        ids.add(id);
+      }
     }
   }
   return ids;
