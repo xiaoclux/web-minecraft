@@ -1,3 +1,5 @@
+import { BlockId, getBlock } from '../blocks/BlockRegistry';
+import { collisionBoxes, isFullCube } from '../blocks/blockShapes';
 import type { World } from '../world/World';
 import { AABB } from './AABB';
 
@@ -15,8 +17,25 @@ export function collectBlockBoxes(world: World, box: AABB): AABB[] {
   for (let y = y0; y <= y1; y++) {
     for (let z = z0; z <= z1; z++) {
       for (let x = x0; x <= x1; x++) {
-        if (world.isSolidAt(x, y, z)) {
+        const id = world.getBlock(x, y, z);
+        if (id === BlockId.AIR) {
+          // 未加载的 chunk 视为实心边界
+          if (!world.isSolidAt(x, y, z)) {
+            continue;
+          }
           out.push(new AABB(x, y, z, x + 1, y + 1, z + 1));
+          continue;
+        }
+        const def = getBlock(id);
+        if (!def.solid) {
+          continue;
+        }
+        if (isFullCube(def)) {
+          out.push(new AABB(x, y, z, x + 1, y + 1, z + 1));
+          continue;
+        }
+        for (const b of collisionBoxes(def, world.getMeta(x, y, z))) {
+          out.push(new AABB(x + b.x0, y + b.y0, z + b.z0, x + b.x1, y + b.y1, z + b.z1));
         }
       }
     }

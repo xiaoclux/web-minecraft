@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { BlockBox } from '../blocks/blockShapes';
 import type { TextureAtlas } from '../textures/TextureAtlas';
 import { DESTROY_STAGE_COUNT, destroyStageKey } from '../textures/blockTextures';
 
@@ -39,14 +40,19 @@ export class BlockOutline {
     this.group.visible = false;
   }
 
-  /** 设置目标方块与挖掘进度（null 隐藏）。 */
-  set(target: { x: number; y: number; z: number } | null, progress: number): void {
+  /** 设置目标方块、方块形状的包围盒（单位立方体内的 0~1 局部坐标）与挖掘进度（null 隐藏）。 */
+  set(target: { x: number; y: number; z: number } | null, bounds: BlockBox, progress: number): void {
     if (!target) {
       this.group.visible = false;
       return;
     }
     this.group.visible = true;
-    this.group.position.set(target.x + 0.5, target.y + 0.5, target.z + 0.5);
+    this.group.position.set(
+      target.x + (bounds.x0 + bounds.x1) / 2,
+      target.y + (bounds.y0 + bounds.y1) / 2,
+      target.z + (bounds.z0 + bounds.z1) / 2,
+    );
+    this.group.scale.set(bounds.x1 - bounds.x0, bounds.y1 - bounds.y0, bounds.z1 - bounds.z0);
     if (progress <= 0) {
       this.crack.visible = false;
       return;

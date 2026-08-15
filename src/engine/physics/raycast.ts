@@ -1,4 +1,5 @@
 import { getBlock } from '../blocks/BlockRegistry';
+import { isFullCube, shapeBoxes, type BlockBox } from '../blocks/blockShapes';
 import type { World } from '../world/World';
 
 /** 射线命中结果。 */
@@ -11,6 +12,76 @@ export interface RayHit {
   ny: number;
   nz: number;
   distance: number;
+  /** 命中点的精确坐标（用于判断点在方块的哪半边）。 */
+  hx: number;
+  hy: number;
+  hz: number;
+}
+
+/** 射线与子盒求交的结果（法线朝射线来的方向）。 */
+interface BoxHit {
+  t: number;
+  nx: number;
+  ny: number;
+  nz: number;
+}
+
+/**
+ * 射线与轴对齐盒求交（slab 法）；射线起点在盒内或不相交时返回 null。
+ */
+function rayBox(
+  ox: number,
+  oy: number,
+  oz: number,
+  dx: number,
+  dy: number,
+  dz: number,
+  b: BlockBox,
+  bx: number,
+  by: number,
+  bz: number,
+): BoxHit | null {
+  let tMin = 0;
+  let tMax = Infinity;
+  let axis = -1;
+  let sign = 0;
+  const origin = [ox, oy, oz];
+  const dir = [dx, dy, dz];
+  const lo = [bx + b.x0, by + b.y0, bz + b.z0];
+  const hi = [bx + b.x1, by + b.y1, bz + b.z1];
+  for (let a = 0; a < 3; a++) {
+    if (dir[a] === 0) {
+      if (origin[a] < lo[a] || origin[a] > hi[a]) {
+        return null;
+      }
+      continue;
+    }
+    const inv = 1 / dir[a];
+    let t1 = (lo[a] - origin[a]) * inv;
+    let t2 = (hi[a] - origin[a]) * inv;
+    let enterSign = -1;
+    if (t1 > t2) {
+      const tmp = t1;
+      t1 = t2;
+      t2 = tmp;
+      enterSign = 1;
+    }
+    if (t1 > tMin) {
+      tMin = t1;
+      axis = a;
+      sign = enterSign;
+    }
+    if (t2 < tMax) {
+      tMax = t2;
+    }
+    if (tMin > tMax) {
+      return null;
+    }
+  }
+  if (axis < 0) {
+    return null;
+  }
+  return { t: tMin, nx: axis === 0 ? sign : 0, ny: axis === 1 ? sign : 0, nz: axis === 2 ? sign : 0 };
 }
 
 /**
@@ -48,7 +119,31 @@ export function raycastBlocks(
     if (id !== 0) {
       const def = getBlock(id);
       if (!def.isLiquid || includeLiquid) {
-        return { x, y, z, nx, ny, nz, distance: t };
+        if (isFullCube(def)) {
+          return { x, y, z, nx, ny, nz, distance: t, hx: ox + dx * t, hy: oy + dy * t, hz: oz + dz * t };
+        }
+        // 非完整立方体：逐子盒求交，都打不中就继续沿射线前进
+        let best: BoxHit | null = null;
+        for (const b of shapeBoxes(def, world.getMeta(x, y, z))) {
+          const hit = rayBox(ox, oy, oz, dx, dy, dz, b, x, y, z);
+          if (hit && hit.t <= maxDistance && (!best || hit.t < best.t)) {
+            best = hit;
+          }
+        }
+        if (best) {
+          return {
+            x,
+            y,
+            z,
+            nx: best.nx,
+            ny: best.ny,
+            nz: best.nz,
+            distance: best.t,
+            hx: ox + dx * best.t,
+            hy: oy + dy * best.t,
+            hz: oz + dz * best.t,
+          };
+        }
       }
     }
     if (tMaxX < tMaxY && tMaxX < tMaxZ) {

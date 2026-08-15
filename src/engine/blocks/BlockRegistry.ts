@@ -37,6 +37,8 @@ export const RenderType = {
 } as const;
 export type RenderType = (typeof RenderType)[keyof typeof RenderType];
 
+import { BlockShape } from './blockShapes';
+
 /** 六个面各自的贴图 key。 */
 export interface BlockFaceTextures {
   top: string;
@@ -90,6 +92,12 @@ export interface BlockDef {
   interactive?: boolean;
   /** 是否可燃烧/被爆炸摧毁（基岩为 false）。 */
   isBlastResistant?: boolean;
+  /** 形状；缺省为完整立方体。 */
+  shape?: BlockShape;
+  /** 不生成对应物品（如双层半砖，只能由半砖合并得到）。 */
+  noItem?: boolean;
+  /** 半砖专用：两块合并后变成的双层方块 id。 */
+  doubleSlabId?: number;
 }
 
 export const BlockId = {
@@ -129,6 +137,15 @@ export const BlockId = {
   STONE_BRICKS: 98,
   MELON: 103,
   PUMPKIN: 86,
+  DOUBLE_STONE_SLAB: 43,
+  STONE_SLAB: 44,
+  DOUBLE_OAK_SLAB: 125,
+  OAK_SLAB: 126,
+  OAK_STAIRS: 53,
+  COBBLESTONE_STAIRS: 67,
+  BRICK_STAIRS: 108,
+  STONE_BRICK_STAIRS: 109,
+  SANDSTONE_STAIRS: 128,
 } as const;
 export type BlockId = (typeof BlockId)[keyof typeof BlockId];
 
@@ -170,6 +187,7 @@ const cross = (id: number, name: string, label: string, texture: string, extra: 
   label,
   textures: same(texture),
   render: RenderType.CROSS,
+  shape: BlockShape.CROSS,
   solid: false,
   opaque: false,
   hardness: 0,
@@ -177,6 +195,36 @@ const cross = (id: number, name: string, label: string, texture: string, extra: 
   light: 0,
   needsSupport: true,
   ...extra,
+});
+
+/** 半砖：占半格，可与同种半砖合并成双层砖。 */
+const slab = (
+  id: number,
+  name: string,
+  label: string,
+  textures: BlockFaceTextures,
+  hardness: number,
+  tool: ToolType | null,
+  extra: Partial<BlockDef> = {},
+): BlockDef => ({
+  ...cube(id, name, label, textures, hardness, tool, extra),
+  shape: BlockShape.SLAB,
+  opaque: false,
+});
+
+/** 楼梯：一层半砖 + 半格台阶，朝向与上下由 meta 决定。 */
+const stairs = (
+  id: number,
+  name: string,
+  label: string,
+  textures: BlockFaceTextures,
+  hardness: number,
+  tool: ToolType | null,
+  extra: Partial<BlockDef> = {},
+): BlockDef => ({
+  ...cube(id, name, label, textures, hardness, tool, extra),
+  shape: BlockShape.STAIRS,
+  opaque: false,
 });
 
 /** 全部方块定义列表。 */
@@ -354,6 +402,41 @@ export const BLOCK_DEFS: BlockDef[] = [
   cube(BlockId.MELON, 'melon', '西瓜', topSide('melon_top', 'melon_side'), 1, ToolType.AXE, {
     drops: [{ item: 'melon_slice', min: 3, max: 7 }],
   }),
+  slab(BlockId.STONE_SLAB, 'stone_slab', '石半砖', same('stone'), 2, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+    doubleSlabId: BlockId.DOUBLE_STONE_SLAB,
+  }),
+  cube(BlockId.DOUBLE_STONE_SLAB, 'double_stone_slab', '双层石半砖', same('stone'), 2, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+    drops: [{ item: 'stone_slab', min: 2, max: 2 }],
+    noItem: true,
+  }),
+  slab(BlockId.OAK_SLAB, 'oak_slab', '橡木半砖', same('planks'), 2, ToolType.AXE, {
+    doubleSlabId: BlockId.DOUBLE_OAK_SLAB,
+  }),
+  cube(BlockId.DOUBLE_OAK_SLAB, 'double_oak_slab', '双层橡木半砖', same('planks'), 2, ToolType.AXE, {
+    drops: [{ item: 'oak_slab', min: 2, max: 2 }],
+    noItem: true,
+  }),
+  stairs(BlockId.OAK_STAIRS, 'oak_stairs', '橡木楼梯', same('planks'), 2, ToolType.AXE),
+  stairs(BlockId.COBBLESTONE_STAIRS, 'cobblestone_stairs', '圆石楼梯', same('cobblestone'), 2, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+  }),
+  stairs(BlockId.BRICK_STAIRS, 'brick_stairs', '砖块楼梯', same('bricks'), 2, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+  }),
+  stairs(BlockId.STONE_BRICK_STAIRS, 'stone_brick_stairs', '石砖楼梯', same('stone_bricks'), 1.5, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+  }),
+  stairs(
+    BlockId.SANDSTONE_STAIRS,
+    'sandstone_stairs',
+    '砂岩楼梯',
+    topSide('sandstone_top', 'sandstone_side'),
+    0.8,
+    ToolType.PICKAXE,
+    { minTier: ToolTier.WOOD },
+  ),
 ];
 
 const BLOCKS_BY_ID: (BlockDef | undefined)[] = [];

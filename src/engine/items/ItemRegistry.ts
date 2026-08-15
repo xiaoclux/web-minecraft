@@ -126,7 +126,7 @@ const TIERS: ToolTier[] = [ToolTier.WOOD, ToolTier.STONE, ToolTier.IRON, ToolTie
 
 /** 全部物品定义。 */
 export const ITEM_DEFS: ItemDef[] = [
-  ...BLOCK_DEFS.filter((b) => b.name !== 'air' && b.name !== 'water').map(blockItem),
+  ...BLOCK_DEFS.filter((b) => b.name !== 'air' && b.name !== 'water' && !b.noItem).map(blockItem),
   ...TIERS.flatMap((tier) => TOOL_TYPES.map((type) => tool(type, tier))),
   material('stick', '木棍', { burnTicks: STICK_BURN_TICKS }),
   material('coal', '煤炭', { burnTicks: FURNACE_ITEM_BURN_TICKS }),

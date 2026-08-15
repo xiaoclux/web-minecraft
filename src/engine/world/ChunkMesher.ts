@@ -1,4 +1,5 @@
 import { BlockId, RenderType, getBlock, type BlockDef, type BlockFaceTextures } from '../blocks/BlockRegistry';
+import { isFullCube, shapeBoxes, type BlockBox } from '../blocks/blockShapes';
 import { CHUNK_SIZE, MAX_LIGHT, SECTION_HEIGHT, SECTION_SHIFT, WORLD_SIZE_Y } from '../constants/world';
 import type { TextureAtlas } from '../textures/TextureAtlas';
 import { sectionIndex } from './Chunk';
@@ -26,7 +27,17 @@ interface FaceSpec {
   corners: readonly (readonly [number, number, number])[];
   textureKey: keyof BlockFaceTextures;
   shade: number;
+  /** 面内纹理坐标的取法：u 取局部坐标的 uAxis 轴（uFlip 表示取 1-值），v 同理。 */
+  uAxis: number;
+  uFlip: boolean;
+  vAxis: number;
+  vFlip: boolean;
 }
+
+/** 局部坐标轴序号。 */
+const AXIS_X = 0;
+const AXIS_Y = 1;
+const AXIS_Z = 2;
 
 const FACE_SHADE_TOP = 1;
 const FACE_SHADE_BOTTOM = 0.5;
@@ -51,6 +62,10 @@ const FACES: FaceSpec[] = [
     ],
     textureKey: 'east',
     shade: FACE_SHADE_X,
+    uAxis: AXIS_Z,
+    uFlip: true,
+    vAxis: AXIS_Y,
+    vFlip: false,
   },
   {
     normal: [-1, 0, 0],
@@ -62,6 +77,10 @@ const FACES: FaceSpec[] = [
     ],
     textureKey: 'west',
     shade: FACE_SHADE_X,
+    uAxis: AXIS_Z,
+    uFlip: false,
+    vAxis: AXIS_Y,
+    vFlip: false,
   },
   {
     normal: [0, 1, 0],
@@ -73,6 +92,10 @@ const FACES: FaceSpec[] = [
     ],
     textureKey: 'top',
     shade: FACE_SHADE_TOP,
+    uAxis: AXIS_X,
+    uFlip: false,
+    vAxis: AXIS_Z,
+    vFlip: true,
   },
   {
     normal: [0, -1, 0],
@@ -84,6 +107,10 @@ const FACES: FaceSpec[] = [
     ],
     textureKey: 'bottom',
     shade: FACE_SHADE_BOTTOM,
+    uAxis: AXIS_X,
+    uFlip: false,
+    vAxis: AXIS_Z,
+    vFlip: false,
   },
   {
     normal: [0, 0, 1],
@@ -95,6 +122,10 @@ const FACES: FaceSpec[] = [
     ],
     textureKey: 'south',
     shade: FACE_SHADE_Z,
+    uAxis: AXIS_X,
+    uFlip: false,
+    vAxis: AXIS_Y,
+    vFlip: false,
   },
   {
     normal: [0, 0, -1],
@@ -106,6 +137,10 @@ const FACES: FaceSpec[] = [
     ],
     textureKey: 'north',
     shade: FACE_SHADE_Z,
+    uAxis: AXIS_X,
+    uFlip: true,
+    vAxis: AXIS_Y,
+    vFlip: false,
   },
 ];
 
@@ -143,6 +178,29 @@ class BufferBuilder {
       this.positions.push(c[0], c[1], c[2]);
       const uv = UV_CORNERS[i];
       this.uvs.push(uv[0] === 0 ? uvRegion.u0 : uvRegion.u1, uv[1] === 0 ? uvRegion.v0 : uvRegion.v1);
+      const l = lightPerVertex[i];
+      this.lights.push(l[0], l[1], l[2]);
+    }
+    const b = this.vertexCount;
+    if (flip) {
+      this.indices.push(b + 1, b + 2, b + 3, b + 1, b + 3, b);
+    } else {
+      this.indices.push(b, b + 1, b + 2, b, b + 2, b + 3);
+    }
+    this.vertexCount += 4;
+  }
+
+  /** 逐顶点指定 uv 的四边形（子盒面用，纹理按盒的实际范围裁切）。 */
+  quadUv(
+    corners: readonly (readonly [number, number, number])[],
+    uvs: readonly (readonly [number, number])[],
+    lightPerVertex: readonly (readonly [number, number, number])[],
+    flip: boolean,
+  ): void {
+    for (let i = 0; i < 4; i++) {
+      const c = corners[i];
+      this.positions.push(c[0], c[1], c[2]);
+      this.uvs.push(uvs[i][0], uvs[i][1]);
       const l = lightPerVertex[i];
       this.lights.push(l[0], l[1], l[2]);
     }
@@ -279,10 +337,23 @@ class ChunkSnapshot {
   }
 }
 
-/** 按方块 id 预计算的遮光表。 */
+/** 按方块 id 预计算的遮挡表：完整立方体且不透光才会挡住邻面并产生 AO。 */
 const OPAQUE_BY_ID = new Uint8Array(256);
 for (let id = 0; id < OPAQUE_BY_ID.length; id++) {
-  OPAQUE_BY_ID[id] = getBlock(id).opaque ? 1 : 0;
+  const def = getBlock(id);
+  OPAQUE_BY_ID[id] = def.opaque && isFullCube(def) ? 1 : 0;
+}
+
+/** 子盒的某个面是否正好贴在格子边界上（贴边的面才参与邻居剔除）。 */
+function isFaceOnBoundary(face: FaceSpec, b: BlockBox): boolean {
+  const [nx, ny, nz] = face.normal;
+  if (nx !== 0) {
+    return nx > 0 ? b.x1 === 1 : b.x0 === 0;
+  }
+  if (ny !== 0) {
+    return ny > 0 ? b.y1 === 1 : b.y0 === 0;
+  }
+  return nz > 0 ? b.z1 === 1 : b.z0 === 0;
 }
 
 /** 把一个 chunk 转成顶点数据（面剔除 + 平滑光照 + AO）。 */
@@ -313,6 +384,14 @@ export class ChunkMesher {
             continue;
           }
           const def = getBlock(id);
+          if (def.render === RenderType.CROSS) {
+            this.cross(cutout, def, x, y, z);
+            continue;
+          }
+          if (!isFullCube(def)) {
+            this.boxes(def.render === RenderType.CUTOUT ? cutout : opaque, def, x, y, z);
+            continue;
+          }
           switch (def.render) {
             case RenderType.OPAQUE:
               this.cube(opaque, def, x, y, z);
@@ -322,9 +401,6 @@ export class ChunkMesher {
               break;
             case RenderType.TRANSLUCENT:
               this.water(translucent, def, x, y, z);
-              break;
-            case RenderType.CROSS:
-              this.cross(cutout, def, x, y, z);
               break;
             default:
               break;
@@ -368,6 +444,53 @@ export class ChunkMesher {
       const lights = face.corners.map((c) => this.vertexLight(x, y, z, face, c));
       const flip = lights[0][2] + lights[2][2] < lights[1][2] + lights[3][2];
       builder.quad(corners, region, lights, flip);
+    }
+  }
+
+  /**
+   * 由子盒构成的方块（半砖 / 楼梯等）：逐盒逐面生成。
+   * 贴在格子边界上的面按邻居剔除并使用平滑光照，格子内部的面始终绘制并取本格光照。
+   */
+  private boxes(builder: BufferBuilder, def: BlockDef, x: number, y: number, z: number): void {
+    const snap = this.snap;
+    const meta = snap.meta[snap.at(x, y, z)];
+    const ownIdx = snap.at(x, y, z);
+    for (const b of shapeBoxes(def, meta)) {
+      for (const face of FACES) {
+        const [nx, ny, nz] = face.normal;
+        const onBoundary = isFaceOnBoundary(face, b);
+        if (onBoundary && !this.shouldDrawFace(def, x + nx, y + ny, z + nz)) {
+          continue;
+        }
+        const region = this.atlas.region(def.textures[face.textureKey]);
+        const corners: (readonly [number, number, number])[] = [];
+        const uvs: (readonly [number, number])[] = [];
+        for (const c of face.corners) {
+          const lx = c[0] === 0 ? b.x0 : b.x1;
+          const ly = c[1] === 0 ? b.y0 : b.y1;
+          const lz = c[2] === 0 ? b.z0 : b.z1;
+          corners.push([x + lx, y + ly, z + lz]);
+          const local = [lx, ly, lz];
+          const u = face.uFlip ? 1 - local[face.uAxis] : local[face.uAxis];
+          const v = face.vFlip ? 1 - local[face.vAxis] : local[face.vAxis];
+          uvs.push([region.u0 + (region.u1 - region.u0) * u, region.v0 + (region.v1 - region.v0) * v]);
+        }
+        let lights: (readonly [number, number, number])[];
+        let flip = false;
+        if (onBoundary) {
+          const smooth = face.corners.map((c) => this.vertexLight(x, y, z, face, c));
+          flip = smooth[0][2] + smooth[2][2] < smooth[1][2] + smooth[3][2];
+          lights = smooth;
+        } else {
+          // 格子内部的面：取本格与法线方向邻格中较亮者（半砖顶面因此与地面一样亮）
+          const nIdx = snap.at(x + nx, y + ny, z + nz);
+          const sky = Math.max(snap.sky[ownIdx], snap.opaque[nIdx] === 1 ? 0 : snap.sky[nIdx]);
+          const blockLight = Math.max(snap.blockLight[ownIdx], snap.opaque[nIdx] === 1 ? 0 : snap.blockLight[nIdx]);
+          const light = [sky / MAX_LIGHT, blockLight / MAX_LIGHT, face.shade] as const;
+          lights = [light, light, light, light];
+        }
+        builder.quadUv(corners, uvs, lights, flip);
+      }
     }
   }
 

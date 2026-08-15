@@ -50,6 +50,30 @@ function toolRecipes(): ShapedRecipe[] {
   return out;
 }
 
+/** 半砖：一横排 3 个原料出 6 个；楼梯：阶梯状 6 个原料出 4 个。 */
+const SLAB_MATERIAL: Record<string, string> = {
+  stone_slab: 'stone',
+  oak_slab: 'planks',
+};
+const STAIRS_MATERIAL: Record<string, string> = {
+  oak_stairs: 'planks',
+  cobblestone_stairs: 'cobblestone',
+  brick_stairs: 'bricks',
+  stone_brick_stairs: 'stone_bricks',
+  sandstone_stairs: 'sandstone',
+};
+
+function slabAndStairsRecipes(): ShapedRecipe[] {
+  const out: ShapedRecipe[] = [];
+  for (const [result, material] of Object.entries(SLAB_MATERIAL)) {
+    out.push(shaped(['MMM'], { M: material }, result, 6));
+  }
+  for (const [result, material] of Object.entries(STAIRS_MATERIAL)) {
+    out.push(shaped(['M  ', 'MM ', 'MMM'], { M: material }, result, 4));
+  }
+  return out;
+}
+
 /** 全部配方。 */
 export const RECIPES: Recipe[] = [
   shapeless(['log'], 'planks', 4),
@@ -71,6 +95,7 @@ export const RECIPES: Recipe[] = [
   shapeless(['melon_slice'], 'wheat_seeds'),
   shaped(['MMM', 'MMM', 'MMM'], { M: 'melon_slice' }, 'melon'),
   ...toolRecipes(),
+  ...slabAndStairsRecipes(),
 ];
 
 for (const recipe of RECIPES) {

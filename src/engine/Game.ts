@@ -2,6 +2,15 @@ import * as THREE from 'three';
 import { BlockId, ToolType, getBlock, type BlockDef } from './blocks/BlockRegistry';
 import { breakTicks, rollDrops, rollXp } from './blocks/blockBreaking';
 import {
+  BlockShape,
+  FULL_BOX,
+  collisionBoxes,
+  SLAB_TOP_BIT,
+  STAIRS_FACINGS,
+  STAIRS_FLIP_BIT,
+  outlineBox,
+} from './blocks/blockShapes';
+import {
   ATTACK_COOLDOWN_TICKS,
   CREATIVE_BLOCK_BREAK_DELAY_TICKS,
   DIFFICULTY_DAMAGE_MULTIPLIER,
@@ -396,8 +405,12 @@ export class Game implements EntityContext, ContainerHost {
     this.updateCamera();
     this.renderer.chunks.update(this.player.x, this.player.z);
     this.renderer.entities.update(this.entities.values(), this.renderer.sky.skyLevel, now / 1000, this.player.yaw);
+    const hit = this.currentHit;
     this.renderer.outline.set(
-      this.currentHit,
+      hit,
+      hit
+        ? outlineBox(getBlock(this.world.getBlock(hit.x, hit.y, hit.z)), this.world.getMeta(hit.x, hit.y, hit.z))
+        : FULL_BOX,
       this.breakNeededTicks > 0 ? this.breakProgressTicks / this.breakNeededTicks : 0,
     );
     const brightness = this.brightnessAtPlayer();
@@ -1039,11 +1052,56 @@ export class Game implements EntityContext, ContainerHost {
     }
   }
 
+  /**
+   * 放置时按点击位置与朝向算出 meta：
+   * 半砖分上下半，楼梯的高侧朝玩家视线方向、点在上半则上下颠倒。
+   */
+  private placementMeta(def: BlockDef, hit: RayHit): number {
+    if (def.shape !== BlockShape.SLAB && def.shape !== BlockShape.STAIRS) {
+      return 0;
+    }
+    const upperHalf = hit.ny < 0 || (hit.ny === 0 && hit.hy - Math.floor(hit.hy) >= 0.5);
+    if (def.shape === BlockShape.SLAB) {
+      return upperHalf ? SLAB_TOP_BIT : 0;
+    }
+    const dir = this.lookDirection();
+    const facing =
+      Math.abs(dir.x) >= Math.abs(dir.z)
+        ? STAIRS_FACINGS.findIndex(([fx]) => fx === Math.sign(dir.x))
+        : STAIRS_FACINGS.findIndex(([, fz]) => fz === Math.sign(dir.z));
+    return Math.max(0, facing) | (upperHalf ? STAIRS_FLIP_BIT : 0);
+  }
+
+  /** 对着同种半砖的开放面再放一块 → 合并成双层方块；返回是否已处理。 */
+  private tryMergeSlab(def: BlockDef, hit: RayHit): boolean {
+    if (def.shape !== BlockShape.SLAB || def.doubleSlabId === undefined) {
+      return false;
+    }
+    if (this.world.getBlock(hit.x, hit.y, hit.z) !== def.id) {
+      return false;
+    }
+    const isTopHalf = (this.world.getMeta(hit.x, hit.y, hit.z) & SLAB_TOP_BIT) !== 0;
+    const clickedUpperHalf = hit.ny > 0 || (hit.ny === 0 && hit.hy - Math.floor(hit.hy) >= 0.5);
+    if (isTopHalf === clickedUpperHalf) {
+      return false;
+    }
+    this.world.setBlock(hit.x, hit.y, hit.z, def.doubleSlabId);
+    this.sound.play('place');
+    this.renderer.hand.swing();
+    if (!this.rules.infiniteItems) {
+      this.player.inventory.consume(this.player.selectedSlot, 1);
+    }
+    return true;
+  }
+
   private tryPlaceBlock(blockId: number, hit: RayHit): void {
     if (!this.rules.canModifyBlocks) {
       return;
     }
     const def = getBlock(blockId);
+    if (this.tryMergeSlab(def, hit)) {
+      return;
+    }
     let px = hit.x + hit.nx;
     let py = hit.y + hit.ny;
     let pz = hit.z + hit.nz;
@@ -1063,18 +1121,21 @@ export class Game implements EntityContext, ContainerHost {
     if (def.needsSupport && !this.world.isSolidAt(px, py - 1, pz)) {
       return;
     }
+    const meta = this.placementMeta(def, hit);
     if (def.solid) {
-      const box = new AABB(px, py, pz, px + 1, py + 1, pz + 1);
-      if (box.intersects(this.player.box())) {
-        return;
-      }
-      for (const e of this.entities.values()) {
-        if (e instanceof Mob && box.intersects(e.box())) {
+      for (const b of collisionBoxes(def, meta)) {
+        const box = new AABB(px + b.x0, py + b.y0, pz + b.z0, px + b.x1, py + b.y1, pz + b.z1);
+        if (box.intersects(this.player.box())) {
           return;
+        }
+        for (const e of this.entities.values()) {
+          if (e instanceof Mob && box.intersects(e.box())) {
+            return;
+          }
         }
       }
     }
-    this.world.setBlock(px, py, pz, blockId);
+    this.world.setBlock(px, py, pz, blockId, meta);
     this.sound.play('place');
     this.renderer.hand.swing();
     if (!this.rules.infiniteItems) {
