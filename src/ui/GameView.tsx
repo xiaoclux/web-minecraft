@@ -7,7 +7,9 @@ import { DebugOverlay } from './DebugOverlay';
 import { Hud } from './Hud';
 import { InventoryScreen } from './InventoryScreen';
 import { PauseMenu } from './PauseMenu';
+import { TouchControls } from './TouchControls';
 import { useStore } from './useGameStore';
+import { settingsStore } from '../engine/settings/Settings';
 
 interface GameViewProps {
   meta: WorldMeta;
@@ -81,12 +83,15 @@ export function GameView({ meta, save, saveManager, onExit }: GameViewProps) {
 
 function GameOverlays({ game }: { game: Game }) {
   const state = useStore(game.store);
+  const settings = useStore(settingsStore);
+  const showTouchControls = game.isTouch && settings.touchControlsEnabled;
   const showInventory =
     state.screen === Screen.INVENTORY || state.screen === Screen.CRAFTING || state.screen === Screen.FURNACE;
   return (
     <>
       {state.isUnderwater && <div className="underwater-tint" />}
-      <Hud game={game} state={state} />
+      <Hud game={game} state={state} isTouch={showTouchControls} />
+      {showTouchControls && state.screen === Screen.NONE && <TouchControls game={game} />}
       {state.debug && <DebugOverlay info={state.debug} />}
       {showInventory && <InventoryScreen game={game} state={state} />}
       {state.screen === Screen.PAUSE && <PauseMenu game={game} />}

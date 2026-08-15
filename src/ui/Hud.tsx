@@ -6,6 +6,8 @@ import { ItemIcon } from './ItemIcon';
 interface HudProps {
   game: Game;
   state: GameUiState;
+  /** 触屏模式：快捷栏可点选。 */
+  isTouch: boolean;
 }
 
 const HEART_COUNT = PLAYER_MAX_HEALTH / 2;
@@ -46,12 +48,12 @@ function StatRow({
 }
 
 /** 游戏内 HUD：准星、状态条、快捷栏。 */
-export function Hud({ game, state }: HudProps) {
+export function Hud({ game, state, isTouch }: HudProps) {
   const inventory = game.player.inventory;
   const isCreative = state.mode === GameMode.CREATIVE;
   const showAir = state.isUnderwater || state.air < state.maxAir;
   return (
-    <div className="hud">
+    <div className={`hud${isTouch ? ' touch' : ''}`}>
       <div className="crosshair" />
       {state.targetLabel && <div className="target-label">{state.targetLabel}</div>}
       {state.toast && (
@@ -103,7 +105,11 @@ export function Hud({ game, state }: HudProps) {
         )}
         <div className="hotbar">
           {HOTBAR_INDICES.map((i) => (
-            <div key={i} className={`hotbar-slot${i === state.selectedSlot ? ' selected' : ''}`}>
+            <div
+              key={i}
+              className={`hotbar-slot${i === state.selectedSlot ? ' selected' : ''}`}
+              onPointerDown={isTouch ? () => game.selectSlot(i) : undefined}
+            >
               <ItemIcon stack={inventory.get(i)} />
             </div>
           ))}

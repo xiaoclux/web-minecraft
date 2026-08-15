@@ -813,3 +813,100 @@ button:disabled {
     transform: rotate(-90deg);
   }
 }
+
+/* 触屏操作层 */
+.touch-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  user-select: none;
+}
+
+.touch-controls > * {
+  pointer-events: auto;
+}
+
+.touch-look {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+
+.touch-top {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top));
+  left: calc(8px + env(safe-area-inset-left));
+  display: flex;
+  gap: 8px;
+}
+
+.touch-joystick {
+  position: absolute;
+  left: calc(20px + env(safe-area-inset-left));
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  width: 128px;
+  height: 128px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.25);
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.touch-joystick-knob {
+  width: 52px;
+  height: 52px;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.touch-actions {
+  position: absolute;
+  right: calc(20px + env(safe-area-inset-right));
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 10px;
+  justify-items: end;
+}
+
+.touch-actions .wide {
+  grid-column: span 2;
+  width: 100%;
+}
+
+.touch-button {
+  min-width: 56px;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 14px;
+  text-shadow: 1px 1px 0 #000;
+  touch-action: none;
+}
+
+.touch-top .touch-button {
+  min-height: 40px;
+  min-width: 52px;
+  padding: 6px 10px;
+}
+
+.touch-button:active {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* 触屏时快捷栏可点选：整层抬到触屏操作层之上，但只有快捷栏接收手势 */
+.hud.touch {
+  z-index: 9;
+}
+
+.hud.touch .hotbar {
+  pointer-events: auto;
+}
