@@ -105,6 +105,8 @@ export interface BlockDef {
   hasFacing?: boolean;
   /** 按 meta 换整套贴图（床头/床尾、作物生长阶段等）；不设则一直用 textures。 */
   texturesForMeta?: (meta: number) => BlockFaceTextures;
+  /** 可攀爬（梯子）：实体在其中可以上下爬且不会摔落。 */
+  climbable?: boolean;
 }
 
 export const BlockId = {
@@ -138,6 +140,7 @@ export const BlockId = {
   TORCH: 50,
   DIAMOND_ORE: 56,
   BED: 26,
+  LADDER: 65,
   CHEST: 54,
   CRAFTING_TABLE: 58,
   FURNACE: 61,
@@ -415,6 +418,16 @@ export const BLOCK_DEFS: BlockDef[] = [
     drops: [{ item: 'melon_slice', min: 3, max: 7 }],
   }),
   {
+    ...cube(BlockId.LADDER, 'ladder', '梯子', same('ladder'), 0.4, ToolType.AXE, {
+      render: RenderType.CUTOUT,
+      solid: false,
+      opaque: false,
+      climbable: true,
+    }),
+    shape: BlockShape.LADDER,
+    hasFacing: true,
+  },
+  {
     ...cube(BlockId.BED, 'bed', '床', same('bed_foot_top'), 0.2, null, {
       opaque: false,
       interactive: true,
@@ -447,7 +460,14 @@ export const BLOCK_DEFS: BlockDef[] = [
       BlockId.CHEST,
       'chest',
       '箱子',
-      { top: 'chest_top', bottom: 'chest_top', north: 'chest_front', south: 'chest_side', east: 'chest_side', west: 'chest_side' },
+      {
+        top: 'chest_top',
+        bottom: 'chest_top',
+        north: 'chest_front',
+        south: 'chest_side',
+        east: 'chest_side',
+        west: 'chest_side',
+      },
       2.5,
       ToolType.AXE,
       { interactive: true },

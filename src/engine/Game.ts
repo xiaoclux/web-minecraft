@@ -30,6 +30,8 @@ import {
   PLAYER_WALK_SPEED,
   WATER_SWIM_UP_ACCEL,
   WATER_SWIM_UP_MAX,
+  LADDER_CLIMB_SPEED,
+  LADDER_SLIDE_SPEED,
   SLEEP_MONSTER_RADIUS,
   SPRINT_FOOD_THRESHOLD,
   TICK_MS,
@@ -769,6 +771,7 @@ export class Game implements EntityContext, ContainerHost {
     }
     const accel = p.onGround ? 14 : p.inWater ? 6 : 2.5;
     this.steerPlayer(dirX * speed, dirZ * speed, dt, accel);
+    this.applyClimbing(input.forward, input.jump, input.sneak);
     if (input.jump) {
       if (p.onGround) {
         // 站在地上（含浅水底）就正常起跳；疾跑起跳只在刚按下时加一次前冲
@@ -788,6 +791,44 @@ export class Game implements EntityContext, ContainerHost {
     if (!this.rules.takesDamage && p.health < p.maxHealth) {
       p.health = p.maxHealth;
     }
+  }
+
+  /** 玩家是否正贴着梯子等可攀爬方块（身体所在的格子里有就算）。 */
+  private isPlayerClimbing(): boolean {
+    const p = this.player;
+    const box = p.box();
+    const x0 = Math.floor(box.minX);
+    const x1 = Math.floor(box.maxX);
+    const z0 = Math.floor(box.minZ);
+    const z1 = Math.floor(box.maxZ);
+    const y0 = Math.floor(box.minY);
+    const y1 = Math.floor(box.maxY);
+    for (let y = y0; y <= y1; y++) {
+      for (let z = z0; z <= z1; z++) {
+        for (let x = x0; x <= x1; x++) {
+          if (getBlock(this.world.getBlock(x, y, z)).climbable) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /** 在梯子上：下滑限速、前进或跳跃向上爬、潜行停住，且不累计摔落距离。 */
+  private applyClimbing(forward: number, jump: boolean, sneak: boolean): void {
+    const p = this.player;
+    if (!this.isPlayerClimbing()) {
+      return;
+    }
+    if (jump || forward > 0) {
+      p.vy = LADDER_CLIMB_SPEED;
+    } else if (sneak) {
+      p.vy = 0;
+    } else {
+      p.vy = Math.max(p.vy, -LADDER_SLIDE_SPEED);
+    }
+    p.fallDistance = 0;
   }
 
   private steerPlayer(targetVx: number, targetVz: number, dt: number, accel: number): void {
@@ -1103,6 +1144,10 @@ export class Game implements EntityContext, ContainerHost {
       // 床头朝视线方向（放在玩家前方），meta 记录床尾 → 床头的方向
       return this.lookFacingIndex();
     }
+    if (def.shape === BlockShape.LADDER) {
+      // 梯子贴在被点击的那面墙上，正面朝命中面的法线方向
+      return facingIndexOf(hit.nx, hit.nz);
+    }
     if (def.hasFacing) {
       // 正面朝向玩家：与视线方向相反
       const [dx, dz] = this.lookHorizontal();
@@ -1194,6 +1239,10 @@ export class Game implements EntityContext, ContainerHost {
     }
     const meta = this.placementMeta(def, hit);
     if (def.shape === BlockShape.BED && !this.canPlaceBed(px, py, pz, meta)) {
+      return;
+    }
+    // 梯子只能贴在竖直墙面上
+    if (def.shape === BlockShape.LADDER && (hit.ny !== 0 || !this.world.isSolidAt(hit.x, hit.y, hit.z))) {
       return;
     }
     if (def.solid) {

@@ -91,3 +91,7 @@ export const DIFFICULTY_DAMAGE_MULTIPLIER: Record<Difficulty, number> = {
 
 /** 睡觉：附近有敌对生物则无法入睡的检查半径（格）。 */
 export const SLEEP_MONSTER_RADIUS = 8;
+
+/** 攀爬（梯子）：上爬速度与下滑速度上限（格/秒，取自 1.8.9 的 0.12 / 0.15 每 tick）。 */
+export const LADDER_CLIMB_SPEED = 2.4;
+export const LADDER_SLIDE_SPEED = 3;

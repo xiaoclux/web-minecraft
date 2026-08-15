@@ -338,6 +338,17 @@ const bedHeadEnd: Painter = (c, rng) => {
   c.rect(1, 2, 14, 8, BED_PILLOW);
 };
 
+/** 梯子：两根立柱 + 若干横档，其余透明。 */
+const LADDER_WOOD = hex('#8a6a3a');
+const ladder: Painter = (c) => {
+  c.fill(TRANSPARENT);
+  c.rect(2, 0, 2, 16, LADDER_WOOD);
+  c.rect(12, 0, 2, 16, LADDER_WOOD);
+  for (const y of [1, 6, 11]) {
+    c.rect(3, y, 10, 2, shade(LADDER_WOOD, 1.15));
+  }
+};
+
 const glowstone: Painter = (c, rng) => {
   c.noise(GLOW, 0.2, rng);
   c.speckle(hex('#ffe9a8'), 40, rng);
@@ -531,6 +542,7 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   bed_foot_side: bedFootSide,
   bed_head_end: bedHeadEnd,
   bed_foot_end: bedFootEnd,
+  ladder,
   snow: noiseBase(SNOW, 0.03),
   glowstone,
   stone_bricks: stoneBricks,

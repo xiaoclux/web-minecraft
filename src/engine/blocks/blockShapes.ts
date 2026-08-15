@@ -27,6 +27,8 @@ export const BlockShape = {
   STAIRS: 'stairs',
   /** 床：占半格多一点的一层。 */
   BED: 'bed',
+  /** 梯子：贴在墙上的薄片。 */
+  LADDER: 'ladder',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -78,6 +80,18 @@ const CROSS_BOXES: readonly BlockBox[] = [box(CROSS_INSET, 0, CROSS_INSET, 1 - C
 
 const SLAB_BOTTOM: readonly BlockBox[] = [box(0, 0, 0, 1, 0.5, 1)];
 const BED_BOXES: readonly BlockBox[] = [box(0, 0, 0, 1, BED_HEIGHT, 1)];
+/** 梯子厚度（1.8.9 为 2/16）。 */
+const LADDER_THICKNESS = 2 / 16;
+/** 按朝向序号索引：朝向是梯子正面对着的方向，背面贴墙。 */
+const LADDER_BOXES: readonly BlockBox[][] = FACINGS.map(([fx, fz]) =>
+  fx === 1
+    ? [box(0, 0, 0, LADDER_THICKNESS, 1, 1)]
+    : fx === -1
+      ? [box(1 - LADDER_THICKNESS, 0, 0, 1, 1, 1)]
+      : fz === 1
+        ? [box(0, 0, 0, 1, 1, LADDER_THICKNESS)]
+        : [box(0, 0, 1 - LADDER_THICKNESS, 1, 1, 1)],
+);
 const SLAB_TOP: readonly BlockBox[] = [box(0, 0.5, 0, 1, 1, 1)];
 
 /** 楼梯：[朝向][是否颠倒] → 子盒列表。 */
@@ -106,6 +120,8 @@ export function shapeBoxes(def: BlockDef, meta: number): readonly BlockBox[] {
       return STAIRS_BOXES[meta & FACING_MASK][(meta & STAIRS_FLIP_BIT) === 0 ? 0 : 1];
     case BlockShape.BED:
       return BED_BOXES;
+    case BlockShape.LADDER:
+      return LADDER_BOXES[meta & FACING_MASK];
     default:
       return FULL_BOXES;
   }
