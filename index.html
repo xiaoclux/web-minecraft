@@ -9,9 +9,70 @@
     <meta name="theme-color" content="#1a1a1a" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>Web Minecraft</title>
+    <!-- 与 game.css 中 .boot-screen 同款的最小样式：JS 下载/解析期间就有画面，避免白屏 -->
+    <style>
+      html,
+      body,
+      #root {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #101010;
+      }
+      .boot-screen {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        color: #fff;
+        font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+      }
+      .boot-title {
+        margin: 0;
+        font-size: 32px;
+        letter-spacing: 2px;
+        text-shadow: 3px 3px 0 #000;
+      }
+      .boot-bar {
+        width: min(320px, 70vw);
+        height: 12px;
+        background: #3a3a3a;
+        border: 2px solid #000;
+        outline: 2px solid #777;
+      }
+      .boot-bar-fill.indeterminate {
+        width: 30%;
+        height: 100%;
+        background: #7fbf3f;
+        animation: boot-slide 1.2s ease-in-out infinite alternate;
+      }
+      @keyframes boot-slide {
+        from {
+          transform: translateX(0);
+        }
+        to {
+          transform: translateX(233%);
+        }
+      }
+      .boot-label {
+        font-size: 14px;
+        color: #bbb;
+        text-shadow: 1px 1px 0 #000;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot-screen">
+        <h1 class="boot-title">Web Minecraft</h1>
+        <div class="boot-bar"><div class="boot-bar-fill indeterminate"></div></div>
+        <div class="boot-label">正在加载…</div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
