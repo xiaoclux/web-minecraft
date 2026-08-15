@@ -1,3 +1,4 @@
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { Game } from '../engine/Game';
 import { GameMode, HOTBAR_SIZE, PLAYER_MAX_FOOD, PLAYER_MAX_HEALTH } from '../engine/constants/game';
 import type { GameUiState } from '../engine/events/GameState';
@@ -6,8 +7,6 @@ import { ItemIcon } from './ItemIcon';
 interface HudProps {
   game: Game;
   state: GameUiState;
-  /** 触屏模式：快捷栏可点选。 */
-  isTouch: boolean;
 }
 
 const HEART_COUNT = PLAYER_MAX_HEALTH / 2;
@@ -48,12 +47,19 @@ function StatRow({
 }
 
 /** 游戏内 HUD：准星、状态条、快捷栏。 */
-export function Hud({ game, state, isTouch }: HudProps) {
+export function Hud({ game, state }: HudProps) {
   const inventory = game.player.inventory;
+  // 一个委托 handler 代替 9 个闭包
+  const handleHotbarPointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    const slot = (e.target as HTMLElement).closest<HTMLElement>('[data-slot]')?.dataset.slot;
+    if (slot !== undefined) {
+      game.selectSlot(Number(slot));
+    }
+  };
   const isCreative = state.mode === GameMode.CREATIVE;
   const showAir = state.isUnderwater || state.air < state.maxAir;
   return (
-    <div className={`hud${isTouch ? ' touch' : ''}`}>
+    <div className="hud">
       <div className="crosshair" />
       {state.targetLabel && <div className="target-label">{state.targetLabel}</div>}
       {state.toast && (
@@ -103,12 +109,13 @@ export function Hud({ game, state, isTouch }: HudProps) {
             {state.xpLevel > 0 && <span className="xp-level">{state.xpLevel}</span>}
           </div>
         )}
-        <div className="hotbar">
+        {/* 快捷栏可点选：粗指针设备下 CSS 才放开 pointer-events，桌面端指针锁定时点不到 */}
+        <div className="hotbar" onPointerDown={handleHotbarPointerDown}>
           {HOTBAR_INDICES.map((i) => (
             <div
               key={i}
+              data-slot={i}
               className={`hotbar-slot${i === state.selectedSlot ? ' selected' : ''}`}
-              onPointerDown={isTouch ? () => game.selectSlot(i) : undefined}
             >
               <ItemIcon stack={inventory.get(i)} />
             </div>

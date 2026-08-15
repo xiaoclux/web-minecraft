@@ -90,7 +90,7 @@ function GameOverlays({ game }: { game: Game }) {
   return (
     <>
       {state.isUnderwater && <div className="underwater-tint" />}
-      <Hud game={game} state={state} isTouch={showTouchControls} />
+      <Hud game={game} state={state} />
       {showTouchControls && state.screen === Screen.NONE && <TouchControls game={game} />}
       {state.debug && <DebugOverlay info={state.debug} />}
       {showInventory && <InventoryScreen game={game} state={state} />}

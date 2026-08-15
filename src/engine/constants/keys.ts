@@ -14,4 +14,3 @@ export const KEY_HOTBAR_PREFIX = 'Digit';
 export const MOUSE_LEFT = 0;
 export const MOUSE_MIDDLE = 1;
 export const MOUSE_RIGHT = 2;
-export const MOUSE_SENSITIVITY = 0.0022;

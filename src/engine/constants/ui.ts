@@ -5,18 +5,20 @@ export const TOUCH_MEDIA_QUERY = '(pointer: coarse)';
 /** 竖屏判定。 */
 export const PORTRAIT_MEDIA_QUERY = '(orientation: portrait)';
 
-/** 设置持久化的 localStorage 键。 */
+/** 设置持久化的 localStorage 键与写盘防抖间隔（滑块拖动时避免每帧同步写）。 */
 export const STORAGE_KEY_SETTINGS = 'mc.settings.v1';
+export const SETTINGS_PERSIST_DEBOUNCE_MS = 200;
 
-/** 鼠标灵敏度可调范围与滑块步长。 */
+/** 鼠标灵敏度默认值、可调范围与滑块步长（默认值必须落在范围内，否则会被 clamp 掉）。 */
+export const DEFAULT_MOUSE_SENSITIVITY = 0.0022;
 export const MIN_MOUSE_SENSITIVITY = 0.0005;
 export const MAX_MOUSE_SENSITIVITY = 0.008;
 export const MOUSE_SENSITIVITY_STEP = 0.0001;
 
-/** 触屏视角灵敏度（每像素弧度）可调范围与默认值。 */
+/** 触屏视角灵敏度（每像素弧度）默认值与可调范围。 */
+export const DEFAULT_TOUCH_LOOK_SENSITIVITY = 0.005;
 export const MIN_TOUCH_LOOK_SENSITIVITY = 0.001;
 export const MAX_TOUCH_LOOK_SENSITIVITY = 0.012;
-export const DEFAULT_TOUCH_LOOK_SENSITIVITY = 0.005;
 export const TOUCH_LOOK_SENSITIVITY_STEP = 0.0005;
 
 /** 摇杆半径（px）与死区（占半径比例）。 */

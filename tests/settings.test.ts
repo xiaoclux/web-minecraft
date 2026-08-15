@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MAX_MOUSE_SENSITIVITY, MIN_MOUSE_SENSITIVITY } from '../src/engine/constants/ui';
+import { keyLabel } from '../src/ui/keyLabels';
 import {
   BINDING_ACTIONS,
   DEFAULT_SETTINGS,
   actionForCode,
   bindKey,
-  keyLabel,
   normalizeSettings,
   resetSettings,
   settingsStore,

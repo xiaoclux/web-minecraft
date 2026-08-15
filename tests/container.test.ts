@@ -12,7 +12,6 @@ function setup(screen: 'inventory' | 'crafting' | 'furnace' = 'inventory', isCre
   const inventory = new Inventory();
   const craftingGrid: (ItemStack | null)[] = new Array<ItemStack | null>(9).fill(null);
   const furnace: FurnaceState = createFurnace();
-  const dropped: ItemStack[] = [];
   let changes = 0;
   const host: ContainerHost = {
     inventory,
@@ -21,11 +20,10 @@ function setup(screen: 'inventory' | 'crafting' | 'furnace' = 'inventory', isCre
     openFurnace: screen === 'furnace' ? furnace : null,
     currentScreen: screen,
     isCreative,
-    dropAtPlayer: (s) => dropped.push(s),
     notifyChanged: () => changes++,
   };
   const ctrl = new ContainerController(host);
-  return { inventory, craftingGrid, furnace, dropped, ctrl, changes: () => changes };
+  return { inventory, craftingGrid, furnace, ctrl, changes: () => changes };
 }
 
 describe('ContainerController', () => {
@@ -79,7 +77,7 @@ describe('ContainerController', () => {
   });
 
   it('背包满时收回光标不会掉落物品，物品保留在光标上', () => {
-    const { inventory, ctrl, dropped } = setup();
+    const { inventory, ctrl } = setup();
     inventory.set(0, { id: 'dirt', count: 10 });
     ctrl.handleSlotClick({ kind: 'inventory', index: 0 }, LEFT, false);
     for (let i = 0; i < INVENTORY_SLOTS; i++) {
@@ -87,18 +85,16 @@ describe('ContainerController', () => {
     }
     expect(ctrl.returnCursor()).toBe(10);
     expect(ctrl.cursor).toEqual({ id: 'dirt', count: 10 });
-    expect(dropped).toHaveLength(0);
   });
 
   it('背包满时收回合成格物品会留在原格且不掉落', () => {
-    const { inventory, craftingGrid, ctrl, dropped } = setup();
+    const { inventory, craftingGrid, ctrl } = setup();
     craftingGrid[0] = { id: 'log', count: 3 };
     for (let i = 0; i < INVENTORY_SLOTS; i++) {
       inventory.set(i, { id: 'stone', count: maxStackOf('stone') });
     }
     expect(ctrl.returnCraftingItems()).toBe(3);
     expect(craftingGrid[0]).toEqual({ id: 'log', count: 3 });
-    expect(dropped).toHaveLength(0);
   });
 
   it('死亡时清空光标与合成格并交出物品', () => {

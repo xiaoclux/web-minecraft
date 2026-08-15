@@ -631,14 +631,9 @@ export class Game implements EntityContext, ContainerHost {
 
   // ---------------------------------------------------------------- 触屏输入转发
 
-  /** 触屏按钮：按下按键（与键盘走同一条处理链）。 */
-  pressKey(code: string): void {
-    this.controls.pressVirtualKey(code);
-  }
-
-  /** 触屏按钮：抬起按键。 */
-  releaseKey(code: string): void {
-    this.controls.releaseVirtualKey(code);
+  /** 触屏按钮：按下/抬起按键（与键盘走同一条处理链）。 */
+  setKeyInput(code: string, down: boolean): void {
+    this.controls.setVirtualKey(code, down);
   }
 
   /** 触屏按钮：按下/抬起鼠标键（挖掘、放置）。 */
@@ -651,10 +646,9 @@ export class Game implements EntityContext, ContainerHost {
     this.controls.setVirtualMove(forward, strafe);
   }
 
-  /** 触屏拖动：按像素位移转动视角。 */
+  /** 触屏拖动：按像素位移转动视角（灵敏度在 Controls 内按来源换算）。 */
   lookBy(dxPixels: number, dyPixels: number): void {
-    const sensitivity = settingsStore.get().touchLookSensitivity;
-    this.controls.look(dxPixels * sensitivity, dyPixels * sensitivity);
+    this.controls.lookByPixels(dxPixels, dyPixels, 'touch');
   }
 
   /** 打开界面。 */
@@ -1287,10 +1281,6 @@ export class Game implements EntityContext, ContainerHost {
     return this.rules.infiniteItems;
   }
 
-  dropAtPlayer(stack: ItemStack): void {
-    this.dropItem(this.player.x, this.player.eyeY, this.player.z, stack);
-  }
-
   notifyChanged(): void {
     this.bumpInventory();
   }
@@ -1299,8 +1289,6 @@ export class Game implements EntityContext, ContainerHost {
 
   private onPlayerDeath(): void {
     this.resetBreaking();
-    this.containers.returnCraftingItems();
-    this.containers.returnCursor();
     const workspace = this.containers.drainWorkspace();
     if (!this.rules.infiniteItems) {
       for (const stack of [...workspace, ...this.player.inventory.drainAll()]) {

@@ -22,8 +22,6 @@ export interface ContainerHost {
   readonly openFurnace: FurnaceState | null;
   readonly currentScreen: Screen;
   readonly isCreative: boolean;
-  /** 在玩家位置掉落物品。 */
-  dropAtPlayer(stack: ItemStack): void;
   /** 通知 UI 刷新。 */
   notifyChanged(): void;
 }

@@ -9,14 +9,15 @@ import {
   KEY_RIGHT,
   KEY_SNEAK,
   KEY_SPRINT,
-  MOUSE_SENSITIVITY,
 } from '../constants/keys';
 import {
+  DEFAULT_MOUSE_SENSITIVITY,
   DEFAULT_TOUCH_LOOK_SENSITIVITY,
   MAX_MOUSE_SENSITIVITY,
   MAX_TOUCH_LOOK_SENSITIVITY,
   MIN_MOUSE_SENSITIVITY,
   MIN_TOUCH_LOOK_SENSITIVITY,
+  SETTINGS_PERSIST_DEBOUNCE_MS,
   STORAGE_KEY_SETTINGS,
   TOUCH_MEDIA_QUERY,
 } from '../constants/ui';
@@ -36,20 +37,6 @@ export const BINDING_ACTIONS = [
   'debug',
 ] as const;
 export type BindingAction = (typeof BINDING_ACTIONS)[number];
-
-/** 动作的中文名（设置界面展示用）。 */
-export const BINDING_LABELS: Record<BindingAction, string> = {
-  forward: '前进',
-  back: '后退',
-  left: '左移',
-  right: '右移',
-  jump: '跳跃 / 上浮',
-  sneak: '潜行 / 下降',
-  sprint: '疾跑',
-  inventory: '背包',
-  drop: '丢弃物品',
-  debug: '调试信息',
-};
 
 /** 玩家可配置项。 */
 export interface GameSettings {
@@ -77,14 +64,31 @@ export const DEFAULT_SETTINGS: GameSettings = {
     drop: KEY_DROP,
     debug: KEY_DEBUG,
   },
-  mouseSensitivity: MOUSE_SENSITIVITY,
+  mouseSensitivity: DEFAULT_MOUSE_SENSITIVITY,
   touchLookSensitivity: DEFAULT_TOUCH_LOOK_SENSITIVITY,
-  touchControlsEnabled: isTouchDevice(),
+  // 纯常量：是否真的显示触屏按钮 = 本项 && 当前是粗指针设备，设备判定只在使用点做一次
+  touchControlsEnabled: true,
 };
 
-/** 当前环境是否为触屏设备。 */
+/** 缓存 MediaQueryList，避免每次判定都新建对象。 */
+const mediaQueryCache = new Map<string, MediaQueryList>();
+
+/** 取（并缓存）媒体查询对象；无 window 时返回 null。 */
+export function getMediaQuery(query: string): MediaQueryList | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  let mql = mediaQueryCache.get(query);
+  if (!mql) {
+    mql = window.matchMedia(query);
+    mediaQueryCache.set(query, mql);
+  }
+  return mql;
+}
+
+/** 当前环境是否为触屏设备（粗指针）。 */
 export function isTouchDevice(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia(TOUCH_MEDIA_QUERY).matches;
+  return getMediaQuery(TOUCH_MEDIA_QUERY)?.matches ?? false;
 }
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
@@ -138,15 +142,24 @@ function loadSettings(): GameSettings {
   }
 }
 
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 防抖写盘：滑块拖动时每帧都会改设置，不必每次同步写 localStorage。 */
 function persist(settings: GameSettings): void {
   if (typeof localStorage === 'undefined') {
     return;
   }
-  try {
-    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
-  } catch {
-    // 隐私模式 / 配额不足：设置仍在本次会话内生效
+  if (persistTimer !== null) {
+    clearTimeout(persistTimer);
   }
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    try {
+      localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+    } catch {
+      // 隐私模式 / 配额不足：设置仍在本次会话内生效
+    }
+  }, SETTINGS_PERSIST_DEBOUNCE_MS);
 }
 
 /** 全局设置 Store（UI 与引擎共享，改动即时生效）。 */
@@ -173,7 +186,7 @@ export function bindKey(action: BindingAction, code: string): void {
 
 /** 恢复出厂设置。 */
 export function resetSettings(): void {
-  updateSettings({ ...DEFAULT_SETTINGS, keys: { ...DEFAULT_SETTINGS.keys } });
+  updateSettings(normalizeSettings(null));
 }
 
 /** 按键码反查动作；未绑定返回 null。 */
@@ -186,30 +199,3 @@ export function actionForCode(code: string, settings: GameSettings): BindingActi
   return null;
 }
 
-/** 按键码的可读名称（设置界面与帮助文本共用）。 */
-export function keyLabel(code: string): string {
-  if (code.startsWith('Key')) {
-    return code.slice(3);
-  }
-  if (code.startsWith('Digit')) {
-    return code.slice(5);
-  }
-  if (code.startsWith('Arrow')) {
-    return { Up: '↑', Down: '↓', Left: '←', Right: '→' }[code.slice(5)] ?? code;
-  }
-  return KEY_CODE_LABELS[code] ?? code;
-}
-
-const KEY_CODE_LABELS: Record<string, string> = {
-  Space: '空格',
-  ShiftLeft: '左 Shift',
-  ShiftRight: '右 Shift',
-  ControlLeft: '左 Ctrl',
-  ControlRight: '右 Ctrl',
-  AltLeft: '左 Alt',
-  AltRight: '右 Alt',
-  Tab: 'Tab',
-  Enter: '回车',
-  Backspace: '退格',
-  CapsLock: 'Caps',
-};

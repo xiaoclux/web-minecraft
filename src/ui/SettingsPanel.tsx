@@ -6,18 +6,19 @@ import {
   MIN_TOUCH_LOOK_SENSITIVITY,
   MOUSE_SENSITIVITY_STEP,
   TOUCH_LOOK_SENSITIVITY_STEP,
+  TOUCH_MEDIA_QUERY,
 } from '../engine/constants/ui';
 import {
   BINDING_ACTIONS,
-  BINDING_LABELS,
   bindKey,
-  isTouchDevice,
-  keyLabel,
   resetSettings,
   settingsStore,
   updateSettings,
   type BindingAction,
 } from '../engine/settings/Settings';
+import { BINDING_LABELS, keyLabel } from './keyLabels';
+import { SliderRow } from './SliderRow';
+import { useMediaQuery } from './useMediaQuery';
 import { useStore } from './useGameStore';
 
 interface SettingsPanelProps {
@@ -33,7 +34,7 @@ function percent(value: number, min: number, max: number): number {
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const settings = useStore(settingsStore);
   const [capturing, setCapturing] = useState<BindingAction | null>(null);
-  const isTouch = isTouchDevice();
+  const isTouch = useMediaQuery(TOUCH_MEDIA_QUERY);
 
   useEffect(() => {
     if (!capturing) {
@@ -68,31 +69,26 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           ))}
         </div>
         <p className="muted">Esc（菜单）、数字键 1-9（快捷栏）与鼠标左/中/右键固定不可修改。</p>
-        <label className="slider-row">
-          鼠标灵敏度：{percent(settings.mouseSensitivity, MIN_MOUSE_SENSITIVITY, MAX_MOUSE_SENSITIVITY)}
-          <input
-            type="range"
-            min={MIN_MOUSE_SENSITIVITY}
-            max={MAX_MOUSE_SENSITIVITY}
-            step={MOUSE_SENSITIVITY_STEP}
-            value={settings.mouseSensitivity}
-            onChange={(e) => updateSettings({ mouseSensitivity: Number(e.target.value) })}
-          />
-        </label>
+        <SliderRow
+          label="鼠标灵敏度"
+          min={MIN_MOUSE_SENSITIVITY}
+          max={MAX_MOUSE_SENSITIVITY}
+          step={MOUSE_SENSITIVITY_STEP}
+          value={settings.mouseSensitivity}
+          display={percent(settings.mouseSensitivity, MIN_MOUSE_SENSITIVITY, MAX_MOUSE_SENSITIVITY)}
+          onChange={(mouseSensitivity) => updateSettings({ mouseSensitivity })}
+        />
         {isTouch && (
           <>
-            <label className="slider-row">
-              触屏视角灵敏度：
-              {percent(settings.touchLookSensitivity, MIN_TOUCH_LOOK_SENSITIVITY, MAX_TOUCH_LOOK_SENSITIVITY)}
-              <input
-                type="range"
-                min={MIN_TOUCH_LOOK_SENSITIVITY}
-                max={MAX_TOUCH_LOOK_SENSITIVITY}
-                step={TOUCH_LOOK_SENSITIVITY_STEP}
-                value={settings.touchLookSensitivity}
-                onChange={(e) => updateSettings({ touchLookSensitivity: Number(e.target.value) })}
-              />
-            </label>
+            <SliderRow
+              label="触屏视角灵敏度"
+              min={MIN_TOUCH_LOOK_SENSITIVITY}
+              max={MAX_TOUCH_LOOK_SENSITIVITY}
+              step={TOUCH_LOOK_SENSITIVITY_STEP}
+              value={settings.touchLookSensitivity}
+              display={percent(settings.touchLookSensitivity, MIN_TOUCH_LOOK_SENSITIVITY, MAX_TOUCH_LOOK_SENSITIVITY)}
+              onChange={(touchLookSensitivity) => updateSettings({ touchLookSensitivity })}
+            />
             <label className="checkbox-row">
               <input
                 type="checkbox"

@@ -67,7 +67,7 @@ export class Controls {
       if (!this.locked) {
         return;
       }
-      this.look(e.movementX * this.settings.mouseSensitivity, e.movementY * this.settings.mouseSensitivity);
+      this.lookByPixels(e.movementX, e.movementY, 'mouse');
     });
     on(document, 'mousedown', (e) => {
       if (!this.locked) {
@@ -97,28 +97,29 @@ export class Controls {
   }
 
   /**
-   * 按给定弧度增量转动视角（鼠标与触屏共用）。
-   * @param dYaw 水平增量（向右为正）
-   * @param dPitch 垂直增量（向下为正）
+   * 按像素位移转动视角；灵敏度由当前设置决定，鼠标与触屏共用这一条路径。
+   * @param dx 水平像素位移（向右为正）
+   * @param dy 垂直像素位移（向下为正）
+   * @param source 输入来源，决定用哪个灵敏度
    */
-  look(dYaw: number, dPitch: number): void {
-    this.yaw -= dYaw;
-    this.pitch -= dPitch;
+  lookByPixels(dx: number, dy: number, source: 'mouse' | 'touch'): void {
+    const sensitivity = source === 'mouse' ? this.settings.mouseSensitivity : this.settings.touchLookSensitivity;
+    this.yaw -= dx * sensitivity;
+    this.pitch -= dy * sensitivity;
     this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.pitch));
   }
 
-  /** 触屏按钮：按下虚拟按键（与真实键盘走同一条处理链）。 */
-  pressVirtualKey(code: string): void {
+  /** 触屏按钮：按下/抬起虚拟按键（与真实键盘走同一条处理链）。 */
+  setVirtualKey(code: string, down: boolean): void {
+    if (!down) {
+      this.keys.delete(code);
+      return;
+    }
     if (this.keys.has(code)) {
       return;
     }
     this.keys.add(code);
     this.onKeyDown?.(code, false);
-  }
-
-  /** 触屏按钮：抬起虚拟按键。 */
-  releaseVirtualKey(code: string): void {
-    this.keys.delete(code);
   }
 
   /** 触屏按钮：按下/抬起虚拟鼠标键（0 左 / 2 右）。 */

@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import type { Game } from '../engine/Game';
 import { GAME_MODE_LABELS } from '../engine/constants/game';
-import { keyLabel, settingsStore } from '../engine/settings/Settings';
+import { settingsStore } from '../engine/settings/Settings';
+import { keyLabel } from './keyLabels';
 import { SettingsPanel } from './SettingsPanel';
+import { SliderRow } from './SliderRow';
 import { useStore } from './useGameStore';
 
 interface PauseMenuProps {
@@ -45,20 +47,17 @@ export function PauseMenu({ game }: PauseMenuProps) {
         <button className="menu-button" onClick={() => game.resume()}>
           回到游戏
         </button>
-        <label className="slider-row">
-          渲染距离：{distance} 区块
-          <input
-            type="range"
-            min={MIN_RENDER_DISTANCE}
-            max={MAX_RENDER_DISTANCE}
-            value={distance}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              setDistance(v);
-              game.setRenderDistance(v);
-            }}
-          />
-        </label>
+        <SliderRow
+          label="渲染距离"
+          min={MIN_RENDER_DISTANCE}
+          max={MAX_RENDER_DISTANCE}
+          value={distance}
+          display={`${distance} 区块`}
+          onChange={(v) => {
+            setDistance(v);
+            game.setRenderDistance(v);
+          }}
+        />
         <button className="menu-button" onClick={() => setShowSettings(true)}>
           设置
         </button>

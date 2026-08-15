@@ -1,4 +1,11 @@
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import type { Game, SlotRef } from '../engine/Game';
 import { GameMode, HOTBAR_SIZE, INVENTORY_SIZE } from '../engine/constants/game';
 import { MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT } from '../engine/constants/keys';
@@ -40,6 +47,7 @@ function Slot({
       longPressTimer.current = null;
     }
   };
+  useEffect(() => clearLongPress, []);
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
     e.preventDefault();
     if (e.button === MOUSE_MIDDLE) {
@@ -188,14 +196,25 @@ function CreativeList({ game }: { game: Game }) {
 /** 背包 / 工作台 / 熔炉 界面。 */
 export function InventoryScreen({ game, state }: InventoryScreenProps) {
   const isCreative = state.mode === GameMode.CREATIVE;
-  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
+  const cursorRef = useRef<HTMLDivElement>(null);
+  const pointerPos = useRef({ x: 0, y: 0 });
   const cursor = game.cursor;
+  // 直接写样式而不是走 state：指针移动是高频事件，重渲染整个背包（约 90 个格子）代价太大
+  const placeCursorStack = (): void => {
+    const el = cursorRef.current;
+    if (el) {
+      el.style.left = `${pointerPos.current.x}px`;
+      el.style.top = `${pointerPos.current.y}px`;
+    }
+  };
+  const followPointer = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    pointerPos.current = { x: e.clientX, y: e.clientY };
+    placeCursorStack();
+  };
+  // 光标物品刚出现时元素还没挂载，补一次定位
+  useLayoutEffect(placeCursorStack, [cursor]);
   return (
-    <div
-      className="overlay inventory-overlay"
-      onPointerMove={(e) => setCursorPos({ x: e.clientX, y: e.clientY })}
-      onPointerDown={(e) => setCursorPos({ x: e.clientX, y: e.clientY })}
-    >
+    <div className="overlay inventory-overlay" onPointerMove={followPointer} onPointerDown={followPointer}>
       <div className="panel inventory-panel">
         <div className="panel-body">
           {state.screen === Screen.INVENTORY && isCreative && <CreativeList game={game} />}
@@ -210,7 +229,7 @@ export function InventoryScreen({ game, state }: InventoryScreenProps) {
         </button>
       </div>
       {cursor && (
-        <div className="cursor-stack" style={{ left: cursorPos.x, top: cursorPos.y }}>
+        <div className="cursor-stack" ref={cursorRef}>
           <ItemIcon stack={cursor} />
         </div>
       )}

@@ -906,13 +906,15 @@ button:disabled {
   background: rgba(255, 255, 255, 0.35);
 }
 
-/* 触屏时快捷栏可点选：整层抬到触屏操作层之上，但只有快捷栏接收手势 */
-.hud.touch {
-  z-index: 9;
-}
+/* 粗指针设备：HUD 抬到触屏操作层之上，只有快捷栏接收手势，可直接点选物品 */
+@media (pointer: coarse) {
+  .hud {
+    z-index: 9;
+  }
 
-.hud.touch .hotbar {
-  pointer-events: auto;
+  .hud .hotbar {
+    pointer-events: auto;
+  }
 }
 
 /* 可滚动区域要放行纵向手势（html/body 已禁用 touch-action 以屏蔽页面回弹） */

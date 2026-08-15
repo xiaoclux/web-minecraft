@@ -12,11 +12,11 @@ describe('Controls 虚拟输入', () => {
     const controls = createControls();
     const onKeyDown = vi.fn();
     controls.onKeyDown = onKeyDown;
-    controls.pressVirtualKey(DEFAULT_SETTINGS.keys.jump);
-    controls.pressVirtualKey(DEFAULT_SETTINGS.keys.jump);
+    controls.setVirtualKey(DEFAULT_SETTINGS.keys.jump, true);
+    controls.setVirtualKey(DEFAULT_SETTINGS.keys.jump, true);
     expect(onKeyDown).toHaveBeenCalledTimes(1);
     expect(controls.read().jump).toBe(true);
-    controls.releaseVirtualKey(DEFAULT_SETTINGS.keys.jump);
+    controls.setVirtualKey(DEFAULT_SETTINGS.keys.jump, false);
     expect(controls.read().jump).toBe(false);
   });
 
@@ -37,7 +37,7 @@ describe('Controls 虚拟输入', () => {
 
   it('摇杆非零时覆盖键盘方向', () => {
     const controls = createControls();
-    controls.pressVirtualKey(DEFAULT_SETTINGS.keys.forward);
+    controls.setVirtualKey(DEFAULT_SETTINGS.keys.forward, true);
     expect(controls.read()).toMatchObject({ forward: 1, strafe: 0 });
     controls.setVirtualMove(-0.5, 0.8);
     expect(controls.read()).toMatchObject({ forward: -0.5, strafe: 0.8 });
@@ -47,18 +47,26 @@ describe('Controls 虚拟输入', () => {
 
   it('read 使用当前设置里的键位', () => {
     const controls = createControls(normalizeSettings({ keys: { forward: 'ArrowUp' } }));
-    controls.pressVirtualKey('ArrowUp');
+    controls.setVirtualKey('ArrowUp', true);
     expect(controls.read().forward).toBe(1);
-    controls.releaseVirtualKey('ArrowUp');
-    controls.pressVirtualKey('KeyW');
+    controls.setVirtualKey('ArrowUp', false);
+    controls.setVirtualKey('KeyW', true);
     expect(controls.read().forward).toBe(0);
   });
 
   it('俯仰角限制在 ±90° 内', () => {
     const controls = createControls();
-    controls.look(0, 100);
+    controls.lookByPixels(0, 10000, 'mouse');
     expect(controls.pitch).toBeGreaterThan(-Math.PI / 2);
-    controls.look(0, -200);
+    controls.lookByPixels(0, -20000, 'mouse');
     expect(controls.pitch).toBeLessThan(Math.PI / 2);
+  });
+
+  it('鼠标与触屏使用各自的灵敏度', () => {
+    const controls = createControls(normalizeSettings({ mouseSensitivity: 0.001, touchLookSensitivity: 0.002 }));
+    controls.lookByPixels(100, 0, 'mouse');
+    expect(controls.yaw).toBeCloseTo(-0.1);
+    controls.lookByPixels(100, 0, 'touch');
+    expect(controls.yaw).toBeCloseTo(-0.3);
   });
 });
