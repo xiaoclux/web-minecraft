@@ -22,7 +22,7 @@ export class Renderer {
   readonly chunks: ChunkRenderer;
   readonly entities: EntityRenderer;
   readonly sky = new Sky();
-  readonly outline = new BlockOutline();
+  readonly outline: BlockOutline;
   readonly hand: HandRenderer;
   private readonly ambient: THREE.AmbientLight;
   private readonly sun: THREE.DirectionalLight;
@@ -40,6 +40,7 @@ export class Renderer {
     this.sun = new THREE.DirectionalLight(0xffffff, SUN_INTENSITY);
     this.sun.position.set(0.4, 1, 0.6);
     this.hand = new HandRenderer(atlas);
+    this.outline = new BlockOutline(atlas);
     this.scene.add(this.chunks.group, this.entities.group, this.sky.group, this.outline.group, this.ambient, this.sun);
     this.camera.add(this.hand.group);
     this.scene.add(this.camera);

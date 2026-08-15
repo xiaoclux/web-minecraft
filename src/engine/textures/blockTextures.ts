@@ -1,4 +1,4 @@
-import { PixelCanvas, createRng, hashString, hex, shade, type Rgba } from './PixelCanvas';
+import { PixelCanvas, TEXTURE_SIZE, createRng, hashString, hex, shade, type Rgba } from './PixelCanvas';
 
 type Painter = (c: PixelCanvas, rng: () => number) => void;
 
@@ -357,8 +357,67 @@ const sapling: Painter = (c) => {
   c.rect(6, 1, 4, 1, hex('#4c9430'));
 };
 
+/** 破坏裂纹阶段数（destroy_stage_0..9）。 */
+export const DESTROY_STAGE_COUNT = 10;
+const DESTROY_STAGE_PREFIX = 'destroy_stage_';
+const CRACK_COLOR = hex('#141414c8');
+const CRACK_COLOR_LIGHT = hex('#2a2a2a96');
+/** 每阶段裂纹分支数与最大长度随阶段线性增长。 */
+const CRACK_BRANCH_BASE = 2;
+const CRACK_BRANCH_PER_STAGE = 1;
+const CRACK_MIN_LENGTH = 3;
+const CRACK_LENGTH_PER_STAGE = 1;
+
+/** 破坏阶段贴图 key。 */
+export function destroyStageKey(stage: number): string {
+  return `${DESTROY_STAGE_PREFIX}${stage}`;
+}
+
+/** 全部破坏阶段贴图 key。 */
+export function collectDestroyStageKeys(): string[] {
+  return Array.from({ length: DESTROY_STAGE_COUNT }, (_, i) => destroyStageKey(i));
+}
+
+/**
+ * 裂纹贴图：透明底，从中心附近向外的随机折线，阶段越高分支越多越长。
+ * 每阶段用固定种子，且低阶段的裂纹是高阶段的子集，保证过渡自然。
+ */
+function destroyStage(stage: number): Painter {
+  return (c) => {
+    const rng = createRng(hashString(DESTROY_STAGE_PREFIX));
+    const branches = CRACK_BRANCH_BASE + CRACK_BRANCH_PER_STAGE * DESTROY_STAGE_COUNT;
+    const visible = CRACK_BRANCH_BASE + CRACK_BRANCH_PER_STAGE * stage;
+    const half = TEXTURE_SIZE / 2;
+    for (let b = 0; b < branches; b++) {
+      let x = half - 2 + Math.floor(rng() * 4);
+      let y = half - 2 + Math.floor(rng() * 4);
+      const angle = rng() * Math.PI * 2;
+      const maxLength = CRACK_MIN_LENGTH + CRACK_LENGTH_PER_STAGE * DESTROY_STAGE_COUNT;
+      const length = CRACK_MIN_LENGTH + CRACK_LENGTH_PER_STAGE * stage;
+      for (let i = 0; i < maxLength; i++) {
+        const jitter = (rng() - 0.5) * 1.2;
+        const dx = Math.cos(angle + jitter);
+        const dz = Math.sin(angle + jitter);
+        x += dx > 0.33 ? 1 : dx < -0.33 ? -1 : 0;
+        y += dz > 0.33 ? 1 : dz < -0.33 ? -1 : 0;
+        if (b < visible && i < length) {
+          c.set(x, y, CRACK_COLOR);
+          if (stage >= DESTROY_STAGE_COUNT / 2 && rng() < 0.5) {
+            c.set(x + 1, y, CRACK_COLOR_LIGHT);
+          }
+        }
+      }
+    }
+  };
+}
+
+const DESTROY_STAGE_PAINTERS: Record<string, Painter> = Object.fromEntries(
+  collectDestroyStageKeys().map((key, stage) => [key, destroyStage(stage)]),
+);
+
 /** 方块贴图生成器表。 */
 export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
+  ...DESTROY_STAGE_PAINTERS,
   stone: noiseBase(STONE),
   grass_top: grassTop,
   grass_side: grassSide,

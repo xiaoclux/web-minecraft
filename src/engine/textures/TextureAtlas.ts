@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { collectBlockTextureKeys } from '../blocks/BlockRegistry';
 import { TEXTURE_SIZE, type PixelCanvas } from './PixelCanvas';
-import { paintBlockTexture } from './blockTextures';
+import { collectDestroyStageKeys, paintBlockTexture } from './blockTextures';
 
 /** 图集中一张贴图的 UV 范围。 */
 export interface AtlasRegion {
@@ -22,7 +22,7 @@ export class TextureAtlas {
   readonly pixels = new Map<string, PixelCanvas>();
   private readonly canvas: HTMLCanvasElement;
 
-  constructor(keys: string[] = collectBlockTextureKeys()) {
+  constructor(keys: string[] = [...collectBlockTextureKeys(), ...collectDestroyStageKeys()]) {
     const count = keys.length;
     this.tilesPerRow = Math.ceil(Math.sqrt(count));
     const size = this.tilesPerRow * TEXTURE_SIZE;
