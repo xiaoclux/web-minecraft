@@ -110,11 +110,12 @@ export class MobSpawner {
       return;
     }
     const world = ctx.world;
-    // 大部分尝试落在地表，其余随机 y（覆盖洞穴）
+    // 大部分尝试落在地表，其余在地表以下随机取 y（覆盖洞穴，不在高空空气里空转）
+    const surfaceY = world.getSurfaceY(pos.x, pos.z);
     const y =
       ctx.random() < SURFACE_SPAWN_RATIO
-        ? world.getSurfaceY(pos.x, pos.z)
-        : 1 + Math.floor(ctx.random() * (world.sizeY - 2));
+        ? surfaceY
+        : 1 + Math.floor(ctx.random() * Math.max(1, surfaceY - 1));
     if (
       !world.isSolidAt(pos.x, y - 1, pos.z) ||
       world.getBlock(pos.x, y, pos.z) !== BlockId.AIR ||

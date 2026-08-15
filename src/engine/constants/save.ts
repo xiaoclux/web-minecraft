@@ -6,6 +6,8 @@ export const SAVE_FORMAT_VERSION = 2;
 /** 旧格式：1 = 256×256 整卷 RLE，读档时自动迁移。 */
 export const LEGACY_SAVE_FORMAT_VERSION = 1;
 export const LEGACY_WORLD_SIZE_X = 256;
+/** 旧格式的世界高度（当时世界只有 64 高）。 */
+export const LEGACY_WORLD_SIZE_Y = 64;
 export const LEGACY_WORLD_SIZE_Z = 256;
 export const AUTOSAVE_INTERVAL_TICKS = 6000;
 export const MAX_WORLD_NAME_LENGTH = 32;

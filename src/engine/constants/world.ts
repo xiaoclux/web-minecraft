@@ -1,5 +1,5 @@
 /** 世界高度与分块常量（方块单位）。水平方向无限，按 16×N×16 的 chunk 流式生成，chunk 内再按 16 高分段。 */
-export const WORLD_SIZE_Y = 64;
+export const WORLD_SIZE_Y = 256;
 export const CHUNK_SIZE = 16;
 export const CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE;
 export const CHUNK_VOLUME = CHUNK_AREA * WORLD_SIZE_Y;
@@ -12,7 +12,7 @@ export const SECTION_COUNT = WORLD_SIZE_Y / SECTION_HEIGHT;
 export const SECTION_VOLUME = CHUNK_AREA * SECTION_HEIGHT;
 /** chunk 坐标的绝对值上限（键空间 (2·LIMIT)² 必须落在安全整数内）。 */
 export const CHUNK_KEY_LIMIT = 32768;
-export const SEA_LEVEL = 32;
+export const SEA_LEVEL = 63;
 /** 默认渲染距离（chunk 数）。 */
 export const DEFAULT_RENDER_DISTANCE = 8;
 /** 加载半径 = 渲染距离 + 该值；卸载半径 = 渲染距离 + 该值。 */

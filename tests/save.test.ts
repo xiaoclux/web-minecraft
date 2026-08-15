@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { bytesEqual } from './helpers';
-import { LEGACY_WORLD_SIZE_X, LEGACY_WORLD_SIZE_Z, SAVE_FORMAT_VERSION } from '../src/engine/constants/save';
+import {
+  LEGACY_WORLD_SIZE_X,
+  LEGACY_WORLD_SIZE_Y,
+  LEGACY_WORLD_SIZE_Z,
+  SAVE_FORMAT_VERSION,
+} from '../src/engine/constants/save';
 import { GameMode, Difficulty } from '../src/engine/constants/game';
-import { WORLD_SIZE_Y, WorldType } from '../src/engine/constants/world';
+import { WorldType } from '../src/engine/constants/world';
 import { migrateLegacySave, type LegacyWorldSave } from '../src/engine/save/migrate';
 import { deserializeChunk } from '../src/engine/save/chunkSerializer';
 import { rleDecode, rleEncode } from '../src/engine/save/serialize';
@@ -33,7 +38,7 @@ describe('RLE 序列化', () => {
 
 describe('旧存档迁移', () => {
   it('v1 整卷方块切成 256 个 chunk 且坐标一致', () => {
-    const volume = LEGACY_WORLD_SIZE_X * WORLD_SIZE_Y * LEGACY_WORLD_SIZE_Z;
+    const volume = LEGACY_WORLD_SIZE_X * LEGACY_WORLD_SIZE_Y * LEGACY_WORLD_SIZE_Z;
     const blocks = new Uint8Array(volume);
     const index = (x: number, y: number, z: number) => (y * LEGACY_WORLD_SIZE_Z + z) * LEGACY_WORLD_SIZE_X + x;
     blocks[index(17, 5, 33)] = 7;

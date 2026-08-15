@@ -20,10 +20,10 @@ const BASE_HEIGHT = SEA_LEVEL + 2;
 const CONTINENT_SCALE = 1 / 180;
 const HILL_SCALE = 1 / 48;
 const DETAIL_SCALE = 1 / 14;
-const CONTINENT_AMPLITUDE = 14;
+const CONTINENT_AMPLITUDE = 18;
 const HILL_AMPLITUDE = 6;
 const DETAIL_AMPLITUDE = 2;
-const MOUNTAIN_EXTRA = 18;
+const MOUNTAIN_EXTRA = 30;
 const MOUNTAIN_THRESHOLD = 0.55;
 const BIOME_SCALE = 1 / 120;
 const CAVE_SCALE = 1 / 22;
@@ -34,7 +34,8 @@ const CAVE_MAX_DEPTH_BELOW_SURFACE = 4;
 const DIRT_DEPTH = 3;
 const SAND_DEPTH = 4;
 const BEDROCK_JITTER_CHANCE = 0.4;
-const SNOW_HEIGHT = 50;
+/** 山地积雪的最低高度。 */
+const SNOW_HEIGHT = SEA_LEVEL + 18;
 const MOUNTAIN_STONE_SURFACE_CHANCE = 0.35;
 const UNDERWATER_SAND_CHANCE = 0.6;
 const MIN_TERRAIN_HEIGHT = 2;
@@ -57,12 +58,13 @@ interface OreConfig {
   attempts: number;
   size: number;
 }
+/** 矿脉分布高度取自 1.8.9（煤 ≤128、铁 ≤64、金 ≤32、钻石 ≤16）。 */
 const ORES: OreConfig[] = [
-  { block: BlockId.COAL_ORE, minY: 4, maxY: 60, attempts: 12, size: 10 },
-  { block: BlockId.IRON_ORE, minY: 2, maxY: 40, attempts: 8, size: 6 },
-  { block: BlockId.GOLD_ORE, minY: 2, maxY: 24, attempts: 2, size: 5 },
-  { block: BlockId.DIAMOND_ORE, minY: 1, maxY: 14, attempts: 1, size: 5 },
-  { block: BlockId.GRAVEL, minY: 4, maxY: 50, attempts: 4, size: 12 },
+  { block: BlockId.COAL_ORE, minY: 5, maxY: 128, attempts: 20, size: 10 },
+  { block: BlockId.IRON_ORE, minY: 2, maxY: 64, attempts: 16, size: 6 },
+  { block: BlockId.GOLD_ORE, minY: 2, maxY: 32, attempts: 3, size: 5 },
+  { block: BlockId.DIAMOND_ORE, minY: 1, maxY: 16, attempts: 2, size: 5 },
+  { block: BlockId.GRAVEL, minY: 4, maxY: 60, attempts: 8, size: 12 },
 ];
 
 const TREE_MIN_HEIGHT = 4;
