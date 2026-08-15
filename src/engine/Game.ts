@@ -36,6 +36,7 @@ import { AUTOSAVE_INTERVAL_TICKS, SAVE_FORMAT_VERSION } from './constants/save';
 import { CREEPER_EXPLOSION_MAX_DAMAGE } from './constants/mobs';
 import { WATER_TICK_INTERVAL } from './constants/fluids';
 import { DAY_LENGTH_TICKS, DEFAULT_RENDER_DISTANCE, MAX_LIGHT, SPAWN_PRELOAD_RADIUS } from './constants/world';
+import { BlockEntityStore, BlockEntityType } from './world/BlockEntityStore';
 import { ArrowEntity } from './entities/ArrowEntity';
 import { Entity, allocateEntityId, resetEntityIds, type EntitySaveData } from './entities/Entity';
 import type { EntityContext } from './entities/EntityContext';
@@ -105,7 +106,8 @@ export class Game implements EntityContext, ContainerHost {
   readonly rules: GameModeRules;
   readonly difficulty: Difficulty;
   readonly entities = new Map<number, Entity>();
-  readonly furnaces = new Map<string, FurnaceState>();
+  /** 方块实体（熔炉 / 箱子等附着在坐标上的状态）。 */
+  readonly blockEntities = new BlockEntityStore();
   readonly craftingGrid: (ItemStack | null)[] = new Array<ItemStack | null>(CRAFT_GRID_SIZE).fill(null);
   craftGridSize = 2;
   tick = 0;
@@ -278,9 +280,13 @@ export class Game implements EntityContext, ContainerHost {
         this.entities.set(entity.id, entity);
       }
     }
-    if (save.furnaces) {
+    if (save.blockEntities) {
+      this.blockEntities.load(save.blockEntities);
+    } else if (save.furnaces) {
+      // 旧存档只有熔炉，且键就是坐标
       for (const [key, state] of Object.entries(save.furnaces)) {
-        this.furnaces.set(key, state);
+        const [x, y, z] = key.split(',').map(Number);
+        this.blockEntities.set(x, y, z, { type: BlockEntityType.FURNACE, state });
       }
     }
     if (typeof save.timeTick === 'number') {
@@ -314,10 +320,6 @@ export class Game implements EntityContext, ContainerHost {
         entities.push(e.serialize());
       }
     }
-    const furnaces: Record<string, FurnaceState> = {};
-    for (const [k, v] of this.furnaces) {
-      furnaces[k] = v;
-    }
     return {
       version: SAVE_FORMAT_VERSION,
       meta: { ...this.meta, lastPlayed: Date.now() },
@@ -327,7 +329,7 @@ export class Game implements EntityContext, ContainerHost {
       player: this.player.serialize(),
       entities,
       nextEntityId: allocateEntityId(),
-      furnaces,
+      blockEntities: this.blockEntities.serialize(),
     };
   }
 
@@ -907,18 +909,7 @@ export class Game implements EntityContext, ContainerHost {
       this.player.onBlockBroken();
     }
     this.onBlockRemoved(x, y, z);
-    if (def.id === BlockId.FURNACE) {
-      const key = `${x},${y},${z}`;
-      const state = this.furnaces.get(key);
-      if (state) {
-        for (const stack of [state.input, state.fuel, state.output]) {
-          if (stack) {
-            this.dropItem(x + 0.5, y + 0.5, z + 0.5, stack, 0.2);
-          }
-        }
-        this.furnaces.delete(key);
-      }
-    }
+    this.removeBlockEntity(x, y, z);
   }
 
   /** 方块移除后：上方需要支撑的方块掉落 / 重力方块下落。 */
@@ -1036,14 +1027,13 @@ export class Game implements EntityContext, ContainerHost {
       case BlockId.CRAFTING_TABLE:
         this.openScreen(Screen.CRAFTING, { x: hit.x, y: hit.y, z: hit.z });
         return true;
-      case BlockId.FURNACE: {
-        const key = `${hit.x},${hit.y},${hit.z}`;
-        if (!this.furnaces.has(key)) {
-          this.furnaces.set(key, createFurnace());
-        }
+      case BlockId.FURNACE:
+        this.blockEntities.getOrCreate(hit.x, hit.y, hit.z, () => ({
+          type: BlockEntityType.FURNACE,
+          state: createFurnace(),
+        }));
         this.openScreen(Screen.FURNACE, { x: hit.x, y: hit.y, z: hit.z });
         return true;
-      }
       case BlockId.TNT:
         this.primeTnt(hit.x, hit.y, hit.z);
         return true;
@@ -1283,8 +1273,8 @@ export class Game implements EntityContext, ContainerHost {
 
   private tickFurnaces(): void {
     let changed = false;
-    for (const state of this.furnaces.values()) {
-      if (tickFurnace(state)) {
+    for (const entity of this.blockEntities.values()) {
+      if (entity.type === BlockEntityType.FURNACE && tickFurnace(entity.state)) {
         changed = true;
       }
     }
@@ -1299,7 +1289,25 @@ export class Game implements EntityContext, ContainerHost {
     if (!pos) {
       return null;
     }
-    return this.furnaces.get(`${pos.x},${pos.y},${pos.z}`) ?? null;
+    const entity = this.blockEntities.get(pos.x, pos.y, pos.z);
+    return entity?.type === BlockEntityType.FURNACE ? entity.state : null;
+  }
+
+  /** 方块被破坏时清掉它的方块实体，并把里面的物品掉出来。 */
+  private removeBlockEntity(x: number, y: number, z: number): void {
+    const entity = this.blockEntities.remove(x, y, z);
+    if (!entity) {
+      return;
+    }
+    const stacks =
+      entity.type === BlockEntityType.FURNACE
+        ? [entity.state.input, entity.state.fuel, entity.state.output]
+        : entity.items;
+    for (const stack of stacks) {
+      if (stack) {
+        this.dropItem(x + 0.5, y + 0.5, z + 0.5, stack, 0.2);
+      }
+    }
   }
 
   // ---------------------------------------------------------------- 背包 / 合成 UI 交互（委托 ContainerController）
