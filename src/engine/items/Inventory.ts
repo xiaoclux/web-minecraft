@@ -1,4 +1,5 @@
 import { HOTBAR_SIZE, INVENTORY_SIZE } from '../constants/game';
+import { ARMOR_SLOT_COUNT } from './ItemRegistry';
 import { canMerge, cloneStack, maxStackOf, type ItemStack } from './ItemStack';
 
 /**
@@ -7,6 +8,8 @@ import { canMerge, cloneStack, maxStackOf, type ItemStack } from './ItemStack';
  */
 export class Inventory {
   readonly slots: (ItemStack | null)[];
+  /** 装备栏：头、胸、腿、脚。 */
+  readonly armor: (ItemStack | null)[] = new Array<ItemStack | null>(ARMOR_SLOT_COUNT).fill(null);
   private listeners = new Set<() => void>();
 
   constructor(size = INVENTORY_SIZE) {
@@ -105,9 +108,21 @@ export class Inventory {
     return true;
   }
 
-  /** 清空。 */
+  /** 清空（含装备栏）。 */
   clear(): void {
     this.slots.fill(null);
+    this.armor.fill(null);
+    this.notify();
+  }
+
+  /** 读取装备栏。 */
+  getArmor(slot: number): ItemStack | null {
+    return this.armor[slot] ?? null;
+  }
+
+  /** 写入装备栏。 */
+  setArmor(slot: number, stack: ItemStack | null): void {
+    this.armor[slot] = stack && stack.count > 0 ? stack : null;
     this.notify();
   }
 
@@ -115,6 +130,13 @@ export class Inventory {
   drainAll(): ItemStack[] {
     const out = this.slots.filter((s): s is ItemStack => s !== null);
     this.slots.fill(null);
+    for (let i = 0; i < this.armor.length; i++) {
+      const piece = this.armor[i];
+      if (piece) {
+        out.push(piece);
+        this.armor[i] = null;
+      }
+    }
     this.notify();
     return out;
   }
@@ -133,6 +155,20 @@ export class Inventory {
   load(data: (ItemStack | null)[]): void {
     for (let i = 0; i < this.slots.length; i++) {
       this.slots[i] = data[i] ? cloneStack(data[i] as ItemStack) : null;
+    }
+    this.notify();
+  }
+
+  /** 装备栏序列化。 */
+  armorToJSON(): (ItemStack | null)[] {
+    return this.armor.map((s) => (s ? cloneStack(s) : null));
+  }
+
+  /** 装备栏反序列化（旧存档没有这个字段时按空处理）。 */
+  loadArmor(data: readonly (ItemStack | null)[] | undefined): void {
+    for (let i = 0; i < this.armor.length; i++) {
+      const stack = data?.[i];
+      this.armor[i] = stack ? cloneStack(stack) : null;
     }
     this.notify();
   }

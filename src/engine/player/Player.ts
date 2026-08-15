@@ -1,5 +1,8 @@
 import {
   AIR_TICKS_MAX,
+  ARMOR_DAMAGE_REDUCTION_PER_POINT,
+  ARMOR_DURABILITY_DAMAGE_DIVISOR,
+  ARMOR_MAX_POINTS,
   DROWN_DAMAGE,
   DROWN_DAMAGE_INTERVAL_TICKS,
   HUNGER_TICK_INTERVAL,
@@ -17,6 +20,7 @@ import {
 import type { EntityContext } from '../entities/EntityContext';
 import { LivingEntity } from '../entities/LivingEntity';
 import { Inventory } from '../items/Inventory';
+import { getItem } from '../items/ItemRegistry';
 import type { ItemStack } from '../items/ItemStack';
 import type { Entity } from '../entities/Entity';
 
@@ -260,6 +264,57 @@ export class Player extends LivingEntity {
     return this.lastPickupMessage;
   }
 
+  /** 受伤时先过一遍护甲减伤；这一下打不中就不该磨损盔甲，所以先复核一遍生效条件。 */
+  override hurt(ctx: EntityContext, amount: number, source: Entity | null, byPlayer = false): boolean {
+    if (this.health <= 0 || amount <= 0 || this.invulnerableTicks > 0) {
+      return false;
+    }
+    return super.hurt(ctx, this.applyArmor(amount), source, byPlayer);
+  }
+
+  /** 当前护甲点数（装备栏各件之和）。 */
+  get armorPoints(): number {
+    let points = 0;
+    for (const piece of this.inventory.armor) {
+      if (piece) {
+        points += getItem(piece.id)?.armor?.defense ?? 0;
+      }
+    }
+    return Math.min(ARMOR_MAX_POINTS, points);
+  }
+
+  /**
+   * 护甲减伤后的实际伤害；同时按 1.8.9 的规则消耗各件盔甲的耐久。
+   * 摔落 / 溺水 / 饿死这类伤害在原版也会被护甲挡一部分，这里一并按同一公式处理。
+   */
+  private applyArmor(amount: number): number {
+    const points = this.armorPoints;
+    if (points <= 0) {
+      return amount;
+    }
+    this.damageArmor(amount);
+    return amount * (1 - points * ARMOR_DAMAGE_REDUCTION_PER_POINT);
+  }
+
+  /** 按受到的伤害消耗盔甲耐久，耐久耗尽则损毁。 */
+  private damageArmor(amount: number): void {
+    const wear = Math.max(1, Math.floor(amount / ARMOR_DURABILITY_DAMAGE_DIVISOR));
+    let changed = false;
+    for (let slot = 0; slot < this.inventory.armor.length; slot++) {
+      const piece = this.inventory.armor[slot];
+      const durability = piece && getItem(piece.id)?.armor?.durability;
+      if (!piece || !durability) {
+        continue;
+      }
+      const damage = (piece.damage ?? 0) + wear;
+      this.inventory.armor[slot] = damage >= durability ? null : { ...piece, damage };
+      changed = true;
+    }
+    if (changed) {
+      this.inventory.notify();
+    }
+  }
+
   /** 序列化。 */
   serialize(): PlayerSaveData {
     return {
@@ -278,6 +333,7 @@ export class Player extends LivingEntity {
       isFlying: this.isFlying,
       spawn: [this.spawnX, this.spawnY, this.spawnZ],
       inventory: this.inventory.toJSON(),
+      armor: this.inventory.armorToJSON(),
     };
   }
 
@@ -296,6 +352,7 @@ export class Player extends LivingEntity {
     this.isFlying = data.isFlying;
     [this.spawnX, this.spawnY, this.spawnZ] = data.spawn;
     this.inventory.load(data.inventory);
+    this.inventory.loadArmor(data.armor);
   }
 }
 
@@ -319,4 +376,6 @@ export interface PlayerSaveData {
   isFlying: boolean;
   spawn: [number, number, number];
   inventory: (ItemStack | null)[];
+  /** 装备栏（旧存档没有该字段）。 */
+  armor?: (ItemStack | null)[];
 }

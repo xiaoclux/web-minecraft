@@ -12,6 +12,8 @@ interface HudProps {
 const HEART_COUNT = PLAYER_MAX_HEALTH / 2;
 const FOOD_COUNT = PLAYER_MAX_FOOD / 2;
 const BUBBLE_COUNT = 10;
+const ARMOR_COUNT = 10;
+const ARMOR_MAX = 20;
 const HOTBAR_INDICES = Array.from({ length: HOTBAR_SIZE }, (_, i) => i);
 const BUBBLE_INDICES = Array.from({ length: BUBBLE_COUNT }, (_, i) => i);
 
@@ -71,6 +73,16 @@ export function Hud({ game, state }: HudProps) {
         {!isCreative && (
           <div className="stats">
             <div className="stats-left">
+              {state.armor > 0 && (
+                <StatRow
+                  value={state.armor}
+                  max={ARMOR_MAX}
+                  count={ARMOR_COUNT}
+                  filled="armor-full"
+                  half="armor-half"
+                  empty="armor-empty"
+                />
+              )}
               <StatRow
                 value={state.health}
                 max={state.maxHealth}

@@ -95,3 +95,9 @@ export const SLEEP_MONSTER_RADIUS = 8;
 /** 攀爬（梯子）：上爬速度与下滑速度上限（格/秒，取自 1.8.9 的 0.12 / 0.15 每 tick）。 */
 export const LADDER_CLIMB_SPEED = 2.4;
 export const LADDER_SLIDE_SPEED = 3;
+
+/** 每点护甲的减伤比例（1.8.9：每点 4%，20 点封顶 80%）。 */
+export const ARMOR_DAMAGE_REDUCTION_PER_POINT = 0.04;
+export const ARMOR_MAX_POINTS = 20;
+/** 受伤时盔甲的耐久消耗：伤害的 1/4，至少 1 点。 */
+export const ARMOR_DURABILITY_DAMAGE_DIVISOR = 4;

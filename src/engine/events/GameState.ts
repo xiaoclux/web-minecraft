@@ -34,6 +34,8 @@ export interface GameUiState {
   food: number;
   air: number;
   maxAir: number;
+  /** 护甲点数 0~20。 */
+  armor: number;
   xpLevel: number;
   xpProgress: number;
   selectedSlot: number;

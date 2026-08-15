@@ -497,6 +497,25 @@ button:disabled {
   border-radius: 50% 50% 40% 40%;
 }
 
+/** 护甲：盾形图标 */
+.armor-full,
+.armor-half,
+.armor-empty {
+  clip-path: polygon(50% 100%, 8% 62%, 8% 8%, 50% 0, 92% 8%, 92% 62%);
+}
+
+.armor-full {
+  background: linear-gradient(160deg, #eeeeee, #9aa0a6);
+}
+
+.armor-half {
+  background: linear-gradient(90deg, #dddddd 50%, #3a3a3a 50%);
+}
+
+.armor-empty {
+  background: #3a3a3a;
+}
+
 .bubble-full {
   background: radial-gradient(circle at 35% 35%, #dff4ff, #4aa0e0);
   border-radius: 50%;
@@ -625,6 +644,10 @@ button:disabled {
 
 .cols-9 {
   grid-template-columns: repeat(9, var(--slot-size));
+}
+
+.cols-4 {
+  grid-template-columns: repeat(4, var(--slot-size));
 }
 
 .cols-3 {

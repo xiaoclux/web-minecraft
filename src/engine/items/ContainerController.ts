@@ -16,6 +16,7 @@ export interface SlotRef {
     | 'furnaceFuel'
     | 'furnaceOutput'
     | 'chest'
+    | 'armor'
     | 'creative';
   index: number;
   /** 创造模式列表中点击的物品 id。 */
@@ -84,6 +85,8 @@ export class ContainerController {
         return this.host.openFurnace?.output ?? null;
       case 'chest':
         return this.host.openChestItems?.[ref.index] ?? null;
+      case 'armor':
+        return this.host.inventory.getArmor(ref.index);
       case 'creative':
         return ref.itemId ? { id: ref.itemId, count: 1 } : null;
       default:
@@ -128,6 +131,9 @@ export class ContainerController {
         }
         break;
       }
+      case 'armor':
+        this.host.inventory.setArmor(ref.index, value);
+        break;
       default:
         break;
     }
@@ -166,6 +172,9 @@ export class ContainerController {
       return;
     }
     if (ref.kind === 'furnaceFuel' && this.cursorStack && !getItem(this.cursorStack.id)?.burnTicks) {
+      return;
+    }
+    if (ref.kind === 'armor' && this.cursorStack && getItem(this.cursorStack.id)?.armor?.slot !== ref.index) {
       return;
     }
     if (!this.cursorStack) {
@@ -320,6 +329,12 @@ export class ContainerController {
             }
           }
         }
+      }
+      const armorSlot = getItem(slot.id)?.armor?.slot;
+      if (armorSlot !== undefined && !this.host.inventory.getArmor(armorSlot)) {
+        this.host.inventory.setArmor(armorSlot, slot);
+        this.setSlot(ref, null);
+        return;
       }
       if (screen === 'chest') {
         // 箱子界面里 shift 只在背包与箱子之间搬运；箱子满了就原地不动

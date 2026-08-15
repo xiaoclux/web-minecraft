@@ -175,3 +175,25 @@ describe('箱子容器', () => {
     expect(inventory.get(0)?.count ?? 0).toBe(5);
   });
 });
+
+describe('装备栏', () => {
+  it('装备槽只收对应部位的盔甲', () => {
+    const { inventory, ctrl } = setup();
+    inventory.set(0, { id: 'iron_helmet', count: 1 });
+    inventory.set(1, { id: 'iron_boots', count: 1 });
+    ctrl.handleSlotClick({ kind: 'inventory', index: 0 }, LEFT, false);
+    // 头盔放不进靴子槽
+    ctrl.handleSlotClick({ kind: 'armor', index: 3 }, LEFT, false);
+    expect(inventory.getArmor(3)).toBeNull();
+    ctrl.handleSlotClick({ kind: 'armor', index: 0 }, LEFT, false);
+    expect(inventory.getArmor(0)).toEqual({ id: 'iron_helmet', count: 1 });
+  });
+
+  it('Shift 点击背包里的盔甲会自动穿到对应部位', () => {
+    const { inventory, ctrl } = setup();
+    inventory.set(5, { id: 'diamond_chestplate', count: 1 });
+    ctrl.handleSlotClick({ kind: 'inventory', index: 5 }, LEFT, true);
+    expect(inventory.get(5)).toBeNull();
+    expect(inventory.getArmor(1)).toEqual({ id: 'diamond_chestplate', count: 1 });
+  });
+});

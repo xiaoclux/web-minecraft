@@ -6,6 +6,8 @@ import { ITEM_DEFS, getItem } from '../src/engine/items/ItemRegistry';
 import { matchRecipe, RECIPES } from '../src/engine/items/Recipes';
 import type { ItemStack } from '../src/engine/items/ItemStack';
 import { createFurnace, SMELT_TICKS, tickFurnace } from '../src/engine/items/Furnace';
+import { Player } from '../src/engine/player/Player';
+import type { EntityContext } from '../src/engine/entities/EntityContext';
 
 const s = (id: string, count = 1): ItemStack => ({ id, count });
 
@@ -105,5 +107,31 @@ describe('ItemRegistry', () => {
   it('物品 id 唯一', () => {
     const ids = ITEM_DEFS.map((d) => d.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('护甲', () => {
+  it('每点护甲减伤 4%，20 点封顶', () => {
+    const player = new Player();
+    expect(player.armorPoints).toBe(0);
+    // 全套钻石 = 3 + 8 + 6 + 3 = 20 点
+    player.inventory.setArmor(0, { id: 'diamond_helmet', count: 1 });
+    player.inventory.setArmor(1, { id: 'diamond_chestplate', count: 1 });
+    player.inventory.setArmor(2, { id: 'diamond_leggings', count: 1 });
+    player.inventory.setArmor(3, { id: 'diamond_boots', count: 1 });
+    expect(player.armorPoints).toBe(20);
+  });
+
+  it('受伤后各件盔甲都掉耐久，耐久耗尽的部件消失', () => {
+    const player = new Player();
+    player.inventory.setArmor(0, { id: 'leather_helmet', count: 1, damage: 54 });
+    player.inventory.setArmor(1, { id: 'iron_chestplate', count: 1 });
+    const ctx = { world: null } as unknown as EntityContext;
+    player.hurt(ctx, 8, null);
+    // 皮革头盔耐久 55，再掉 2 点就损毁
+    expect(player.inventory.getArmor(0)).toBeNull();
+    expect(player.inventory.getArmor(1)?.damage).toBe(2);
+    // 皮革头盔 1 + 铁胸甲 6 = 7 点护甲 → 减伤 28%（损毁的那件仍为这一下提供保护）
+    expect(player.health).toBeCloseTo(20 - 8 * 0.72, 4);
   });
 });

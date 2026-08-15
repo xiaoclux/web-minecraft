@@ -108,6 +108,22 @@ function InventoryGrid({ game }: { game: Game }) {
   );
 }
 
+const ARMOR_SLOT_LABELS = ['头', '胸', '腿', '脚'];
+
+function ArmorSlots({ game }: { game: Game }) {
+  const inv = game.player.inventory;
+  return (
+    <div className="armor-area">
+      <div className="section-title">装备</div>
+      <div className="slot-grid cols-4">
+        {ARMOR_SLOT_LABELS.map((label, i) => (
+          <Slot key={label} game={game} refer={{ kind: 'armor', index: i }} stack={inv.getArmor(i)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CraftingArea({ game, size }: { game: Game; size: number }) {
   const cells = useMemo(() => {
     const out: number[] = [];
@@ -237,6 +253,7 @@ export function InventoryScreen({ game, state }: InventoryScreenProps) {
       <div className="panel inventory-panel">
         <div className="panel-body">
           {state.screen === Screen.INVENTORY && isCreative && <CreativeList game={game} />}
+          {state.screen === Screen.INVENTORY && <ArmorSlots game={game} />}
           {state.screen === Screen.INVENTORY && !isCreative && <CraftingArea game={game} size={2} />}
           {state.screen === Screen.CRAFTING && <CraftingArea game={game} size={3} />}
           {state.screen === Screen.FURNACE && <FurnaceArea game={game} />}
