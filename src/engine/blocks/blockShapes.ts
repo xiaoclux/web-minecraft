@@ -25,6 +25,8 @@ export const BlockShape = {
   SLAB: 'slab',
   /** 楼梯：一层半砖 + 半格台阶。 */
   STAIRS: 'stairs',
+  /** 床：占半格多一点的一层。 */
+  BED: 'bed',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -34,6 +36,10 @@ export const SLAB_TOP_BIT = 8;
 export const FACING_MASK = 3;
 /** 楼梯 meta：该位为 1 表示上下颠倒（贴在格子上半）。 */
 export const STAIRS_FLIP_BIT = 4;
+/** 床 meta：该位为 1 表示这半格是床头（与 1.8.9 同位）。 */
+export const BED_HEAD_BIT = 8;
+/** 床的高度（1.8.9 为 9/16）。 */
+export const BED_HEIGHT = 9 / 16;
 /** 水平朝向序号 → 单位方向。 */
 export const FACINGS: readonly (readonly [number, number])[] = [
   [1, 0],
@@ -41,6 +47,12 @@ export const FACINGS: readonly (readonly [number, number])[] = [
   [0, 1],
   [0, -1],
 ];
+
+/** 朝向序号 → 反向的朝向序号。 */
+export function oppositeFacing(facing: number): number {
+  const [fx, fz] = FACINGS[facing & FACING_MASK];
+  return facingIndexOf(-fx, -fz);
+}
 
 /** 水平方向 → 朝向序号；不是水平单位方向时返回 0。 */
 export function facingIndexOf(dx: number, dz: number): number {
@@ -65,6 +77,7 @@ const CROSS_INSET = 0.2;
 const CROSS_BOXES: readonly BlockBox[] = [box(CROSS_INSET, 0, CROSS_INSET, 1 - CROSS_INSET, 0.8, 1 - CROSS_INSET)];
 
 const SLAB_BOTTOM: readonly BlockBox[] = [box(0, 0, 0, 1, 0.5, 1)];
+const BED_BOXES: readonly BlockBox[] = [box(0, 0, 0, 1, BED_HEIGHT, 1)];
 const SLAB_TOP: readonly BlockBox[] = [box(0, 0.5, 0, 1, 1, 1)];
 
 /** 楼梯：[朝向][是否颠倒] → 子盒列表。 */
@@ -91,6 +104,8 @@ export function shapeBoxes(def: BlockDef, meta: number): readonly BlockBox[] {
       return (meta & SLAB_TOP_BIT) === 0 ? SLAB_BOTTOM : SLAB_TOP;
     case BlockShape.STAIRS:
       return STAIRS_BOXES[meta & FACING_MASK][(meta & STAIRS_FLIP_BIT) === 0 ? 0 : 1];
+    case BlockShape.BED:
+      return BED_BOXES;
     default:
       return FULL_BOXES;
   }

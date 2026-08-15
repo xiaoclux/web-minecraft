@@ -307,6 +307,37 @@ const chestFront: Painter = (c, rng) => {
   c.rect(7, 4, 2, 1, shade(CHEST_LATCH, 1.6));
 };
 
+/** 床：红色被面 + 白枕头，侧面下沿是木头床架。 */
+const BED_CLOTH = hex('#a02b2b');
+const BED_PILLOW = hex('#e4e4e4');
+const BED_FRAME = hex('#6b4c2a');
+
+const bedFootTop: Painter = (c, rng) => {
+  c.noise(BED_CLOTH, 0.06, rng);
+};
+const bedHeadTop: Painter = (c, rng) => {
+  c.noise(BED_CLOTH, 0.06, rng);
+  c.rect(2, 2, 12, 9, BED_PILLOW);
+  c.rect(2, 2, 12, 1, shade(BED_PILLOW, 0.9));
+};
+const bedSideBase: Painter = (c, rng) => {
+  c.noise(BED_CLOTH, 0.06, rng);
+  c.rect(0, 13, 16, 3, BED_FRAME);
+};
+const bedFootSide: Painter = (c, rng) => bedSideBase(c, rng);
+const bedHeadSide: Painter = (c, rng) => {
+  bedSideBase(c, rng);
+  c.rect(2, 2, 12, 5, BED_PILLOW);
+};
+const bedFootEnd: Painter = (c, rng) => {
+  bedSideBase(c, rng);
+  c.rect(0, 0, 16, 2, shade(BED_CLOTH, 0.8));
+};
+const bedHeadEnd: Painter = (c, rng) => {
+  bedSideBase(c, rng);
+  c.rect(1, 2, 14, 8, BED_PILLOW);
+};
+
 const glowstone: Painter = (c, rng) => {
   c.noise(GLOW, 0.2, rng);
   c.speckle(hex('#ffe9a8'), 40, rng);
@@ -494,6 +525,12 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   chest_top: chestTop,
   chest_front: chestFront,
   chest_side: chestSide,
+  bed_head_top: bedHeadTop,
+  bed_foot_top: bedFootTop,
+  bed_head_side: bedHeadSide,
+  bed_foot_side: bedFootSide,
+  bed_head_end: bedHeadEnd,
+  bed_foot_end: bedFootEnd,
   snow: noiseBase(SNOW, 0.03),
   glowstone,
   stone_bricks: stoneBricks,

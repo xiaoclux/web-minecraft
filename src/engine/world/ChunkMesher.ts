@@ -345,15 +345,28 @@ for (let id = 0; id < OPAQUE_BY_ID.length; id++) {
 }
 
 /**
- * 取该面实际使用的贴图 key：带朝向的方块把正面（north）转到 meta 指定的方向，
- * 其余侧面统一用 south。
+ * 取该面实际使用的贴图 key：带朝向的方块把水平四面按 meta 旋转——
+ * 正面（朝向方向）用 north、背面用 south、右侧用 east、左侧用 west。
  */
 function textureKeyFor(def: BlockDef, face: FaceSpec, meta: number): keyof BlockFaceTextures {
+  const [nx, , nz] = face.normal;
   if (!def.hasFacing || face.normal[1] !== 0) {
     return face.textureKey;
   }
   const [fx, fz] = FACINGS[meta & FACING_MASK];
-  return face.normal[0] === fx && face.normal[2] === fz ? 'north' : 'south';
+  if (nx === fx && nz === fz) {
+    return 'north';
+  }
+  if (nx === -fx && nz === -fz) {
+    return 'south';
+  }
+  // 右手边：把朝向绕 y 轴转 90°
+  return nx === -fz && nz === fx ? 'east' : 'west';
+}
+
+/** 取该方块在给定 meta 下的六面贴图（床头/床尾、作物生长阶段等按 meta 换图）。 */
+function texturesFor(def: BlockDef, meta: number): BlockFaceTextures {
+  return def.texturesForMeta ? def.texturesForMeta(meta) : def.textures;
 }
 
 /** 子盒的某个面是否正好贴在格子边界上（贴边的面才参与邻居剔除）。 */
@@ -444,7 +457,8 @@ export class ChunkMesher {
   }
 
   private cube(builder: BufferBuilder, def: BlockDef, x: number, y: number, z: number): void {
-    const meta = def.hasFacing ? this.snap.meta[this.snap.at(x, y, z)] : 0;
+    const meta = def.hasFacing || def.texturesForMeta ? this.snap.meta[this.snap.at(x, y, z)] : 0;
+    const textures = texturesFor(def, meta);
     for (const face of FACES) {
       const nx = x + face.normal[0];
       const ny = y + face.normal[1];
@@ -452,7 +466,7 @@ export class ChunkMesher {
       if (!this.shouldDrawFace(def, nx, ny, nz)) {
         continue;
       }
-      const region = this.atlas.region(def.textures[textureKeyFor(def, face, meta)]);
+      const region = this.atlas.region(textures[textureKeyFor(def, face, meta)]);
       const corners = face.corners.map(([cx, cy, cz]) => [x + cx, y + cy, z + cz] as const);
       const lights = face.corners.map((c) => this.vertexLight(x, y, z, face, c));
       const flip = lights[0][2] + lights[2][2] < lights[1][2] + lights[3][2];
@@ -468,6 +482,7 @@ export class ChunkMesher {
     const snap = this.snap;
     const meta = snap.meta[snap.at(x, y, z)];
     const ownIdx = snap.at(x, y, z);
+    const textures = texturesFor(def, meta);
     for (const b of shapeBoxes(def, meta)) {
       for (const face of FACES) {
         const [nx, ny, nz] = face.normal;
@@ -475,7 +490,7 @@ export class ChunkMesher {
         if (onBoundary && !this.shouldDrawFace(def, x + nx, y + ny, z + nz)) {
           continue;
         }
-        const region = this.atlas.region(def.textures[textureKeyFor(def, face, meta)]);
+        const region = this.atlas.region(textures[textureKeyFor(def, face, meta)]);
         const corners: (readonly [number, number, number])[] = [];
         const uvs: (readonly [number, number])[] = [];
         for (const c of face.corners) {

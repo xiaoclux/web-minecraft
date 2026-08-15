@@ -37,7 +37,7 @@ export const RenderType = {
 } as const;
 export type RenderType = (typeof RenderType)[keyof typeof RenderType];
 
-import { BlockShape } from './blockShapes';
+import { BED_HEAD_BIT, BlockShape } from './blockShapes';
 
 /** 六个面各自的贴图 key。 */
 export interface BlockFaceTextures {
@@ -103,6 +103,8 @@ export interface BlockDef {
    * 贴图上用 north 表示正面、south 表示其余侧面。
    */
   hasFacing?: boolean;
+  /** 按 meta 换整套贴图（床头/床尾、作物生长阶段等）；不设则一直用 textures。 */
+  texturesForMeta?: (meta: number) => BlockFaceTextures;
 }
 
 export const BlockId = {
@@ -135,6 +137,7 @@ export const BlockId = {
   OBSIDIAN: 49,
   TORCH: 50,
   DIAMOND_ORE: 56,
+  BED: 26,
   CHEST: 54,
   CRAFTING_TABLE: 58,
   FURNACE: 61,
@@ -154,6 +157,9 @@ export const BlockId = {
   SANDSTONE_STAIRS: 128,
 } as const;
 export type BlockId = (typeof BlockId)[keyof typeof BlockId];
+
+/** meta 的取值个数（4 位）：收集按 meta 变化的贴图时全部枚举一遍。 */
+const META_VARIANT_COUNT = 16;
 
 const same = (t: string): BlockFaceTextures => ({ top: t, bottom: t, north: t, south: t, east: t, west: t });
 const topSide = (top: string, side: string, bottom = top): BlockFaceTextures => ({
@@ -409,6 +415,34 @@ export const BLOCK_DEFS: BlockDef[] = [
     drops: [{ item: 'melon_slice', min: 3, max: 7 }],
   }),
   {
+    ...cube(BlockId.BED, 'bed', '床', same('bed_foot_top'), 0.2, null, {
+      opaque: false,
+      interactive: true,
+      drops: [{ item: 'bed', min: 1, max: 1 }],
+    }),
+    shape: BlockShape.BED,
+    hasFacing: true,
+    // north = 朝向那一端、south = 另一端、east/west = 两侧
+    texturesForMeta: (meta: number) =>
+      (meta & BED_HEAD_BIT) === 0
+        ? {
+            top: 'bed_foot_top',
+            bottom: 'bed_foot_top',
+            north: 'bed_foot_side',
+            south: 'bed_foot_end',
+            east: 'bed_foot_side',
+            west: 'bed_foot_side',
+          }
+        : {
+            top: 'bed_head_top',
+            bottom: 'bed_head_top',
+            north: 'bed_head_end',
+            south: 'bed_head_side',
+            east: 'bed_head_side',
+            west: 'bed_head_side',
+          },
+  },
+  {
     ...cube(
       BlockId.CHEST,
       'chest',
@@ -488,11 +522,18 @@ export function isSolid(id: number): boolean {
 /** 收集所有贴图 key（去重），供图集生成。 */
 export function collectBlockTextureKeys(): string[] {
   const keys = new Set<string>();
-  for (const def of BLOCK_DEFS) {
-    for (const key of Object.values(def.textures)) {
+  const add = (textures: BlockFaceTextures): void => {
+    for (const key of Object.values(textures)) {
       if (key !== 'none') {
         keys.add(key);
       }
+    }
+  };
+  for (const def of BLOCK_DEFS) {
+    add(def.textures);
+    // 按 meta 换图的方块要把所有变体都收进图集
+    for (let meta = 0; def.texturesForMeta && meta < META_VARIANT_COUNT; meta++) {
+      add(def.texturesForMeta(meta));
     }
   }
   return [...keys];

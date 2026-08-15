@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { BlockId, ToolType, getBlock, type BlockDef } from './blocks/BlockRegistry';
 import { breakTicks, rollDrops, rollXp } from './blocks/blockBreaking';
 import {
+  BED_HEAD_BIT,
   BlockShape,
+  FACINGS,
+  FACING_MASK,
   FULL_BOX,
   SLAB_TOP_BIT,
   STAIRS_FLIP_BIT,
@@ -919,7 +922,12 @@ export class Game implements EntityContext, ContainerHost {
     }
     const def = getBlock(id);
     this.spawnBreakParticles(x, y, z, def);
+    // 床是两格一体：先把另一半悄悄拆掉，掉落只算一次
+    const partner = this.bedPartner(x, y, z);
     this.world.setBlock(x, y, z, BlockId.AIR);
+    if (partner && getBlock(this.world.getBlock(partner.x, partner.y, partner.z)).shape === BlockShape.BED) {
+      this.world.setBlock(partner.x, partner.y, partner.z, BlockId.AIR);
+    }
     this.sound.play('break');
     this.renderer.hand.swing();
     if (withDrops && !this.rules.infiniteItems) {
@@ -1080,6 +1088,10 @@ export class Game implements EntityContext, ContainerHost {
    * 半砖分上下半，楼梯的高侧朝玩家视线方向、点在上半则上下颠倒。
    */
   private placementMeta(def: BlockDef, hit: RayHit): number {
+    if (def.shape === BlockShape.BED) {
+      // 床头朝视线方向（放在玩家前方），meta 记录床尾 → 床头的方向
+      return this.lookFacingIndex();
+    }
     if (def.hasFacing) {
       // 正面朝向玩家：与视线方向相反
       const [dx, dz] = this.lookHorizontal();
@@ -1093,6 +1105,31 @@ export class Game implements EntityContext, ContainerHost {
       return upperHalf ? SLAB_TOP_BIT : 0;
     }
     return this.lookFacingIndex() | (upperHalf ? STAIRS_FLIP_BIT : 0);
+  }
+
+  /** 床要占两格：床尾在点击处、床头在视线方向，两格都得是空的且下方有支撑。 */
+  private canPlaceBed(x: number, y: number, z: number, meta: number): boolean {
+    const [fx, fz] = FACINGS[meta & FACING_MASK];
+    const hx = x + fx;
+    const hz = z + fz;
+    if (!this.world.inBounds(hx, y, hz)) {
+      return false;
+    }
+    if (!REPLACEABLE_BLOCKS.has(this.world.getBlock(hx, y, hz))) {
+      return false;
+    }
+    return this.world.isSolidAt(x, y - 1, z) && this.world.isSolidAt(hx, y - 1, hz);
+  }
+
+  /** 床另一半的坐标；不是床时返回 null。 */
+  private bedPartner(x: number, y: number, z: number): { x: number; y: number; z: number } | null {
+    if (getBlock(this.world.getBlock(x, y, z)).shape !== BlockShape.BED) {
+      return null;
+    }
+    const meta = this.world.getMeta(x, y, z);
+    const [fx, fz] = FACINGS[meta & FACING_MASK];
+    const sign = (meta & BED_HEAD_BIT) === 0 ? 1 : -1;
+    return { x: x + fx * sign, y, z: z + fz * sign };
   }
 
   /** 对着同种半砖的开放面再放一块 → 合并成双层方块；返回是否已处理。 */
@@ -1145,6 +1182,9 @@ export class Game implements EntityContext, ContainerHost {
       return;
     }
     const meta = this.placementMeta(def, hit);
+    if (def.shape === BlockShape.BED && !this.canPlaceBed(px, py, pz, meta)) {
+      return;
+    }
     if (def.solid) {
       for (const b of collisionBoxes(def, meta)) {
         const box = new AABB(px + b.x0, py + b.y0, pz + b.z0, px + b.x1, py + b.y1, pz + b.z1);
@@ -1159,6 +1199,10 @@ export class Game implements EntityContext, ContainerHost {
       }
     }
     this.world.setBlock(px, py, pz, blockId, meta);
+    if (def.shape === BlockShape.BED) {
+      const [fx, fz] = FACINGS[meta & FACING_MASK];
+      this.world.setBlock(px + fx, py, pz + fz, blockId, meta | BED_HEAD_BIT);
+    }
     this.sound.play('place');
     this.renderer.hand.swing();
     if (!this.rules.infiniteItems) {
