@@ -29,6 +29,8 @@ export const BlockShape = {
   BED: 'bed',
   /** 梯子：贴在墙上的薄片。 */
   LADDER: 'ladder',
+  /** 门：占两格高的一扇薄板，可开合。 */
+  DOOR: 'door',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -40,6 +42,12 @@ export const FACING_MASK = 3;
 export const STAIRS_FLIP_BIT = 4;
 /** 床 meta：该位为 1 表示这半格是床头（与 1.8.9 同位）。 */
 export const BED_HEAD_BIT = 8;
+/** 门 meta：该位为 1 表示门是开着的。 */
+export const DOOR_OPEN_BIT = 4;
+/** 门 meta：该位为 1 表示这格是门的上半扇。 */
+export const DOOR_UPPER_BIT = 8;
+/** 门板厚度（1.8.9 为 3/16）。 */
+export const DOOR_THICKNESS = 3 / 16;
 /** 床的高度（1.8.9 为 9/16）。 */
 export const BED_HEIGHT = 9 / 16;
 /** 水平朝向序号 → 单位方向。 */
@@ -80,6 +88,29 @@ const CROSS_BOXES: readonly BlockBox[] = [box(CROSS_INSET, 0, CROSS_INSET, 1 - C
 
 const SLAB_BOTTOM: readonly BlockBox[] = [box(0, 0, 0, 1, 0.5, 1)];
 const BED_BOXES: readonly BlockBox[] = [box(0, 0, 0, 1, BED_HEIGHT, 1)];
+/** 贴在格子某一侧面的薄板（厚度 t，方向 (dx,dz) 指向该侧面）。 */
+function panelBox(dx: number, dz: number, t: number): BlockBox {
+  if (dx === 1) {
+    return box(1 - t, 0, 0, 1, 1, 1);
+  }
+  if (dx === -1) {
+    return box(0, 0, 0, t, 1, 1);
+  }
+  if (dz === 1) {
+    return box(0, 0, 1 - t, 1, 1, 1);
+  }
+  return box(0, 0, 0, 1, 1, t);
+}
+
+/**
+ * 门：关着时门板横在通道上（朝向的反面），开着时转 90° 贴到右手边，让出通道。
+ * 索引 [朝向][是否打开]。
+ */
+const DOOR_BOXES: readonly BlockBox[][][] = FACINGS.map(([fx, fz]) => [
+  [panelBox(-fx, -fz, DOOR_THICKNESS)],
+  [panelBox(-fz, fx, DOOR_THICKNESS)],
+]);
+
 /** 梯子厚度（1.8.9 为 2/16）。 */
 const LADDER_THICKNESS = 2 / 16;
 /** 按朝向序号索引：朝向是梯子正面对着的方向，背面贴墙。 */
@@ -122,6 +153,8 @@ export function shapeBoxes(def: BlockDef, meta: number): readonly BlockBox[] {
       return BED_BOXES;
     case BlockShape.LADDER:
       return LADDER_BOXES[meta & FACING_MASK];
+    case BlockShape.DOOR:
+      return DOOR_BOXES[meta & FACING_MASK][(meta & DOOR_OPEN_BIT) === 0 ? 0 : 1];
     default:
       return FULL_BOXES;
   }

@@ -349,6 +349,30 @@ const ladder: Painter = (c) => {
   }
 };
 
+/** 木门：上半有窗格，下半是整块木板加合页。 */
+const DOOR_WOOD = hex('#a5813f');
+const DOOR_LINE = hex('#6a5024');
+const DOOR_HINGE = hex('#4c4c4c');
+const doorPanel: Painter = (c, rng) => {
+  c.noise(DOOR_WOOD, 0.06, rng);
+  c.rect(0, 0, 1, 16, DOOR_LINE);
+  c.rect(15, 0, 1, 16, DOOR_LINE);
+};
+const doorLower: Painter = (c, rng) => {
+  doorPanel(c, rng);
+  c.rect(0, 15, 16, 1, DOOR_LINE);
+  c.rect(1, 2, 2, 2, DOOR_HINGE);
+  c.rect(12, 7, 2, 2, DOOR_HINGE);
+};
+const doorUpper: Painter = (c, rng) => {
+  doorPanel(c, rng);
+  c.rect(0, 0, 16, 1, DOOR_LINE);
+  c.rect(3, 3, 10, 6, shade(DOOR_WOOD, 1.25));
+  c.rect(7, 3, 2, 6, DOOR_LINE);
+  c.rect(3, 5, 10, 2, DOOR_LINE);
+  c.rect(1, 12, 2, 2, DOOR_HINGE);
+};
+
 const glowstone: Painter = (c, rng) => {
   c.noise(GLOW, 0.2, rng);
   c.speckle(hex('#ffe9a8'), 40, rng);
@@ -543,6 +567,8 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   bed_head_end: bedHeadEnd,
   bed_foot_end: bedFootEnd,
   ladder,
+  door_lower: doorLower,
+  door_upper: doorUpper,
   snow: noiseBase(SNOW, 0.03),
   glowstone,
   stone_bricks: stoneBricks,

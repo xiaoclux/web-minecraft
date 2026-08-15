@@ -37,7 +37,7 @@ export const RenderType = {
 } as const;
 export type RenderType = (typeof RenderType)[keyof typeof RenderType];
 
-import { BED_HEAD_BIT, BlockShape } from './blockShapes';
+import { BED_HEAD_BIT, BlockShape, DOOR_UPPER_BIT } from './blockShapes';
 
 /** 六个面各自的贴图 key。 */
 export interface BlockFaceTextures {
@@ -140,6 +140,7 @@ export const BlockId = {
   TORCH: 50,
   DIAMOND_ORE: 56,
   BED: 26,
+  WOODEN_DOOR: 64,
   LADDER: 65,
   CHEST: 54,
   CRAFTING_TABLE: 58,
@@ -417,6 +418,17 @@ export const BLOCK_DEFS: BlockDef[] = [
   cube(BlockId.MELON, 'melon', '西瓜', topSide('melon_top', 'melon_side'), 1, ToolType.AXE, {
     drops: [{ item: 'melon_slice', min: 3, max: 7 }],
   }),
+  {
+    ...cube(BlockId.WOODEN_DOOR, 'wooden_door', '木门', same('door_lower'), 3, ToolType.AXE, {
+      render: RenderType.CUTOUT,
+      opaque: false,
+      interactive: true,
+      drops: [{ item: 'wooden_door', min: 1, max: 1 }],
+    }),
+    shape: BlockShape.DOOR,
+    hasFacing: true,
+    texturesForMeta: (meta: number) => same((meta & DOOR_UPPER_BIT) === 0 ? 'door_lower' : 'door_upper'),
+  },
   {
     ...cube(BlockId.LADDER, 'ladder', '梯子', same('ladder'), 0.4, ToolType.AXE, {
       render: RenderType.CUTOUT,

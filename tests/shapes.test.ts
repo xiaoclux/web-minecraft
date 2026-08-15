@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { emptyWorld } from './helpers';
 import { BlockId, getBlock } from '../src/engine/blocks/BlockRegistry';
 import {
+  BED_HEAD_BIT,
+  DOOR_OPEN_BIT,
+  DOOR_THICKNESS,
+  DOOR_UPPER_BIT,
   SLAB_TOP_BIT,
   FACINGS,
   STAIRS_FLIP_BIT,
@@ -47,6 +51,31 @@ describe('方块形状', () => {
   });
 });
 
+describe('门与床的形状', () => {
+  const DOOR = getBlock(BlockId.WOODEN_DOOR);
+  const eastFacing = FACINGS.findIndex(([dx]) => dx === 1);
+
+  it('关着的门板横在通道上，开着后转到侧面让出通道', () => {
+    const closed = shapeBoxes(DOOR, eastFacing)[0];
+    // 朝向 +X，关门时门板贴在 -X 面
+    expect(closed).toMatchObject({ x0: 0, x1: DOOR_THICKNESS, y0: 0, y1: 1 });
+    const open = shapeBoxes(DOOR, eastFacing | DOOR_OPEN_BIT)[0];
+    expect(open.x1 - open.x0).toBe(1);
+    expect(open.z1 - open.z0).toBeCloseTo(DOOR_THICKNESS, 5);
+  });
+
+  it('门的上下两半用不同贴图', () => {
+    expect(DOOR.texturesForMeta?.(0).north).toBe('door_lower');
+    expect(DOOR.texturesForMeta?.(DOOR_UPPER_BIT).north).toBe('door_upper');
+  });
+
+  it('床头与床尾用不同贴图', () => {
+    const bed = getBlock(BlockId.BED);
+    expect(bed.texturesForMeta?.(0).top).toBe('bed_foot_top');
+    expect(bed.texturesForMeta?.(BED_HEAD_BIT).top).toBe('bed_head_top');
+  });
+});
+
 describe('形状参与物理', () => {
   it('下落的实体停在半砖顶面（y=0.5）', () => {
     const world = emptyWorld(1);
@@ -65,6 +94,18 @@ describe('形状参与物理', () => {
     expect(hit!.y).toBe(10);
     expect(hit!.hy).toBeCloseTo(10.5, 3);
     expect(hit!.ny).toBe(1);
+  });
+
+  it('关着的门挡住去路，开着的门可以走过去', () => {
+    const world = emptyWorld(1);
+    const facing = FACINGS.findIndex(([dx]) => dx === 1);
+    world.setBlock(1, 10, 0, BlockId.WOODEN_DOOR, facing);
+    world.setBlock(1, 11, 0, BlockId.WOODEN_DOOR, facing | DOOR_UPPER_BIT);
+    const box = AABB.fromFeet(0.5, 10, 0.5, 0.6, 1.8);
+    expect(moveWithCollisions(world, box, 0.5, 0, 0).dx).toBeLessThan(0.5);
+    world.setMeta(1, 10, 0, facing | DOOR_OPEN_BIT);
+    world.setMeta(1, 11, 0, facing | DOOR_UPPER_BIT | DOOR_OPEN_BIT);
+    expect(moveWithCollisions(world, box, 0.5, 0, 0).dx).toBeCloseTo(0.5, 3);
   });
 
   it('射线穿过半砖上方的空半格不会误命中', () => {

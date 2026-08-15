@@ -4,6 +4,8 @@ import { breakTicks, rollDrops, rollXp } from './blocks/blockBreaking';
 import {
   BED_HEAD_BIT,
   BlockShape,
+  DOOR_OPEN_BIT,
+  DOOR_UPPER_BIT,
   FACINGS,
   FACING_MASK,
   FULL_BOX,
@@ -971,10 +973,10 @@ export class Game implements EntityContext, ContainerHost {
     }
     const def = getBlock(id);
     this.spawnBreakParticles(x, y, z, def);
-    // 床是两格一体：先把另一半悄悄拆掉，掉落只算一次
-    const partner = this.bedPartner(x, y, z);
+    // 床和门都是两格一体：先把另一半悄悄拆掉，掉落只算一次
+    const partner = this.multiBlockPartner(x, y, z);
     this.world.setBlock(x, y, z, BlockId.AIR);
-    if (partner && getBlock(this.world.getBlock(partner.x, partner.y, partner.z)).shape === BlockShape.BED) {
+    if (partner && this.world.getBlock(partner.x, partner.y, partner.z) === id) {
       this.world.setBlock(partner.x, partner.y, partner.z, BlockId.AIR);
     }
     this.sound.play('break');
@@ -1127,6 +1129,9 @@ export class Game implements EntityContext, ContainerHost {
       case BlockId.BED:
         this.useBed(hit.x, hit.y, hit.z);
         return true;
+      case BlockId.WOODEN_DOOR:
+        this.toggleDoor(hit.x, hit.y, hit.z);
+        return true;
       case BlockId.TNT:
         this.primeTnt(hit.x, hit.y, hit.z);
         return true;
@@ -1177,15 +1182,27 @@ export class Game implements EntityContext, ContainerHost {
     return this.world.isSolidAt(x, y - 1, z) && this.world.isSolidAt(hx, y - 1, hz);
   }
 
-  /** 床另一半的坐标；不是床时返回 null。 */
-  private bedPartner(x: number, y: number, z: number): { x: number; y: number; z: number } | null {
-    if (getBlock(this.world.getBlock(x, y, z)).shape !== BlockShape.BED) {
-      return null;
+  /** 门要占上下两格，且下方得有支撑。 */
+  private canPlaceDoor(x: number, y: number, z: number): boolean {
+    if (!this.world.inBounds(x, y + 1, z) || !REPLACEABLE_BLOCKS.has(this.world.getBlock(x, y + 1, z))) {
+      return false;
     }
+    return this.world.isSolidAt(x, y - 1, z);
+  }
+
+  /** 双格方块（床 / 门）另一半的坐标；不是双格方块时返回 null。 */
+  private multiBlockPartner(x: number, y: number, z: number): { x: number; y: number; z: number } | null {
+    const shape = getBlock(this.world.getBlock(x, y, z)).shape;
     const meta = this.world.getMeta(x, y, z);
-    const [fx, fz] = FACINGS[meta & FACING_MASK];
-    const sign = (meta & BED_HEAD_BIT) === 0 ? 1 : -1;
-    return { x: x + fx * sign, y, z: z + fz * sign };
+    if (shape === BlockShape.BED) {
+      const [fx, fz] = FACINGS[meta & FACING_MASK];
+      const sign = (meta & BED_HEAD_BIT) === 0 ? 1 : -1;
+      return { x: x + fx * sign, y, z: z + fz * sign };
+    }
+    if (shape === BlockShape.DOOR) {
+      return { x, y: y + ((meta & DOOR_UPPER_BIT) === 0 ? 1 : -1), z };
+    }
+    return null;
   }
 
   /** 对着同种半砖的开放面再放一块 → 合并成双层方块；返回是否已处理。 */
@@ -1241,6 +1258,9 @@ export class Game implements EntityContext, ContainerHost {
     if (def.shape === BlockShape.BED && !this.canPlaceBed(px, py, pz, meta)) {
       return;
     }
+    if (def.shape === BlockShape.DOOR && !this.canPlaceDoor(px, py, pz)) {
+      return;
+    }
     // 梯子只能贴在竖直墙面上
     if (def.shape === BlockShape.LADDER && (hit.ny !== 0 || !this.world.isSolidAt(hit.x, hit.y, hit.z))) {
       return;
@@ -1262,6 +1282,9 @@ export class Game implements EntityContext, ContainerHost {
     if (def.shape === BlockShape.BED) {
       const [fx, fz] = FACINGS[meta & FACING_MASK];
       this.world.setBlock(px + fx, py, pz + fz, blockId, meta | BED_HEAD_BIT);
+    }
+    if (def.shape === BlockShape.DOOR) {
+      this.world.setBlock(px, py + 1, pz, blockId, meta | DOOR_UPPER_BIT);
     }
     this.sound.play('place');
     this.renderer.hand.swing();
@@ -1556,13 +1579,29 @@ export class Game implements EntityContext, ContainerHost {
     this.controls.requestLock();
   }
 
+  /** 开 / 关一扇门：两半的开合状态一起翻转。 */
+  private toggleDoor(x: number, y: number, z: number): void {
+    const meta = this.world.getMeta(x, y, z);
+    const opened = (meta & DOOR_OPEN_BIT) === 0;
+    const partner = this.multiBlockPartner(x, y, z);
+    const apply = (bx: number, by: number, bz: number): void => {
+      const m = this.world.getMeta(bx, by, bz);
+      this.world.setMeta(bx, by, bz, opened ? m | DOOR_OPEN_BIT : m & ~DOOR_OPEN_BIT);
+    };
+    apply(x, y, z);
+    if (partner && this.world.getBlock(partner.x, partner.y, partner.z) === BlockId.WOODEN_DOOR) {
+      apply(partner.x, partner.y, partner.z);
+    }
+    this.sound.play('place');
+  }
+
   /**
    * 右键床：把重生点设在床边，若是夜里且附近没有敌对生物就一觉睡到天亮。
    * （原版只在真正躺下时设置重生点，这里放宽为点一下就设，避免夜里被怪堵着白跑一趟。）
    */
   private useBed(x: number, y: number, z: number): void {
     const foot =
-      (this.world.getMeta(x, y, z) & BED_HEAD_BIT) === 0 ? { x, y, z } : (this.bedPartner(x, y, z) ?? { x, y, z });
+      (this.world.getMeta(x, y, z) & BED_HEAD_BIT) === 0 ? { x, y, z } : (this.multiBlockPartner(x, y, z) ?? { x, y, z });
     this.player.spawnX = foot.x + 0.5;
     this.player.spawnY = foot.y;
     this.player.spawnZ = foot.z + 0.5;
