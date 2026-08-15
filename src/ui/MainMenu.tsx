@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Difficulty, GAME_MODE_LABELS, GameMode } from '../engine/constants/game';
 import { MAX_SEED_LENGTH, MAX_WORLD_NAME_LENGTH } from '../engine/constants/save';
+import { WORLD_TYPE_LABELS, WorldType } from '../engine/constants/world';
 import { createWorldId, type SaveManager, type WorldMeta, type WorldSave } from '../engine/save/SaveManager';
 
 interface MainMenuProps {
@@ -22,6 +23,8 @@ const DIFFICULTY_OPTIONS: { value: Difficulty; label: string }[] = [
   { value: Difficulty.HARD, label: '困难' },
 ];
 
+const WORLD_TYPE_ORDER: WorldType[] = [WorldType.DEFAULT, WorldType.FLAT];
+
 const MODE_ORDER: GameMode[] = [GameMode.SURVIVAL, GameMode.CREATIVE, GameMode.ADVENTURE, GameMode.HARDCORE];
 
 function randomSeed(): string {
@@ -39,6 +42,8 @@ export function MainMenu({ saveManager, onStart }: MainMenuProps) {
   const [seed, setSeed] = useState(randomSeed);
   const [mode, setMode] = useState<GameMode>(GameMode.SURVIVAL);
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.NORMAL);
+  const [worldType, setWorldType] = useState<WorldType>(WorldType.DEFAULT);
+  const [generateStructures, setGenerateStructures] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
@@ -67,6 +72,8 @@ export function MainMenu({ saveManager, onStart }: MainMenuProps) {
       difficulty: mode === GameMode.HARDCORE ? Difficulty.HARD : difficulty,
       createdAt: now,
       lastPlayed: now,
+      worldType,
+      generateStructures,
     };
     onStart(meta, null);
   };
@@ -137,6 +144,24 @@ export function MainMenu({ saveManager, onStart }: MainMenuProps) {
             ))}
           </div>
           <label>
+            世界类型
+            <select value={worldType} onChange={(e) => setWorldType(e.target.value as WorldType)}>
+              {WORLD_TYPE_ORDER.map((t) => (
+                <option key={t} value={t}>
+                  {WORLD_TYPE_LABELS[t]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={generateStructures}
+              onChange={(e) => setGenerateStructures(e.target.checked)}
+            />
+            生成结构（村庄）
+          </label>
+          <label>
             难度
             <select
               value={mode === GameMode.HARDCORE ? Difficulty.HARD : difficulty}
@@ -164,7 +189,7 @@ export function MainMenu({ saveManager, onStart }: MainMenuProps) {
                 <div className="world-info">
                   <strong>{w.name}</strong>
                   <span className="muted">
-                    {GAME_MODE_LABELS[w.mode]} · 种子 {w.seed}
+                    {GAME_MODE_LABELS[w.mode]} · {WORLD_TYPE_LABELS[w.worldType ?? WorldType.DEFAULT]} · 种子 {w.seed}
                   </span>
                   <span className="muted">最近游玩 {formatDate(w.lastPlayed)}</span>
                 </div>

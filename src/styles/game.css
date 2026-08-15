@@ -92,6 +92,17 @@ button {
   font-weight: 600;
 }
 
+.menu-panel label.checkbox-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-panel label.checkbox-row input {
+  width: 18px;
+  height: 18px;
+}
+
 .menu-panel input,
 .menu-panel select {
   font: inherit;
