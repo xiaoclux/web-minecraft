@@ -40,7 +40,9 @@ button {
 
 /* ---------------------------------------------------------------- 主菜单 */
 .main-menu {
-  min-height: 100%;
+  /* 固定为视口高度并在自身内滚动：#root 是 overflow hidden，若让它随内容长高就再也滑不动 */
+  height: 100%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -68,6 +70,8 @@ button {
   gap: 24px;
   flex-wrap: wrap;
   justify-content: center;
+  align-items: flex-start;
+  width: 100%;
   width: 100%;
   max-width: 1000px;
 }
@@ -82,8 +86,12 @@ button {
 }
 
 .menu-panel {
+  /* 宽度足够时并排两列，不够则允许收缩到 300px 再换行 */
+  flex: 1 1 300px;
   width: 100%;
   max-width: 460px;
+  box-sizing: border-box;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -113,6 +121,9 @@ button {
 
 .menu-panel input,
 .menu-panel select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   font: inherit;
   padding: 8px;
   border: 2px solid #555;
@@ -127,6 +138,7 @@ button {
 
 .seed-row input {
   flex: 1;
+  width: auto;
 }
 
 .mode-grid {
@@ -1002,6 +1014,19 @@ button:disabled {
 
   .main-menu {
     padding: 12px 8px;
+    gap: 12px;
+  }
+
+  .menu-columns {
+    gap: 12px;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .world-list {
+    max-height: 240px;
   }
 
   .menu-title h1 {
@@ -1015,6 +1040,15 @@ button:disabled {
 
 /* 手机横屏（高度 ≈ 390px）：进一步压缩，容器界面尽量一屏放下 */
 @media (max-height: 440px) {
+  /* 极矮视口：标题收小、副标题隐藏，把高度留给面板 */
+  .menu-title h1 {
+    font-size: 22px;
+  }
+
+  .menu-title .muted {
+    display: none;
+  }
+
   :root {
     --slot-size: 26px;
     --result-slot-size: 32px;
@@ -1038,5 +1072,17 @@ button:disabled {
 
   .creative-trash {
     padding: 2px;
+  }
+}
+
+/* 窄视口（竖屏手机 / 桌面窄窗口）：标题不换行、面板贴边 */
+@media (max-width: 480px) {
+  .menu-title h1 {
+    font-size: 30px;
+    letter-spacing: 1px;
+  }
+
+  .main-menu {
+    padding: 16px 8px;
   }
 }
