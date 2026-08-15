@@ -2,17 +2,28 @@ import { BlockId } from '../blocks/BlockRegistry';
 import { CHUNK_SIZE } from '../constants/world';
 import type { Chunk } from './Chunk';
 import type { ChunkGenerator, SpawnPoint } from './ChunkGenerator';
+import { VillageGenerator, VillageStyle } from './structures/VillageGenerator';
 
 /** 超平坦分层（自下而上），对应 1.8 经典预设：基岩 + 2 层泥土 + 草方块。 */
 export const FLAT_LAYERS: readonly number[] = [BlockId.BEDROCK, BlockId.DIRT, BlockId.DIRT, BlockId.GRASS];
 
 /** 超平坦世界生成器。 */
 export class FlatGenerator implements ChunkGenerator {
+  /** 村庄生成器（关闭结构时为 null）。 */
+  readonly villages: VillageGenerator | null;
+
   constructor(
     readonly seed: string,
-    /** 是否生成村庄等结构（结构生成在后续步骤接入）。 */
-    readonly generateStructures: boolean,
-  ) {}
+    generateStructures: boolean,
+  ) {
+    this.villages = generateStructures
+      ? new VillageGenerator(
+          seed,
+          () => FLAT_LAYERS.length - 1,
+          () => VillageStyle.PLAINS,
+        )
+      : null;
+  }
 
   /** 地表高度（第一个空气方块的 y）。 */
   get surfaceY(): number {
@@ -27,6 +38,7 @@ export class FlatGenerator implements ChunkGenerator {
         }
       }
     }
+    this.villages?.placeInChunk(chunk);
   }
 
   findSpawn(): SpawnPoint {

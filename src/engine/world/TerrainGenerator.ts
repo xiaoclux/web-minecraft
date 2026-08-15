@@ -4,6 +4,7 @@ import { CHUNK_SIZE, SEA_LEVEL, WORLD_SIZE_Y } from '../constants/world';
 import { createRng, hashCoords, hashString } from '../textures/PixelCanvas';
 import type { Chunk } from './Chunk';
 import type { ChunkGenerator, SpawnPoint } from './ChunkGenerator';
+import { VillageGenerator, VillageStyle } from './structures/VillageGenerator';
 
 /** 群系。 */
 export const Biome = {
@@ -98,10 +99,8 @@ export class TerrainGenerator implements ChunkGenerator {
   private readonly temperature: (x: number, y: number) => number;
   private readonly humidity: (x: number, y: number) => number;
   private readonly cave: (x: number, y: number, z: number) => number;
-  /** 判断某列是否被结构占用（结构生成器注入；F2 接入）。 */
-  isReservedColumn: (x: number, z: number) => boolean = () => false;
-  /** 在 chunk 地形与植被之后叠加结构（F2 接入）。 */
-  decorateStructures: (chunk: Chunk) => void = () => undefined;
+  /** 村庄生成器（关闭结构时为 null）。 */
+  readonly villages: VillageGenerator | null;
 
   constructor(
     readonly seed: string,
@@ -114,6 +113,33 @@ export class TerrainGenerator implements ChunkGenerator {
     this.temperature = createNoise2D(createRng(this.base + 4));
     this.humidity = createNoise2D(createRng(this.base + 5));
     this.cave = createNoise3D(createRng(this.base + 6));
+    this.villages = generateStructures
+      ? new VillageGenerator(
+          seed,
+          (x, z) => this.heightAt(x, z),
+          (x, z) => this.villageStyleAt(x, z),
+        )
+      : null;
+  }
+
+  /** 村庄只出现在海面之上的平原 / 沙漠。 */
+  private villageStyleAt(x: number, z: number): VillageStyle | null {
+    if (this.heightAt(x, z) <= SEA_LEVEL + 1) {
+      return null;
+    }
+    const biome = this.biomeAt(x, z);
+    if (biome === Biome.PLAINS) {
+      return VillageStyle.PLAINS;
+    }
+    if (biome === Biome.DESERT) {
+      return VillageStyle.DESERT;
+    }
+    return null;
+  }
+
+  /** 某列是否被村庄建筑占用。 */
+  private isReservedColumn(x: number, z: number): boolean {
+    return this.villages?.isReserved(x, z) ?? false;
   }
 
   /** 位置相关的确定性随机数生成器。 */
@@ -176,9 +202,7 @@ export class TerrainGenerator implements ChunkGenerator {
       }
     }
     this.generatePlants(chunk);
-    if (this.generateStructures) {
-      this.decorateStructures(chunk);
-    }
+    this.villages?.placeInChunk(chunk);
   }
 
   private generateColumn(chunk: Chunk, lx: number, lz: number, height: number, biome: Biome, rng: () => number): void {
