@@ -1,6 +1,7 @@
 import { BlockId, RenderType, getBlock, type BlockDef, type BlockFaceTextures } from '../blocks/BlockRegistry';
 import { CHUNK_SIZE, MAX_LIGHT } from '../constants/world';
 import type { TextureAtlas } from '../textures/TextureAtlas';
+import { localIndex } from './Chunk';
 import type { World } from './World';
 
 /** 一个 chunk 的三层网格数据。 */
@@ -179,10 +180,14 @@ export class ChunkMesher {
     const x0 = cx * CHUNK_SIZE;
     const z0 = cz * CHUNK_SIZE;
     const world = this.world;
+    const chunk = world.getChunk(cx, cz);
+    if (!chunk) {
+      return { opaque: opaque.build(), cutout: cutout.build(), translucent: translucent.build() };
+    }
     for (let y = 0; y < world.sizeY; y++) {
       for (let z = z0; z < z0 + CHUNK_SIZE; z++) {
         for (let x = x0; x < x0 + CHUNK_SIZE; x++) {
-          const id = world.blocks[world.index(x, y, z)];
+          const id = chunk.blocks[localIndex(x - x0, y, z - z0)];
           if (id === BlockId.AIR) {
             continue;
           }
@@ -214,10 +219,14 @@ export class ChunkMesher {
     if (ny < 0) {
       return false;
     }
-    if (ny >= world.sizeY || nx < 0 || nz < 0 || nx >= world.sizeX || nz >= world.sizeZ) {
+    if (ny >= world.sizeY) {
       return true;
     }
-    const neighborId = world.blocks[world.index(nx, ny, nz)];
+    if (!world.hasChunkAt(nx, nz)) {
+      // 邻 chunk 未加载：不画，等它加载时本 chunk 会被标脏补画
+      return false;
+    }
+    const neighborId = world.getBlock(nx, ny, nz);
     if (neighborId === def.id && (def.render === RenderType.CUTOUT || def.isLiquid) && def.id !== BlockId.LEAVES) {
       return false;
     }

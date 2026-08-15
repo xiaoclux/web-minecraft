@@ -98,7 +98,7 @@ export class MobSpawner {
     const dist = minDist + ctx.random() * (maxDist - minDist);
     const x = Math.floor(player.x + Math.cos(angle) * dist);
     const z = Math.floor(player.z + Math.sin(angle) * dist);
-    if (x < 1 || z < 1 || x >= ctx.world.sizeX - 1 || z >= ctx.world.sizeZ - 1) {
+    if (!ctx.world.hasChunkAt(x, z)) {
       return null;
     }
     return { x, z };

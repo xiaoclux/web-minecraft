@@ -57,6 +57,8 @@ export interface DebugInfo {
   chunkX: number;
   chunkZ: number;
   biome: string;
+  /** 已加载 chunk 数。 */
+  chunks: number;
   entities: number;
   light: string;
   facing: string;

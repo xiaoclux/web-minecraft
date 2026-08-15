@@ -73,7 +73,7 @@ export function raycastBlocks(
       ny = 0;
       nz = -stepZ;
     }
-    if (!world.inBounds(x, y, z) && (y < 0 || y >= world.sizeY)) {
+    if (y < 0 || y >= world.sizeY) {
       return null;
     }
   }

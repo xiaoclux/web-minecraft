@@ -34,7 +34,7 @@ import {
 } from './constants/keys';
 import { AUTOSAVE_INTERVAL_TICKS, SAVE_FORMAT_VERSION } from './constants/save';
 import { CREEPER_EXPLOSION_MAX_DAMAGE } from './constants/mobs';
-import { DAY_LENGTH_TICKS, DEFAULT_RENDER_DISTANCE, MAX_LIGHT } from './constants/world';
+import { DAY_LENGTH_TICKS, DEFAULT_RENDER_DISTANCE, MAX_LIGHT, SPAWN_PRELOAD_RADIUS } from './constants/world';
 import { ArrowEntity } from './entities/ArrowEntity';
 import { Entity, allocateEntityId, resetEntityIds, type EntitySaveData } from './entities/Entity';
 import type { EntityContext } from './entities/EntityContext';
@@ -60,9 +60,12 @@ import { Renderer } from './render/Renderer';
 import { Sky } from './render/Sky';
 import { SoundManager } from './render/SoundManager';
 import { rleDecode, rleEncode } from './save/serialize';
-import { SaveManager, type WorldMeta, type WorldSave } from './save/SaveManager';
+import { SaveManager, type ChunkSaveData, type WorldMeta, type WorldSave } from './save/SaveManager';
 import { TextureAtlas } from './textures/TextureAtlas';
 import { createRng, hashString } from './textures/PixelCanvas';
+import { Chunk, toChunkCoord } from './world/Chunk';
+import { createChunkGenerator, type ChunkGenerator } from './world/ChunkGenerator';
+import { ChunkManager } from './world/ChunkManager';
 import { LightEngine } from './world/LightEngine';
 import { TerrainGenerator } from './world/TerrainGenerator';
 import { World } from './world/World';
@@ -106,7 +109,8 @@ export class Game implements EntityContext, ContainerHost {
   tick = 0;
   timeTick = INITIAL_TIME_TICK;
 
-  private readonly terrain: TerrainGenerator;
+  private readonly generator: ChunkGenerator;
+  private readonly chunkManager: ChunkManager;
   private readonly light: LightEngine;
   private readonly atlas: TextureAtlas;
   private readonly renderer: Renderer;
@@ -150,8 +154,9 @@ export class Game implements EntityContext, ContainerHost {
     this.rules = getRules(options.meta.mode);
     this.difficulty = this.rules.forcedDifficulty ?? options.meta.difficulty;
     this.rng = createRng(hashString(`${options.meta.seed}:${Date.now()}`));
-    this.terrain = new TerrainGenerator(options.meta.seed);
+    this.generator = createChunkGenerator(options.meta);
     this.light = new LightEngine(this.world);
+    this.chunkManager = new ChunkManager(this.world, this.generator, this.light);
     this.atlas = new TextureAtlas();
     this.renderer = new Renderer(options.canvas, this.world, this.atlas);
     this.controls = new Controls(options.canvas);
@@ -191,6 +196,7 @@ export class Game implements EntityContext, ContainerHost {
       this.createNewWorld();
     }
     this.world.onBlockChange((x, _y, z) => this.light.updateAround(x, z));
+    this.world.onChunkUnload((chunk) => this.onChunkUnloaded(chunk));
     this.world.onBatchChange((minX, maxX, minZ, maxZ) => this.light.updateArea(minX, maxX, minZ, maxZ));
     this.player.inventory.subscribe(() =>
       this.store.patch({ inventoryVersion: this.store.get().inventoryVersion + 1 }),
@@ -235,10 +241,10 @@ export class Game implements EntityContext, ContainerHost {
   }
 
   private createNewWorld(): void {
-    this.terrain.generate(this.world);
-    this.light.computeAll();
-    this.world.markAllDirty();
-    const spawn = this.terrain.findSpawn(this.world);
+    const spawn = this.generator.findSpawn();
+    this.chunkManager.ensureLoaded(spawn.x, spawn.z, SPAWN_PRELOAD_RADIUS);
+    // 以实际生成结果修正出生高度（噪声高度与洞穴/树木可能有出入）
+    spawn.y = this.world.getSurfaceY(Math.floor(spawn.x), Math.floor(spawn.z));
     this.player.spawnX = spawn.x;
     this.player.spawnY = spawn.y;
     this.player.spawnZ = spawn.z;
@@ -250,10 +256,14 @@ export class Game implements EntityContext, ContainerHost {
   }
 
   private loadFrom(save: WorldSave): void {
-    const decoded = rleDecode(save.blocks, save.blockCount);
-    this.world.blocks.set(decoded);
-    this.light.computeAll();
-    this.world.markAllDirty();
+    for (const data of save.chunks) {
+      const chunk = new Chunk(data.cx, data.cz);
+      chunk.blocks.set(rleDecode(data.blocks, chunk.blocks.length));
+      chunk.meta.set(rleDecode(data.meta, chunk.meta.length));
+      chunk.isModified = true;
+      this.chunkManager.addLoadedChunk(chunk);
+    }
+    this.chunkManager.ensureLoaded(save.player.x, save.player.z, SPAWN_PRELOAD_RADIUS);
     this.tick = save.tick;
     this.timeTick = save.tick + INITIAL_TIME_TICK;
     this.player.load(save.player);
@@ -309,13 +319,23 @@ export class Game implements EntityContext, ContainerHost {
       meta: { ...this.meta, lastPlayed: Date.now() },
       tick: this.tick,
       timeTick: this.timeTick,
-      blocks: rleEncode(this.world.blocks),
-      blockCount: this.world.blocks.length,
+      chunks: this.serializeChunks(),
       player: this.player.serialize(),
       entities,
       nextEntityId: allocateEntityId(),
       furnaces,
     };
+  }
+
+  /** 只序列化被修改过的 chunk；其余可由种子确定性再生。 */
+  private serializeChunks(): ChunkSaveData[] {
+    const out: ChunkSaveData[] = [];
+    for (const chunk of this.world.chunks.values()) {
+      if (chunk.isModified) {
+        out.push({ cx: chunk.cx, cz: chunk.cz, blocks: rleEncode(chunk.blocks), meta: rleEncode(chunk.meta) });
+      }
+    }
+    return out;
   }
 
   /** 保存到 IndexedDB。 */
@@ -383,9 +403,12 @@ export class Game implements EntityContext, ContainerHost {
       }
       this.updatePlayerMovement(dt);
       for (const e of this.entities.values()) {
-        e.move(this, dt);
+        if (this.isEntityChunkLoaded(e)) {
+          e.move(this, dt);
+        }
       }
     }
+    this.chunkManager.update(this.player.x, this.player.z, this.renderDistance);
     this.updateCamera();
     this.renderer.chunks.update(this.player.x, this.player.z);
     this.renderer.entities.update(this.entities.values(), this.renderer.sky.skyLevel, now / 1000, this.player.yaw);
@@ -422,7 +445,9 @@ export class Game implements EntityContext, ContainerHost {
       this.handleHeldMouse();
     }
     for (const e of this.entities.values()) {
-      e.tick(this);
+      if (this.isEntityChunkLoaded(e)) {
+        e.tick(this);
+      }
     }
     for (const [id, e] of this.entities) {
       if (e.isDead) {
@@ -467,6 +492,20 @@ export class Game implements EntityContext, ContainerHost {
     });
   }
 
+  /** chunk 卸载时清掉其中的掉落物（生物保留在实体表中冻结，随存档保存）。 */
+  private onChunkUnloaded(chunk: Chunk): void {
+    for (const [id, e] of this.entities) {
+      if (e instanceof ItemDropEntity && chunk.containsColumn(Math.floor(e.x), Math.floor(e.z))) {
+        this.entities.delete(id);
+      }
+    }
+  }
+
+  /** 实体所在 chunk 是否已加载（未加载的实体冻结，不 tick / 不移动）。 */
+  private isEntityChunkLoaded(e: Entity): boolean {
+    return this.world.hasChunkAt(Math.floor(e.x), Math.floor(e.z));
+  }
+
   private buildDebugInfo(): DebugInfo {
     const p = this.player;
     const bx = Math.floor(p.x);
@@ -479,9 +518,10 @@ export class Game implements EntityContext, ContainerHost {
       x: p.x,
       y: p.y,
       z: p.z,
-      chunkX: bx >> 4,
-      chunkZ: bz >> 4,
-      biome: this.terrain.biomeAt(bx, bz),
+      chunkX: toChunkCoord(bx),
+      chunkZ: toChunkCoord(bz),
+      biome: this.generator instanceof TerrainGenerator ? this.generator.biomeAt(bx, bz) : 'flat',
+      chunks: this.world.chunkCount,
       entities: this.entities.size,
       light: `sky ${this.world.getSkyLight(bx, by, bz)} block ${this.world.getBlockLight(bx, by, bz)}`,
       facing,
@@ -1270,6 +1310,7 @@ export class Game implements EntityContext, ContainerHost {
     if (this.rules.deleteWorldOnDeath) {
       return;
     }
+    this.chunkManager.ensureLoaded(this.player.spawnX, this.player.spawnZ, SPAWN_PRELOAD_RADIUS);
     this.player.respawn();
     this.spawnProtection = SPAWN_PROTECTION_TICKS;
     this.player.lastDamageCause = 'generic';

@@ -1,76 +1,156 @@
 import { BlockId, getBlock } from '../blocks/BlockRegistry';
-import { CHUNK_SIZE, CHUNKS_X, CHUNKS_Z, WORLD_SIZE_X, WORLD_SIZE_Y, WORLD_SIZE_Z } from '../constants/world';
+import { CHUNK_SIZE, MAX_LIGHT, WORLD_SIZE_Y } from '../constants/world';
+import { Chunk, chunkKey, localIndex, toChunkCoord } from './Chunk';
 
-/** chunk 键（cx,cz → number）。 */
-export function chunkKey(cx: number, cz: number): number {
-  return cz * CHUNKS_X + cx;
-}
+export { chunkKey } from './Chunk';
 
-/** 有限世界的方块与光照存储。 */
+type BlockListener = (x: number, y: number, z: number, oldId: number, newId: number) => void;
+type BatchListener = (minX: number, maxX: number, minZ: number, maxZ: number) => void;
+type ChunkListener = (chunk: Chunk) => void;
+
+/**
+ * 无限世界的方块与光照存储：按 chunk 分块保存，水平方向无边界。
+ * 未加载的 chunk：读方块得空气、读天空光得满亮度、碰撞视为实心（防止掉出世界）。
+ */
 export class World {
-  readonly sizeX = WORLD_SIZE_X;
   readonly sizeY = WORLD_SIZE_Y;
-  readonly sizeZ = WORLD_SIZE_Z;
-  readonly blocks: Uint8Array;
-  readonly skyLight: Uint8Array;
-  readonly blockLight: Uint8Array;
-  /** 每列最高非透光方块之上的 y（即天空光可直达的最低 y）。 */
-  readonly heightMap: Uint8Array;
+  readonly chunks = new Map<number, Chunk>();
   /** 需要重建网格的 chunk 键集合。 */
   readonly dirtyChunks = new Set<number>();
-  private listeners = new Set<(x: number, y: number, z: number, oldId: number, newId: number) => void>();
+  private readonly listeners = new Set<BlockListener>();
+  private readonly batchListeners = new Set<BatchListener>();
+  private readonly chunkLoadListeners = new Set<ChunkListener>();
+  private readonly chunkUnloadListeners = new Set<ChunkListener>();
   private batchDepth = 0;
   private batchBounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
-  private batchListeners = new Set<(minX: number, maxX: number, minZ: number, maxZ: number) => void>();
+  private lastChunk: Chunk | null = null;
 
-  constructor() {
-    const volume = this.sizeX * this.sizeY * this.sizeZ;
-    this.blocks = new Uint8Array(volume);
-    this.skyLight = new Uint8Array(volume);
-    this.blockLight = new Uint8Array(volume);
-    this.heightMap = new Uint8Array(this.sizeX * this.sizeZ);
-  }
+  // ---------------------------------------------------------------- chunk 管理
 
-  /** 坐标是否在世界内。 */
-  inBounds(x: number, y: number, z: number): boolean {
-    return x >= 0 && y >= 0 && z >= 0 && x < this.sizeX && y < this.sizeY && z < this.sizeZ;
-  }
-
-  /** 平铺索引。调用方保证坐标合法。 */
-  index(x: number, y: number, z: number): number {
-    return (y * this.sizeZ + z) * this.sizeX + x;
-  }
-
-  /** 读取方块；越界返回空气。 */
-  getBlock(x: number, y: number, z: number): number {
-    if (!this.inBounds(x, y, z)) {
-      return BlockId.AIR;
+  /** 获取 chunk（未加载返回 null）。 */
+  getChunk(cx: number, cz: number): Chunk | null {
+    const last = this.lastChunk;
+    if (last && last.cx === cx && last.cz === cz) {
+      return last;
     }
-    return this.blocks[this.index(x, y, z)];
+    const chunk = this.chunks.get(chunkKey(cx, cz)) ?? null;
+    if (chunk) {
+      this.lastChunk = chunk;
+    }
+    return chunk;
   }
 
-  /**
-   * 直接写入方块（不触发光照与脏标记），用于世界生成。
-   */
-  setBlockRaw(x: number, y: number, z: number, id: number): void {
-    if (this.inBounds(x, y, z)) {
-      this.blocks[this.index(x, y, z)] = id;
+  /** 按方块坐标获取 chunk。 */
+  getChunkAt(x: number, z: number): Chunk | null {
+    return this.getChunk(toChunkCoord(x), toChunkCoord(z));
+  }
+
+  /** 该列所在 chunk 是否已加载。 */
+  hasChunkAt(x: number, z: number): boolean {
+    return this.getChunkAt(x, z) !== null;
+  }
+
+  /** 已加载 chunk 数。 */
+  get chunkCount(): number {
+    return this.chunks.size;
+  }
+
+  /** 加入 chunk 并标脏它与四邻（邻居朝向它的面需要重建）。 */
+  addChunk(chunk: Chunk): void {
+    this.chunks.set(chunk.key, chunk);
+    this.markDirty(chunk.cx, chunk.cz);
+    this.markDirty(chunk.cx - 1, chunk.cz);
+    this.markDirty(chunk.cx + 1, chunk.cz);
+    this.markDirty(chunk.cx, chunk.cz - 1);
+    this.markDirty(chunk.cx, chunk.cz + 1);
+    for (const listener of this.chunkLoadListeners) {
+      listener(chunk);
+    }
+  }
+
+  /** 卸载 chunk。 */
+  removeChunk(cx: number, cz: number): void {
+    const chunk = this.getChunk(cx, cz);
+    if (!chunk) {
+      return;
+    }
+    this.chunks.delete(chunk.key);
+    this.dirtyChunks.delete(chunk.key);
+    if (this.lastChunk === chunk) {
+      this.lastChunk = null;
+    }
+    for (const listener of this.chunkUnloadListeners) {
+      listener(chunk);
+    }
+  }
+
+  /** 订阅 chunk 加载。 */
+  onChunkLoad(listener: ChunkListener): () => void {
+    this.chunkLoadListeners.add(listener);
+    return () => this.chunkLoadListeners.delete(listener);
+  }
+
+  /** 订阅 chunk 卸载。 */
+  onChunkUnload(listener: ChunkListener): () => void {
+    this.chunkUnloadListeners.add(listener);
+    return () => this.chunkUnloadListeners.delete(listener);
+  }
+
+  // ---------------------------------------------------------------- 方块读写
+
+  /** 坐标是否在已加载区域内（y 合法且 chunk 已加载）。 */
+  inBounds(x: number, y: number, z: number): boolean {
+    return y >= 0 && y < this.sizeY && this.hasChunkAt(x, z);
+  }
+
+  private locate(x: number, y: number, z: number): { chunk: Chunk; idx: number } | null {
+    if (y < 0 || y >= this.sizeY) {
+      return null;
+    }
+    const chunk = this.getChunkAt(x, z);
+    if (!chunk) {
+      return null;
+    }
+    return { chunk, idx: localIndex(x - chunk.originX, y, z - chunk.originZ) };
+  }
+
+  /** 读取方块；未加载 / 越界返回空气。 */
+  getBlock(x: number, y: number, z: number): number {
+    const loc = this.locate(x, y, z);
+    return loc ? loc.chunk.blocks[loc.idx] : BlockId.AIR;
+  }
+
+  /** 读取方块附加数据；未加载返回 0。 */
+  getMeta(x: number, y: number, z: number): number {
+    const loc = this.locate(x, y, z);
+    return loc ? loc.chunk.meta[loc.idx] : 0;
+  }
+
+  /** 直接写入方块（不触发光照与脏标记、不标记修改），用于世界生成 / 测试搭建。 */
+  setBlockRaw(x: number, y: number, z: number, id: number, meta = 0): void {
+    const loc = this.locate(x, y, z);
+    if (loc) {
+      loc.chunk.blocks[loc.idx] = id;
+      loc.chunk.meta[loc.idx] = meta;
     }
   }
 
   /**
    * 修改方块并标记相关 chunk 为脏；返回是否发生变化。光照由 LightEngine 监听更新。
    */
-  setBlock(x: number, y: number, z: number, id: number): boolean {
-    if (!this.inBounds(x, y, z)) {
+  setBlock(x: number, y: number, z: number, id: number, meta = 0): boolean {
+    const loc = this.locate(x, y, z);
+    if (!loc) {
       return false;
     }
-    const idx = this.index(x, y, z);
-    const old = this.blocks[idx];
-    if (old === id) {
+    const old = loc.chunk.blocks[loc.idx];
+    const oldMeta = loc.chunk.meta[loc.idx];
+    if (old === id && oldMeta === meta) {
       return false;
     }
-    this.blocks[idx] = id;
+    loc.chunk.blocks[loc.idx] = id;
+    loc.chunk.meta[loc.idx] = meta;
+    loc.chunk.isModified = true;
     this.markDirtyAround(x, y, z);
     if (this.batchDepth > 0) {
       this.extendBatch(x, z);
@@ -79,6 +159,18 @@ export class World {
         listener(x, y, z, old, id);
       }
     }
+    return true;
+  }
+
+  /** 只修改附加数据（不触发光照重算，但标脏网格与修改标记）。 */
+  setMeta(x: number, y: number, z: number, meta: number): boolean {
+    const loc = this.locate(x, y, z);
+    if (!loc || loc.chunk.meta[loc.idx] === meta) {
+      return false;
+    }
+    loc.chunk.meta[loc.idx] = meta;
+    loc.chunk.isModified = true;
+    this.markDirtyAround(x, y, z);
     return true;
   }
 
@@ -102,7 +194,7 @@ export class World {
   }
 
   /** 订阅批量变更范围。 */
-  onBatchChange(listener: (minX: number, maxX: number, minZ: number, maxZ: number) => void): () => void {
+  onBatchChange(listener: BatchListener): () => void {
     this.batchListeners.add(listener);
     return () => this.batchListeners.delete(listener);
   }
@@ -120,15 +212,17 @@ export class World {
   }
 
   /** 订阅方块变化。 */
-  onBlockChange(listener: (x: number, y: number, z: number, oldId: number, newId: number) => void): () => void {
+  onBlockChange(listener: BlockListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
+  // ---------------------------------------------------------------- 脏标记
+
   /** 标记包含该坐标的 chunk 及（若在边界）相邻 chunk 为脏。 */
   markDirtyAround(x: number, _y: number, z: number): void {
-    const cx = Math.floor(x / CHUNK_SIZE);
-    const cz = Math.floor(z / CHUNK_SIZE);
+    const cx = toChunkCoord(x);
+    const cz = toChunkCoord(z);
     const lx = x - cx * CHUNK_SIZE;
     const lz = z - cz * CHUNK_SIZE;
     this.markDirty(cx, cz);
@@ -146,37 +240,51 @@ export class World {
     }
   }
 
-  /** 标记 chunk 为脏。 */
+  /** 标记 chunk 为脏（未加载则忽略）。 */
   markDirty(cx: number, cz: number): void {
-    if (cx < 0 || cz < 0 || cx >= CHUNKS_X || cz >= CHUNKS_Z) {
-      return;
-    }
-    this.dirtyChunks.add(chunkKey(cx, cz));
-  }
-
-  /** 标记全部 chunk 为脏。 */
-  markAllDirty(): void {
-    for (let cz = 0; cz < CHUNKS_Z; cz++) {
-      for (let cx = 0; cx < CHUNKS_X; cx++) {
-        this.dirtyChunks.add(chunkKey(cx, cz));
-      }
+    const key = chunkKey(cx, cz);
+    if (this.chunks.has(key)) {
+      this.dirtyChunks.add(key);
     }
   }
 
-  /** 读取天空光；越界返回满亮度。 */
+  // ---------------------------------------------------------------- 光照与高度
+
+  /** 读取天空光；未加载或高于世界返回满亮度，低于世界返回 0。 */
   getSkyLight(x: number, y: number, z: number): number {
-    if (!this.inBounds(x, y, z)) {
-      return y >= this.sizeY ? 15 : 0;
+    if (y >= this.sizeY) {
+      return MAX_LIGHT;
     }
-    return this.skyLight[this.index(x, y, z)];
-  }
-
-  /** 读取方块光；越界返回 0。 */
-  getBlockLight(x: number, y: number, z: number): number {
-    if (!this.inBounds(x, y, z)) {
+    if (y < 0) {
       return 0;
     }
-    return this.blockLight[this.index(x, y, z)];
+    const chunk = this.getChunkAt(x, z);
+    if (!chunk) {
+      return MAX_LIGHT;
+    }
+    return chunk.skyLight[localIndex(x - chunk.originX, y, z - chunk.originZ)];
+  }
+
+  /** 读取方块光；未加载 / 越界返回 0。 */
+  getBlockLight(x: number, y: number, z: number): number {
+    const loc = this.locate(x, y, z);
+    return loc ? loc.chunk.blockLight[loc.idx] : 0;
+  }
+
+  /** 写入天空光（LightEngine 用）；未加载忽略。 */
+  setSkyLight(x: number, y: number, z: number, level: number): void {
+    const loc = this.locate(x, y, z);
+    if (loc) {
+      loc.chunk.skyLight[loc.idx] = level;
+    }
+  }
+
+  /** 写入方块光（LightEngine 用）；未加载忽略。 */
+  setBlockLight(x: number, y: number, z: number, level: number): void {
+    const loc = this.locate(x, y, z);
+    if (loc) {
+      loc.chunk.blockLight[loc.idx] = level;
+    }
   }
 
   /** 该位置是否为不透光方块。 */
@@ -184,12 +292,19 @@ export class World {
     return getBlock(this.getBlock(x, y, z)).opaque;
   }
 
-  /** 该位置是否有碰撞（越界视为实心，形成地图边界）。 */
+  /** 该位置是否有碰撞（未加载 chunk 视为实心，形成临时边界；世界上方为空）。 */
   isSolidAt(x: number, y: number, z: number): boolean {
-    if (!this.inBounds(x, y, z)) {
-      return y < this.sizeY;
+    if (y >= this.sizeY) {
+      return false;
     }
-    return getBlock(this.blocks[this.index(x, y, z)]).solid;
+    if (y < 0) {
+      return true;
+    }
+    const chunk = this.getChunkAt(x, z);
+    if (!chunk) {
+      return true;
+    }
+    return getBlock(chunk.blocks[localIndex(x - chunk.originX, y, z - chunk.originZ)]).solid;
   }
 
   /** 该位置是否为液体。 */
@@ -197,30 +312,28 @@ export class World {
     return getBlock(this.getBlock(x, y, z)).isLiquid === true;
   }
 
-  /** 重新计算指定列的高度图。 */
+  /** 重新计算指定列的高度图（未加载忽略）。 */
   recomputeHeight(x: number, z: number): void {
+    const chunk = this.getChunkAt(x, z);
+    if (!chunk) {
+      return;
+    }
+    const lx = x - chunk.originX;
+    const lz = z - chunk.originZ;
     let y = this.sizeY - 1;
-    while (y >= 0 && !getBlock(this.blocks[this.index(x, y, z)]).opaque) {
+    while (y >= 0 && !getBlock(chunk.blocks[localIndex(lx, y, lz)]).opaque) {
       y--;
     }
-    this.heightMap[z * this.sizeX + x] = y + 1;
+    chunk.heightMap[lz * CHUNK_SIZE + lx] = y + 1;
   }
 
-  /** 全量重算高度图。 */
-  recomputeAllHeights(): void {
-    for (let z = 0; z < this.sizeZ; z++) {
-      for (let x = 0; x < this.sizeX; x++) {
-        this.recomputeHeight(x, z);
-      }
-    }
-  }
-
-  /** 读取列高度（越界返回 0）。 */
+  /** 读取列高度（未加载返回 0）。 */
   getHeight(x: number, z: number): number {
-    if (x < 0 || z < 0 || x >= this.sizeX || z >= this.sizeZ) {
+    const chunk = this.getChunkAt(x, z);
+    if (!chunk) {
       return 0;
     }
-    return this.heightMap[z * this.sizeX + x];
+    return chunk.heightMap[(z - chunk.originZ) * CHUNK_SIZE + (x - chunk.originX)];
   }
 
   /** 找到该列最高的实心方块之上的 y（用于出生点/生成）。 */

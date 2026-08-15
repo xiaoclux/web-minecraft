@@ -11,7 +11,9 @@ export function DebugOverlay({ info }: { info: DebugInfo }) {
       <div>
         Chunk: {info.chunkX}, {info.chunkZ} · Facing: {info.facing}
       </div>
-      <div>Biome: {info.biome}</div>
+      <div>
+        Biome: {info.biome} · Chunks: {info.chunks}
+      </div>
       <div>Light: {info.light}</div>
       <div>
         Entities: {info.entities} · Tick: {info.tick}

@@ -137,3 +137,15 @@ export class PixelCanvas {
     return this;
   }
 }
+
+/** 把整数坐标与盐混入基础哈希，得到位置相关的确定性种子。 */
+export function hashCoords(base: number, a: number, b: number, salt = 0): number {
+  let h = base ^ 0x9e3779b9;
+  h = Math.imul(h ^ (a | 0), 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h ^ (b | 0), 0xc2b2ae35);
+  h ^= h >>> 16;
+  h = Math.imul(h ^ (salt | 0), 0x27d4eb2f);
+  h ^= h >>> 15;
+  return h >>> 0;
+}

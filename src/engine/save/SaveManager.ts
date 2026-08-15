@@ -1,9 +1,16 @@
 import { del, get, set } from 'idb-keyval';
 import type { Difficulty, GameMode } from '../constants/game';
-import { SAVE_FORMAT_VERSION, SAVE_INDEX_KEY, SAVE_WORLD_KEY_PREFIX } from '../constants/save';
+import {
+  LEGACY_SAVE_FORMAT_VERSION,
+  SAVE_FORMAT_VERSION,
+  SAVE_INDEX_KEY,
+  SAVE_WORLD_KEY_PREFIX,
+} from '../constants/save';
+import type { WorldType } from '../constants/world';
 import type { EntitySaveData } from '../entities/Entity';
 import type { FurnaceState } from '../items/Furnace';
 import type { PlayerSaveData } from '../player/Player';
+import { migrateLegacySave, type LegacyWorldSave } from './migrate';
 
 /** 存档索引条目。 */
 export interface WorldMeta {
@@ -14,16 +21,28 @@ export interface WorldMeta {
   difficulty: Difficulty;
   createdAt: number;
   lastPlayed: number;
+  /** 世界类型；旧存档缺省为 default。 */
+  worldType?: WorldType;
+  /** 是否生成村庄等结构；缺省为 true。 */
+  generateStructures?: boolean;
 }
 
-/** 完整存档。 */
+/** 单个 chunk 的存档数据（只保存玩家改动过的 chunk）。 */
+export interface ChunkSaveData {
+  cx: number;
+  cz: number;
+  /** RLE 压缩的方块 id。 */
+  blocks: Uint32Array;
+  /** RLE 压缩的方块附加数据。 */
+  meta: Uint32Array;
+}
+
+/** 完整存档（版本 2：分块）。 */
 export interface WorldSave {
   version: number;
   meta: WorldMeta;
   tick: number;
-  /** RLE 压缩的方块数组。 */
-  blocks: Uint32Array;
-  blockCount: number;
+  chunks: ChunkSaveData[];
   player: PlayerSaveData;
   entities: EntitySaveData[];
   nextEntityId: number;
@@ -54,6 +73,9 @@ export class SaveManager {
     const data = await get<WorldSave>(SAVE_WORLD_KEY_PREFIX + id);
     if (!data) {
       return null;
+    }
+    if (data.version === LEGACY_SAVE_FORMAT_VERSION) {
+      return migrateLegacySave(data as unknown as LegacyWorldSave);
     }
     if (data.version !== SAVE_FORMAT_VERSION) {
       throw new Error(`存档版本不兼容：${data.version}（当前 ${SAVE_FORMAT_VERSION}）`);

@@ -1,14 +1,17 @@
 import * as THREE from 'three';
-import { CHUNK_SIZE, CHUNKS_X, CHUNKS_Z } from '../constants/world';
+import { CHUNK_SIZE } from '../constants/world';
 import type { TextureAtlas } from '../textures/TextureAtlas';
 import { ChunkMesher, type MeshBuffers } from '../world/ChunkMesher';
-import { chunkKey, type World } from '../world/World';
+import { chunkKey, toChunkCoord } from '../world/Chunk';
+import type { World } from '../world/World';
 import { createChunkMaterials } from './ChunkMaterial';
 
 /** 每帧最多重建的 chunk 数。 */
 const MAX_REBUILDS_PER_FRAME = 3;
 
 interface ChunkMeshes {
+  cx: number;
+  cz: number;
   opaque: THREE.Mesh;
   cutout: THREE.Mesh;
   translucent: THREE.Mesh;
@@ -29,6 +32,7 @@ export class ChunkRenderer {
   /** 已构建过网格的 chunk。 */
   private readonly built = new Set<number>();
   private renderDistance: number;
+  private readonly unsubscribeUnload: () => void;
 
   constructor(
     private readonly world: World,
@@ -39,6 +43,7 @@ export class ChunkRenderer {
     this.materials = createChunkMaterials(atlas.texture, this.sharedUniforms);
     this.renderDistance = renderDistance;
     this.materials.translucent.transparent = true;
+    this.unsubscribeUnload = world.onChunkUnload((chunk) => this.unload(chunk.key));
   }
 
   /** 设置渲染距离。 */
@@ -48,24 +53,24 @@ export class ChunkRenderer {
     this.sharedUniforms.uFogNear.value = Math.max(8, distance * CHUNK_SIZE * 0.55);
   }
 
-  /** 每帧调用：按玩家位置加载/卸载并重建脏 chunk。 */
+  /** 每帧调用：按玩家位置显示/隐藏并重建脏 chunk。 */
   update(playerX: number, playerZ: number): void {
-    const pcx = Math.floor(playerX / CHUNK_SIZE);
-    const pcz = Math.floor(playerZ / CHUNK_SIZE);
+    const pcx = toChunkCoord(playerX);
+    const pcz = toChunkCoord(playerZ);
+    const r = this.renderDistance;
     const candidates: { key: number; cx: number; cz: number; dist: number }[] = [];
-    for (let cz = 0; cz < CHUNKS_Z; cz++) {
-      for (let cx = 0; cx < CHUNKS_X; cx++) {
-        const dist = Math.max(Math.abs(cx - pcx), Math.abs(cz - pcz));
+    for (const meshes of this.meshes.values()) {
+      const inRange = Math.max(Math.abs(meshes.cx - pcx), Math.abs(meshes.cz - pcz)) <= r;
+      meshes.opaque.visible = inRange;
+      meshes.cutout.visible = inRange;
+      meshes.translucent.visible = inRange;
+    }
+    for (let cz = pcz - r; cz <= pcz + r; cz++) {
+      for (let cx = pcx - r; cx <= pcx + r; cx++) {
         const key = chunkKey(cx, cz);
-        const inRange = dist <= this.renderDistance;
-        const existing = this.meshes.get(key);
-        if (existing) {
-          existing.opaque.visible = inRange;
-          existing.cutout.visible = inRange;
-          existing.translucent.visible = inRange;
-        }
-        if (inRange && (this.world.dirtyChunks.has(key) || !this.built.has(key))) {
-          candidates.push({ key, cx, cz, dist });
+        const needsBuild = this.world.dirtyChunks.has(key) || !this.built.has(key);
+        if (needsBuild && this.canBuild(cx, cz)) {
+          candidates.push({ key, cx, cz, dist: Math.max(Math.abs(cx - pcx), Math.abs(cz - pcz)) });
         }
       }
     }
@@ -75,6 +80,35 @@ export class ChunkRenderer {
       const c = candidates[i];
       this.rebuild(c.key, c.cx, c.cz);
     }
+  }
+
+  /** chunk 已点亮且四邻已加载才建网格，避免在未加载边界留下缝隙。 */
+  private canBuild(cx: number, cz: number): boolean {
+    const chunk = this.world.getChunk(cx, cz);
+    if (!chunk || !chunk.isLit) {
+      return false;
+    }
+    return (
+      this.world.getChunk(cx - 1, cz) !== null &&
+      this.world.getChunk(cx + 1, cz) !== null &&
+      this.world.getChunk(cx, cz - 1) !== null &&
+      this.world.getChunk(cx, cz + 1) !== null
+    );
+  }
+
+  /** 释放某个 chunk 的网格（卸载时）。 */
+  private unload(key: number): void {
+    const meshes = this.meshes.get(key);
+    if (!meshes) {
+      this.built.delete(key);
+      return;
+    }
+    for (const m of [meshes.opaque, meshes.cutout, meshes.translucent]) {
+      this.group.remove(m);
+      m.geometry.dispose();
+    }
+    this.meshes.delete(key);
+    this.built.delete(key);
   }
 
   /** 是否还有待构建的可见 chunk。 */
@@ -87,13 +121,15 @@ export class ChunkRenderer {
     let meshes = this.meshes.get(key);
     if (!meshes) {
       meshes = {
+        cx,
+        cz,
         opaque: new THREE.Mesh(new THREE.BufferGeometry(), this.materials.opaque),
         cutout: new THREE.Mesh(new THREE.BufferGeometry(), this.materials.cutout),
         translucent: new THREE.Mesh(new THREE.BufferGeometry(), this.materials.translucent),
       };
       meshes.translucent.renderOrder = 10;
       meshes.cutout.renderOrder = 5;
-      for (const m of Object.values(meshes)) {
+      for (const m of [meshes.opaque, meshes.cutout, meshes.translucent]) {
         m.frustumCulled = true;
         m.matrixAutoUpdate = false;
         this.group.add(m);
@@ -119,10 +155,11 @@ export class ChunkRenderer {
   /** 释放资源。 */
   dispose(): void {
     for (const meshes of this.meshes.values()) {
-      for (const m of Object.values(meshes)) {
+      for (const m of [meshes.opaque, meshes.cutout, meshes.translucent]) {
         m.geometry.dispose();
       }
     }
+    this.unsubscribeUnload();
     for (const mat of Object.values(this.materials)) {
       mat.dispose();
     }
