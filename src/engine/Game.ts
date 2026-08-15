@@ -56,6 +56,7 @@ import {
   SPAWN_PRELOAD_RADIUS,
 } from './constants/world';
 import { BlockEntityStore, BlockEntityType } from './world/BlockEntityStore';
+import { RandomTickSystem } from './systems/RandomTickSystem';
 import { ArrowEntity } from './entities/ArrowEntity';
 import { Entity, allocateEntityId, resetEntityIds, type EntitySaveData } from './entities/Entity';
 import type { EntityContext } from './entities/EntityContext';
@@ -139,6 +140,7 @@ export class Game implements EntityContext, ContainerHost {
 
   private readonly generator: ChunkGenerator;
   private readonly chunkManager: ChunkManager;
+  private readonly randomTicks = new RandomTickSystem(this);
   private readonly fluids: FluidSimulator;
   private readonly light: LightEngine;
   private readonly atlas: TextureAtlas;
@@ -484,6 +486,7 @@ export class Game implements EntityContext, ContainerHost {
     this.tickTnt();
     this.tickFurnaces();
     this.tickGravityBlocks();
+    this.randomTicks.tick(this.player.x, this.player.z);
     if (this.tick % WATER_TICK_INTERVAL === 0) {
       this.fluids.tick();
     }

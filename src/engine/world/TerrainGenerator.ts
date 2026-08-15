@@ -5,6 +5,14 @@ import { createRng, hashCoords, hashString } from '../textures/PixelCanvas';
 import type { Chunk } from './Chunk';
 import type { ChunkGenerator, SpawnPoint } from './ChunkGenerator';
 import { VillageGenerator, VillageStyle } from './structures/VillageGenerator';
+import {
+  TREE_HEIGHT_VARIANCE,
+  TREE_MIN_HEIGHT,
+  forEachTreeBlock,
+  type TreePlacement,
+} from './treeShape';
+
+export type { TreePlacement };
 
 /** 群系。 */
 export const Biome = {
@@ -67,9 +75,6 @@ const ORES: OreConfig[] = [
   { block: BlockId.GRAVEL, minY: 4, maxY: 60, attempts: 8, size: 12 },
 ];
 
-const TREE_MIN_HEIGHT = 4;
-const TREE_HEIGHT_VARIANCE = 3;
-const TREE_CANOPY_RADIUS = 2;
 const TREE_CHANCE: Record<Biome, number> = { plains: 0.003, forest: 0.05, desert: 0, mountains: 0.006, snowy: 0.012 };
 /** 树概率上限：随机数超过它的列不用再查群系。 */
 const MAX_TREE_CHANCE = Math.max(...Object.values(TREE_CHANCE));
@@ -89,17 +94,6 @@ interface ColumnInfo {
 const COLUMN_KEY_OFFSET = 1 << 25;
 const COLUMN_KEY_SPAN = 1 << 26;
 const COLUMN_CACHE_LIMIT = 16384;
-
-/** 一棵树的确定性描述。 */
-export interface TreePlacement {
-  x: number;
-  /** 树干底部 y。 */
-  y: number;
-  z: number;
-  height: number;
-  /** 树冠四角是否缺失（按 [dy 层][角序号] 展开成一维，供裁剪时复现）。 */
-  cornerSeed: number;
-}
 
 /**
  * 无限世界生成器：噪声地形 + 群系 + 洞穴 + 矿石 + 植被。
@@ -364,29 +358,12 @@ export class TerrainGenerator implements ChunkGenerator {
 
   /** 把一棵树落在 chunk 内的部分写入（树干覆盖树叶，树叶只填空气）。 */
   placeTree(chunk: Chunk, tree: TreePlacement): void {
-    const cornerRng = createRng(tree.cornerSeed);
-    for (let dy = tree.height - 3; dy <= tree.height; dy++) {
-      const radius = dy >= tree.height - 1 ? 1 : TREE_CANOPY_RADIUS;
-      for (let dx = -radius; dx <= radius; dx++) {
-        for (let dz = -radius; dz <= radius; dz++) {
-          const isCorner = Math.abs(dx) === radius && Math.abs(dz) === radius;
-          // 角落缺失的随机数必须无条件消耗，保证不同 chunk 复现同一形状
-          const cornerMissing = isCorner && (radius === 1 || cornerRng() < 0.5);
-          if (cornerMissing) {
-            continue;
-          }
-          const x = tree.x + dx;
-          const y = tree.y + dy;
-          const z = tree.z + dz;
-          if (chunk.getWorld(x, y, z) === BlockId.AIR) {
-            chunk.setWorld(x, y, z, BlockId.LEAVES);
-          }
-        }
+    forEachTreeBlock(tree, (x, y, z, id) => {
+      if (id === BlockId.LEAVES && chunk.getWorld(x, y, z) !== BlockId.AIR) {
+        return;
       }
-    }
-    for (let i = 0; i < tree.height; i++) {
-      chunk.setWorld(tree.x, tree.y + i, tree.z, BlockId.LOG);
-    }
+      chunk.setWorld(x, y, z, id);
+    });
   }
 
   private generatePlants(chunk: Chunk): void {
