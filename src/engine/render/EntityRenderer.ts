@@ -1,0 +1,361 @@
+import * as THREE from 'three';
+import { getBlock, RenderType } from '../blocks/BlockRegistry';
+import { MAX_LIGHT } from '../constants/world';
+import { ArrowEntity } from '../entities/ArrowEntity';
+import type { Entity } from '../entities/Entity';
+import { ItemDropEntity } from '../entities/ItemDropEntity';
+import { Mob } from '../entities/Mob';
+import { getItem, ItemKind } from '../items/ItemRegistry';
+import { PixelCanvas, createRng, hashString, hex } from '../textures/PixelCanvas';
+import { paintBlockTexture } from '../textures/blockTextures';
+import { paintItemIcon } from '../textures/itemTextures';
+import type { World } from '../world/World';
+import { MOB_MODELS, PartAnim, type MobModelSpec, type PartSpec } from './MobModels';
+
+const PIXEL = 1 / 16;
+const HURT_COLOR = new THREE.Color(1, 0.35, 0.35);
+const CREEPER_FLASH_COLOR = new THREE.Color(2, 2, 2);
+const ITEM_BOB_SPEED = 2;
+const ITEM_BOB_HEIGHT = 0.1;
+const ITEM_SPIN_SPEED = 1.2;
+const DROP_BLOCK_SIZE = 0.3;
+const DROP_ITEM_SIZE = 0.4;
+const ARROW_LENGTH = 0.6;
+const ARROW_THICKNESS = 0.06;
+const SHEEP_SHEARED_COLOR = '#f0a0a0';
+
+interface RenderedEntity {
+  group: THREE.Group;
+  parts: { mesh: THREE.Mesh; spec: PartSpec }[];
+  materials: THREE.MeshLambertMaterial[];
+  kind: 'mob' | 'item' | 'arrow';
+}
+
+/** 负责实体的 three.js 表现：模型、动画、受伤闪烁、光照。 */
+export class EntityRenderer {
+  readonly group = new THREE.Group();
+  private readonly rendered = new Map<number, RenderedEntity>();
+  private readonly textureCache = new Map<string, THREE.Texture>();
+  private readonly geometryCache = new Map<string, THREE.BoxGeometry>();
+
+  constructor(private readonly world: World) {}
+
+  /** 每帧同步。 */
+  update(entities: Iterable<Entity>, skyLevel: number, time: number, cameraYaw: number): void {
+    const alive = new Set<number>();
+    for (const entity of entities) {
+      alive.add(entity.id);
+      let r: RenderedEntity | null = this.rendered.get(entity.id) ?? null;
+      if (!r) {
+        r = this.create(entity);
+        if (!r) {
+          continue;
+        }
+        this.rendered.set(entity.id, r);
+        this.group.add(r.group);
+      }
+      this.sync(entity, r, skyLevel, time, cameraYaw);
+    }
+    for (const [id, r] of this.rendered) {
+      if (!alive.has(id)) {
+        this.group.remove(r.group);
+        for (const m of r.materials) {
+          m.dispose();
+        }
+        this.rendered.delete(id);
+      }
+    }
+  }
+
+  private create(entity: Entity): RenderedEntity | null {
+    if (entity instanceof Mob) {
+      return this.createMob(entity);
+    }
+    if (entity instanceof ItemDropEntity) {
+      return this.createItem(entity);
+    }
+    if (entity instanceof ArrowEntity) {
+      return this.createArrow();
+    }
+    return null;
+  }
+
+  private partTexture(mobType: string, spec: PartSpec, face: boolean, colorOverride?: string): THREE.Texture {
+    const color = colorOverride ?? spec.color;
+    const key = `${mobType}:${spec.name}:${face ? 'face' : 'side'}:${color}`;
+    let tex = this.textureCache.get(key);
+    if (tex) {
+      return tex;
+    }
+    const canvas = new PixelCanvas();
+    const rng = createRng(hashString(key));
+    canvas.noise(hex(color), spec.noise ?? 0.07, rng);
+    if (face && spec.face && spec.facePalette) {
+      const palette: Record<string, readonly [number, number, number, number]> = {};
+      for (const [k, v] of Object.entries(spec.facePalette)) {
+        palette[k] = hex(v);
+      }
+      const rows = spec.face;
+      const w = rows[0]?.length ?? 0;
+      const h = rows.length;
+      const scaleX = 16 / Math.max(1, w);
+      const scaleY = 16 / Math.max(1, h);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const c = palette[rows[y][x]];
+          if (c) {
+            canvas.rect(Math.floor(x * scaleX), Math.floor(y * scaleY), Math.ceil(scaleX), Math.ceil(scaleY), c);
+          }
+        }
+      }
+    }
+    tex = this.canvasToTexture(canvas);
+    this.textureCache.set(key, tex);
+    return tex;
+  }
+
+  private canvasToTexture(pix: PixelCanvas): THREE.Texture {
+    const el = document.createElement('canvas');
+    el.width = pix.size;
+    el.height = pix.size;
+    const ctx = el.getContext('2d') as CanvasRenderingContext2D;
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(pix.data), pix.size, pix.size), 0, 0);
+    const tex = new THREE.CanvasTexture(el);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  private boxGeometry(w: number, h: number, d: number): THREE.BoxGeometry {
+    const key = `${w},${h},${d}`;
+    let g = this.geometryCache.get(key);
+    if (!g) {
+      g = new THREE.BoxGeometry(w, h, d);
+      this.geometryCache.set(key, g);
+    }
+    return g;
+  }
+
+  private createMob(mob: Mob): RenderedEntity {
+    const spec: MobModelSpec = MOB_MODELS[mob.type];
+    const group = new THREE.Group();
+    const parts: RenderedEntity['parts'] = [];
+    const materials: THREE.MeshLambertMaterial[] = [];
+    for (const part of spec.parts) {
+      const colorOverride =
+        mob.type === 'sheep' && part.name === 'body' && !mob.hasWool ? SHEEP_SHEARED_COLOR : undefined;
+      const sideMat = new THREE.MeshLambertMaterial({ map: this.partTexture(mob.type, part, false, colorOverride) });
+      const faceMat = part.face
+        ? new THREE.MeshLambertMaterial({ map: this.partTexture(mob.type, part, true, colorOverride) })
+        : sideMat;
+      materials.push(sideMat);
+      if (faceMat !== sideMat) {
+        materials.push(faceMat);
+      }
+      const geometry = this.boxGeometry(part.size[0] * PIXEL, part.size[1] * PIXEL, part.size[2] * PIXEL);
+      // BoxGeometry 材质顺序：+x, -x, +y, -y, +z, -z；正面为 -z
+      const mesh = new THREE.Mesh(geometry, [sideMat, sideMat, sideMat, sideMat, sideMat, faceMat]);
+      mesh.position.set(part.offset[0] * PIXEL, part.offset[1] * PIXEL, part.offset[2] * PIXEL);
+      const pivot = new THREE.Group();
+      pivot.position.set(part.pivot[0] * PIXEL, part.pivot[1] * PIXEL, part.pivot[2] * PIXEL);
+      pivot.add(mesh);
+      group.add(pivot);
+      parts.push({ mesh, spec: part });
+    }
+    return { group, parts, materials, kind: 'mob' };
+  }
+
+  private createItem(drop: ItemDropEntity): RenderedEntity {
+    const def = getItem(drop.stack.id);
+    const group = new THREE.Group();
+    const materials: THREE.MeshLambertMaterial[] = [];
+    if (
+      def?.kind === ItemKind.BLOCK &&
+      def.blockId !== undefined &&
+      getBlock(def.blockId).render !== RenderType.CROSS
+    ) {
+      const block = getBlock(def.blockId);
+      const faces = [
+        block.textures.east,
+        block.textures.west,
+        block.textures.top,
+        block.textures.bottom,
+        block.textures.south,
+        block.textures.north,
+      ];
+      const mats = faces.map((key) => {
+        const m = new THREE.MeshLambertMaterial({
+          map: this.blockTexture(key),
+          transparent: block.render !== RenderType.OPAQUE,
+          alphaTest: 0.5,
+        });
+        materials.push(m);
+        return m;
+      });
+      const mesh = new THREE.Mesh(this.boxGeometry(DROP_BLOCK_SIZE, DROP_BLOCK_SIZE, DROP_BLOCK_SIZE), mats);
+      mesh.position.y = DROP_BLOCK_SIZE / 2;
+      group.add(mesh);
+    } else {
+      const key =
+        def?.kind === ItemKind.BLOCK && def.blockId !== undefined
+          ? getBlock(def.blockId).textures.north
+          : (def?.icon ?? drop.stack.id);
+      const isBlockTexture = def?.kind === ItemKind.BLOCK;
+      const tex = isBlockTexture ? this.blockTexture(key) : this.itemTexture(key);
+      const m = new THREE.MeshLambertMaterial({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide });
+      materials.push(m);
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(DROP_ITEM_SIZE, DROP_ITEM_SIZE), m);
+      mesh.position.y = DROP_ITEM_SIZE / 2;
+      group.add(mesh);
+    }
+    return { group, parts: [], materials, kind: 'item' };
+  }
+
+  private createArrow(): RenderedEntity {
+    const group = new THREE.Group();
+    const m = new THREE.MeshLambertMaterial({ color: 0x8f6b3a });
+    const mesh = new THREE.Mesh(this.boxGeometry(ARROW_THICKNESS, ARROW_THICKNESS, ARROW_LENGTH), m);
+    group.add(mesh);
+    return { group, parts: [], materials: [m], kind: 'arrow' };
+  }
+
+  private blockTexture(key: string): THREE.Texture {
+    const cacheKey = `block:${key}`;
+    let tex = this.textureCache.get(cacheKey);
+    if (!tex) {
+      tex = this.canvasToTexture(paintBlockTexture(key));
+      this.textureCache.set(cacheKey, tex);
+    }
+    return tex;
+  }
+
+  private itemTexture(key: string): THREE.Texture {
+    const cacheKey = `item:${key}`;
+    let tex = this.textureCache.get(cacheKey);
+    if (!tex) {
+      tex = this.canvasToTexture(paintItemIcon(key));
+      this.textureCache.set(cacheKey, tex);
+    }
+    return tex;
+  }
+
+  private brightnessAt(x: number, y: number, z: number, skyLevel: number): number {
+    const bx = Math.floor(x);
+    const by = Math.floor(y);
+    const bz = Math.floor(z);
+    const sky = this.world.getSkyLight(bx, by, bz) / MAX_LIGHT;
+    const block = this.world.getBlockLight(bx, by, bz) / MAX_LIGHT;
+    const level = Math.max(sky * skyLevel, block);
+    return 0.08 + 0.92 * (level / (4 - 3 * level));
+  }
+
+  private sync(entity: Entity, r: RenderedEntity, skyLevel: number, time: number, cameraYaw: number): void {
+    r.group.position.set(entity.x, entity.y, entity.z);
+    const brightness = this.brightnessAt(entity.x, entity.y + entity.height / 2, entity.z, skyLevel);
+    if (r.kind === 'mob' && entity instanceof Mob) {
+      this.syncMob(entity, r, brightness);
+      return;
+    }
+    if (r.kind === 'item') {
+      const bob = Math.sin(time * ITEM_BOB_SPEED + entity.id) * ITEM_BOB_HEIGHT + ITEM_BOB_HEIGHT;
+      r.group.position.y = entity.y + bob;
+      r.group.rotation.y = time * ITEM_SPIN_SPEED + entity.id;
+      for (const m of r.materials) {
+        m.color.setScalar(brightness);
+      }
+      return;
+    }
+    if (r.kind === 'arrow') {
+      r.group.rotation.set(0, entity.yaw, 0);
+      r.group.rotateX(-entity.pitch);
+      for (const m of r.materials) {
+        m.color.setRGB(0.56 * brightness, 0.42 * brightness, 0.23 * brightness);
+      }
+      void cameraYaw;
+    }
+  }
+
+  private syncMob(mob: Mob, r: RenderedEntity, brightness: number): void {
+    const spec = MOB_MODELS[mob.type];
+    r.group.rotation.y = mob.yaw;
+    const swing = Math.sin(mob.limbSwing * 3) * spec.swingAmplitude * Math.min(1, mob.limbSpeed / 1.5);
+    const dying = mob.health <= 0;
+    if (dying) {
+      r.group.rotation.z = Math.min(Math.PI / 2, (mob.deathTicks / 20) * (Math.PI / 2));
+      r.group.position.y = mob.y + Math.sin(r.group.rotation.z) * mob.width * 0.5;
+    }
+    for (const { mesh, spec: part } of r.parts) {
+      const pivot = mesh.parent as THREE.Object3D;
+      switch (part.anim) {
+        case PartAnim.LEG_L:
+          pivot.rotation.x = swing;
+          break;
+        case PartAnim.LEG_R:
+          pivot.rotation.x = -swing;
+          break;
+        case PartAnim.ARM_L:
+          pivot.rotation.x = -swing;
+          break;
+        case PartAnim.ARM_R:
+          pivot.rotation.x = swing;
+          break;
+        case PartAnim.ZOMBIE_ARM:
+          pivot.rotation.x = -Math.PI / 2 + swing * 0.2;
+          break;
+        case PartAnim.WING:
+          pivot.rotation.z = mob.onGround ? 0 : Math.sin(mob.age * 1.5) * 0.8 * (part.pivot[0] < 0 ? 1 : -1);
+          break;
+        case PartAnim.HEAD:
+          pivot.rotation.x = 0;
+          break;
+        default:
+          break;
+      }
+    }
+    let color: THREE.Color | null = null;
+    if (mob.hurtTicks > 0 || dying) {
+      color = HURT_COLOR;
+    } else if (mob.isCharging && Math.floor(mob.fuse / 3) % 2 === 0) {
+      color = CREEPER_FLASH_COLOR;
+    } else if (mob.isBurning && mob.age % 6 < 3) {
+      color = new THREE.Color(1.4, 0.8, 0.4);
+    }
+    for (const m of r.materials) {
+      if (color) {
+        m.color.copy(color).multiplyScalar(brightness);
+      } else {
+        m.color.setScalar(brightness);
+      }
+    }
+    if (mob.type === 'sheep') {
+      const bodyPart = r.parts.find((p) => p.spec.name === 'body');
+      if (bodyPart) {
+        const mats = bodyPart.mesh.material as THREE.MeshLambertMaterial[];
+        const desired = this.partTexture('sheep', bodyPart.spec, false, mob.hasWool ? undefined : SHEEP_SHEARED_COLOR);
+        if (mats[0].map !== desired) {
+          for (const m of mats) {
+            m.map = desired;
+            m.needsUpdate = true;
+          }
+        }
+      }
+    }
+  }
+
+  /** 释放资源。 */
+  dispose(): void {
+    for (const r of this.rendered.values()) {
+      for (const m of r.materials) {
+        m.dispose();
+      }
+    }
+    for (const t of this.textureCache.values()) {
+      t.dispose();
+    }
+    for (const g of this.geometryCache.values()) {
+      g.dispose();
+    }
+    this.rendered.clear();
+  }
+}

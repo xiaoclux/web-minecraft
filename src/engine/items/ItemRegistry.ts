@@ -1,0 +1,187 @@
+import { BLOCK_DEFS, ToolTier, ToolType, type BlockDef } from '../blocks/BlockRegistry';
+import { MAX_STACK } from '../constants/game';
+
+/** 物品种类。 */
+export const ItemKind = {
+  BLOCK: 'block',
+  TOOL: 'tool',
+  FOOD: 'food',
+  MATERIAL: 'material',
+} as const;
+export type ItemKind = (typeof ItemKind)[keyof typeof ItemKind];
+
+/** 工具属性。 */
+export interface ToolProps {
+  type: ToolType;
+  tier: ToolTier;
+  /** 对生物的攻击伤害（半心为 1）。 */
+  attackDamage: number;
+  /** 挖掘速度倍率。 */
+  speed: number;
+  durability: number;
+}
+
+/** 食物属性。 */
+export interface FoodProps {
+  hunger: number;
+  saturation: number;
+}
+
+/** 物品定义。 */
+export interface ItemDef {
+  id: string;
+  label: string;
+  kind: ItemKind;
+  maxStack: number;
+  /** 对应方块 id（仅方块物品）。 */
+  blockId?: number;
+  tool?: ToolProps;
+  food?: FoodProps;
+  /** 图标贴图 key（非方块物品）。 */
+  icon?: string;
+  /** 燃料燃烧 tick（用于熔炉）。 */
+  burnTicks?: number;
+  /** 烧炼产物。 */
+  smeltsInto?: string;
+}
+
+const TIER_SPEED: Record<number, number> = { 0: 2, 1: 4, 2: 6, 3: 8 };
+const TIER_DURABILITY: Record<number, number> = { 0: 59, 1: 131, 2: 250, 3: 1561 };
+const TIER_ATTACK_BASE: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3 };
+const TIER_LABEL: Record<number, string> = { 0: '木', 1: '石', 2: '铁', 3: '钻石' };
+const TIER_NAME: Record<number, string> = { 0: 'wooden', 1: 'stone', 2: 'iron', 3: 'diamond' };
+const TOOL_LABEL: Record<ToolType, string> = { pickaxe: '镐', axe: '斧', shovel: '锹', sword: '剑' };
+/** 各工具类型的基础伤害（在材质加成之上）。 */
+const TOOL_ATTACK: Record<ToolType, number> = { sword: 4, axe: 3, pickaxe: 2, shovel: 1 };
+const HAND_ATTACK_DAMAGE = 1;
+const FURNACE_ITEM_BURN_TICKS = 1600;
+const LOG_BURN_TICKS = 300;
+const PLANKS_BURN_TICKS = 300;
+const STICK_BURN_TICKS = 100;
+
+const tool = (type: ToolType, tier: ToolTier): ItemDef => ({
+  id: `${TIER_NAME[tier]}_${type}`,
+  label: `${TIER_LABEL[tier]}${TOOL_LABEL[type]}`,
+  kind: ItemKind.TOOL,
+  maxStack: 1,
+  icon: `${TIER_NAME[tier]}_${type}`,
+  tool: {
+    type,
+    tier,
+    attackDamage: TOOL_ATTACK[type] + TIER_ATTACK_BASE[tier],
+    speed: TIER_SPEED[tier],
+    durability: TIER_DURABILITY[tier],
+  },
+});
+
+const material = (id: string, label: string, extra: Partial<ItemDef> = {}): ItemDef => ({
+  id,
+  label,
+  kind: ItemKind.MATERIAL,
+  maxStack: MAX_STACK,
+  icon: id,
+  ...extra,
+});
+
+const food = (
+  id: string,
+  label: string,
+  hunger: number,
+  saturation: number,
+  extra: Partial<ItemDef> = {},
+): ItemDef => ({
+  id,
+  label,
+  kind: ItemKind.FOOD,
+  maxStack: MAX_STACK,
+  icon: id,
+  food: { hunger, saturation },
+  ...extra,
+});
+
+const BLOCK_ITEM_EXTRAS: Record<string, Partial<ItemDef>> = {
+  log: { burnTicks: LOG_BURN_TICKS, smeltsInto: 'charcoal' },
+  planks: { burnTicks: PLANKS_BURN_TICKS },
+  crafting_table: { burnTicks: PLANKS_BURN_TICKS },
+  bookshelf: { burnTicks: PLANKS_BURN_TICKS },
+  cobblestone: { smeltsInto: 'stone' },
+  sand: { smeltsInto: 'glass' },
+  iron_ore: { smeltsInto: 'iron_ingot' },
+  gold_ore: { smeltsInto: 'gold_ingot' },
+};
+
+function blockItem(def: BlockDef): ItemDef {
+  return {
+    id: def.name,
+    label: def.label,
+    kind: ItemKind.BLOCK,
+    maxStack: MAX_STACK,
+    blockId: def.id,
+    ...BLOCK_ITEM_EXTRAS[def.name],
+  };
+}
+
+const TOOL_TYPES: ToolType[] = [ToolType.SWORD, ToolType.PICKAXE, ToolType.AXE, ToolType.SHOVEL];
+const TIERS: ToolTier[] = [ToolTier.WOOD, ToolTier.STONE, ToolTier.IRON, ToolTier.DIAMOND];
+
+/** 全部物品定义。 */
+export const ITEM_DEFS: ItemDef[] = [
+  ...BLOCK_DEFS.filter((b) => b.name !== 'air' && b.name !== 'water').map(blockItem),
+  ...TIERS.flatMap((tier) => TOOL_TYPES.map((type) => tool(type, tier))),
+  material('stick', '木棍', { burnTicks: STICK_BURN_TICKS }),
+  material('coal', '煤炭', { burnTicks: FURNACE_ITEM_BURN_TICKS }),
+  material('charcoal', '木炭', { burnTicks: FURNACE_ITEM_BURN_TICKS }),
+  material('iron_ingot', '铁锭'),
+  material('gold_ingot', '金锭'),
+  material('diamond', '钻石'),
+  material('wheat_seeds', '小麦种子'),
+  material('string', '线'),
+  material('feather', '羽毛'),
+  material('leather', '皮革'),
+  material('bone', '骨头'),
+  material('gunpowder', '火药'),
+  material('arrow', '箭'),
+  material('snowball', '雪球', { maxStack: 16 }),
+  material('bow', '弓', { maxStack: 1 }),
+  food('apple', '苹果', 4, 2.4),
+  food('bread', '面包', 5, 6),
+  food('porkchop', '生猪排', 3, 1.8, { smeltsInto: 'cooked_porkchop' }),
+  food('cooked_porkchop', '熟猪排', 8, 12.8),
+  food('beef', '生牛肉', 3, 1.8, { smeltsInto: 'cooked_beef' }),
+  food('cooked_beef', '牛排', 8, 12.8),
+  food('chicken', '生鸡肉', 2, 1.2, { smeltsInto: 'cooked_chicken' }),
+  food('cooked_chicken', '熟鸡肉', 6, 7.2),
+  food('mutton', '生羊肉', 2, 1.2, { smeltsInto: 'cooked_mutton' }),
+  food('cooked_mutton', '熟羊肉', 6, 9.6),
+  food('melon_slice', '西瓜片', 2, 1.2),
+  food('rotten_flesh', '腐肉', 4, 0.8),
+];
+
+const ITEMS_BY_ID = new Map<string, ItemDef>(ITEM_DEFS.map((d) => [d.id, d]));
+
+/** 按 id 获取物品定义。 */
+export function getItem(id: string): ItemDef | undefined {
+  return ITEMS_BY_ID.get(id);
+}
+
+/** 按 id 获取物品定义，不存在则抛错（用于配方等静态数据校验）。 */
+export function requireItem(id: string): ItemDef {
+  const def = ITEMS_BY_ID.get(id);
+  if (!def) {
+    throw new Error(`Unknown item id: ${id}`);
+  }
+  return def;
+}
+
+/** 徒手攻击伤害。 */
+export function getAttackDamage(itemId: string | null): number {
+  if (!itemId) {
+    return HAND_ATTACK_DAMAGE;
+  }
+  return getItem(itemId)?.tool?.attackDamage ?? HAND_ATTACK_DAMAGE;
+}
+
+/** 收集所有非方块物品的图标 key。 */
+export function collectItemIconKeys(): string[] {
+  return ITEM_DEFS.filter((d) => d.icon).map((d) => d.icon as string);
+}

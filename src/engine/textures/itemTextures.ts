@@ -1,0 +1,408 @@
+import { PixelCanvas, hex, shade, type Rgba } from './PixelCanvas';
+
+type Painter = (c: PixelCanvas) => void;
+
+const STICK = hex('#8f6b3a');
+const STICK_DARK = hex('#5b4326');
+const TIER_COLORS: Record<string, Rgba> = {
+  wooden: hex('#a37c4a'),
+  stone: hex('#8a8a8a'),
+  iron: hex('#d8d8d8'),
+  diamond: hex('#4be3d6'),
+};
+
+const PICKAXE = [
+  '..........HHH...',
+  '........HHHHHH..',
+  '.......HH...HHH.',
+  '......HH.....HH.',
+  '.....HH.....S.H.',
+  '....HH.....SS...',
+  '...HH.....SS....',
+  '..HH.....SS.....',
+  '..H.....SS......',
+  '.......SS.......',
+  '......SS........',
+  '.....SS.........',
+  '....SS..........',
+  '...SS...........',
+  '..SS............',
+  '.SS.............',
+];
+const AXE = [
+  '........HHH.....',
+  '.......HHHHH....',
+  '......HHHHHHH...',
+  '.....HHHHSHHH...',
+  '.....HHHSSHHH...',
+  '......HSS.HHH...',
+  '......SS..HH....',
+  '.....SS.........',
+  '....SS..........',
+  '...SS...........',
+  '..SS............',
+  '.SS.............',
+  'SS..............',
+  '................',
+  '................',
+  '................',
+];
+const SHOVEL = [
+  '...........HHH..',
+  '..........HHHHH.',
+  '..........HHHHH.',
+  '..........HHHHH.',
+  '..........SHHH..',
+  '.........SS.....',
+  '........SS......',
+  '.......SS.......',
+  '......SS........',
+  '.....SS.........',
+  '....SS..........',
+  '...SS...........',
+  '..SS............',
+  '.SS.............',
+  '................',
+  '................',
+];
+const SWORD = [
+  '.............HH.',
+  '............HHH.',
+  '...........HHH..',
+  '..........HHH...',
+  '.........HHH....',
+  '........HHH.....',
+  '.......HHH......',
+  '..GG..HHH.......',
+  '...GGHHH........',
+  '....GG..........',
+  '...SSGG.........',
+  '..SS..GG........',
+  '.SS.............',
+  'SS..............',
+  '................',
+  '................',
+];
+
+function toolPainter(shape: string[], tier: string): Painter {
+  const head = TIER_COLORS[tier];
+  return (c) =>
+    c.draw(shape, {
+      H: head,
+      S: STICK,
+      G: STICK_DARK,
+    });
+}
+
+function drawTool(name: string, shape: string[]): Record<string, Painter> {
+  const out: Record<string, Painter> = {};
+  for (const tier of Object.keys(TIER_COLORS)) {
+    out[`${tier}_${name}`] = toolPainter(shape, tier);
+  }
+  return out;
+}
+
+const blob =
+  (color: Rgba, rows: string[]): Painter =>
+  (c) =>
+    c.draw(rows, { X: color, D: shade(color, 0.7), L: shade(color, 1.25) });
+
+function meatPainter(raw: Rgba, cooked: boolean): Painter {
+  const fat = hex('#f2e2c9');
+  const base = cooked ? shade(raw, 0.6) : raw;
+  return (c) =>
+    c.draw(
+      [
+        '................',
+        '................',
+        '....XXXXXX......',
+        '...XXXXXXXXX....',
+        '..XXXXFFXXXXX...',
+        '..XXXFFFFXXXX...',
+        '..XXXFFFXXXXX...',
+        '..XXXXXXXXXXD...',
+        '...XXXXXXXXDD...',
+        '....XDDXXXDD....',
+        '.....DDDDDD.....',
+        '................',
+      ],
+      { X: base, D: shade(base, 0.7), F: cooked ? shade(fat, 0.75) : fat },
+    );
+}
+
+/** 物品图标生成器表。 */
+export const ITEM_ICON_PAINTERS: Record<string, Painter> = {
+  ...drawTool('pickaxe', PICKAXE),
+  ...drawTool('axe', AXE),
+  ...drawTool('shovel', SHOVEL),
+  ...drawTool('sword', SWORD),
+  stick: (c) =>
+    c.draw(
+      [
+        '..........XX',
+        '.........XX.',
+        '........XX..',
+        '.......XX...',
+        '......XX....',
+        '.....XX.....',
+        '....XX......',
+        '...XX.......',
+        '..XX........',
+        '.XX.........',
+      ],
+      { X: STICK },
+      2,
+      3,
+    ),
+  coal: blob(hex('#262626'), [
+    '................',
+    '................',
+    '.....XXXX.......',
+    '....XXLXXX......',
+    '...XXLLXXXX.....',
+    '...XXXXXXXXX....',
+    '..XXXXXXXXXX....',
+    '..XXXXXXXXXD....',
+    '...XXXXXXXDD....',
+    '....XXXXDDD.....',
+    '.....XDDDD......',
+    '................',
+  ]),
+  charcoal: blob(hex('#3a2a20'), [
+    '................',
+    '................',
+    '.....XXXX.......',
+    '....XXLXXX......',
+    '...XXLLXXXX.....',
+    '...XXXXXXXXX....',
+    '..XXXXXXXXXX....',
+    '..XXXXXXXXXD....',
+    '...XXXXXXXDD....',
+    '....XXXXDDD.....',
+    '.....XDDDD......',
+    '................',
+  ]),
+  iron_ingot: blob(hex('#d8d8d8'), [
+    '................',
+    '................',
+    '................',
+    '................',
+    '.....LLLLLLLL...',
+    '....LXXXXXXXXD..',
+    '...LXXXXXXXXXD..',
+    '..LXXXXXXXXXXD..',
+    '..XXXXXXXXXXDD..',
+    '..DDDDDDDDDDD...',
+    '................',
+    '................',
+  ]),
+  gold_ingot: blob(hex('#f2c744'), [
+    '................',
+    '................',
+    '................',
+    '................',
+    '.....LLLLLLLL...',
+    '....LXXXXXXXXD..',
+    '...LXXXXXXXXXD..',
+    '..LXXXXXXXXXXD..',
+    '..XXXXXXXXXXDD..',
+    '..DDDDDDDDDDD...',
+    '................',
+    '................',
+  ]),
+  diamond: blob(hex('#5ce6e0'), [
+    '................',
+    '................',
+    '.....LLLLLL.....',
+    '....LLXXXXXD....',
+    '...LLXXXXXXXD...',
+    '...LXXXXXXXXD...',
+    '....XXXXXXXD....',
+    '.....XXXXXD.....',
+    '......XXXD......',
+    '.......XD.......',
+    '................',
+    '................',
+  ]),
+  wheat_seeds: (c) => {
+    const s = hex('#3d9c2a');
+    c.draw(['.X..X...', 'X..X..X.', '..X..X..', '.X..X.X.', 'X.X..X..'], { X: s }, 4, 5);
+  },
+  string: (c) => {
+    const s = hex('#eeeeee');
+    c.draw(['XX......', 'X.XX....', '...XX...', '....XX..', '.....XX.', '......XX'], { X: s }, 4, 4);
+  },
+  feather: (c) =>
+    c.draw(
+      ['.......XX', '......XXX', '.....XXXX', '....XXXX.', '...XXXX..', '..XXXX...', '.XXX.....', 'XX.......'],
+      { X: hex('#f0f0f0') },
+      3,
+      3,
+    ),
+  leather: blob(hex('#c65c35'), [
+    '................',
+    '................',
+    '..XX........XX..',
+    '..XXXXXXXXXXXX..',
+    '..XXXXXXXXXXXX..',
+    '...XXXXXXXXXX...',
+    '...XXXXXXXXXX...',
+    '...XXXXXXXXXX...',
+    '....XXXXXXXX....',
+    '....XXXXXXXX....',
+    '.....XX..XX.....',
+    '................',
+  ]),
+  bone: (c) =>
+    c.draw(
+      ['XX.......XX', 'XXX.....XXX', '.XXXXXXXXX.', '..XXXXXXX..', '.XXXXXXXXX.', 'XXX.....XXX', 'XX.......XX'],
+      { X: hex('#eaeaea') },
+      2,
+      4,
+    ),
+  gunpowder: (c) => {
+    const g = hex('#555555');
+    c.draw(['...XXX...', '..XXXXX..', '.XXXXXXX.', 'XXXXXXXXX', 'XXXXXXXXX', '.XXXXXXX.', '..XXXXX..'], { X: g }, 3, 5);
+  },
+  arrow: (c) =>
+    c.draw(
+      [
+        '.............XX.',
+        '............XXX.',
+        '...........XXX..',
+        '..........XX....',
+        '.........XX.....',
+        '........XX......',
+        '.......XX.......',
+        '......XX........',
+        '.....XX.........',
+        '..FFXX..........',
+        '.FFFX...........',
+        'FFF.............',
+      ],
+      { X: STICK, F: hex('#e6e6e6') },
+      0,
+      2,
+    ),
+  snowball: blob(hex('#f0f8ff'), [
+    '................',
+    '................',
+    '................',
+    '......XXXX......',
+    '.....XLLXXX.....',
+    '....XLLXXXXX....',
+    '....XXXXXXXX....',
+    '....XXXXXXXD....',
+    '.....XXXXDD.....',
+    '......DDDD......',
+    '................',
+    '................',
+  ]),
+  bow: (c) =>
+    c.draw(
+      [
+        '....SSS.........',
+        '..SS...S........',
+        '.S......S.......',
+        'S.......S.......',
+        'S.......S.......',
+        'S.......S.......',
+        'S........S......',
+        'S........S......',
+        'S........S......',
+        'S........S......',
+        'S.......S.......',
+        '.S......S.......',
+        '..SS...S........',
+        '....SSS.........',
+      ],
+      { S: STICK },
+      1,
+      1,
+    ),
+  apple: (c) =>
+    c.draw(
+      [
+        '......S.........',
+        '.....SS.........',
+        '..XXXXXXXX......',
+        '.XXXXXXXXXX.....',
+        'XXXXXXXXXXXX....',
+        'XXXXXXXXXXXX....',
+        'XXXXXXXXXXXX....',
+        'XXXXXXXXXXXX....',
+        '.XXXXXXXXXX.....',
+        '..XXXX.XXX......',
+      ],
+      { X: hex('#d8342c'), S: hex('#5b4326') },
+      2,
+      3,
+    ),
+  bread: blob(hex('#c98f4a'), [
+    '................',
+    '................',
+    '................',
+    '..........LL....',
+    '........LLLLXX..',
+    '......LLLLXXXX..',
+    '....LLLLXXXXXD..',
+    '..LLLLXXXXXDD...',
+    '..XXXXXXXDDD....',
+    '..XXXXXDDD......',
+    '..XXDDDD........',
+    '..DDD...........',
+    '................',
+  ]),
+  porkchop: meatPainter(hex('#f2a0a0'), false),
+  cooked_porkchop: meatPainter(hex('#f2a0a0'), true),
+  beef: meatPainter(hex('#c8403a'), false),
+  cooked_beef: meatPainter(hex('#c8403a'), true),
+  chicken: meatPainter(hex('#f0c8b0'), false),
+  cooked_chicken: meatPainter(hex('#f0c8b0'), true),
+  mutton: meatPainter(hex('#e04a4a'), false),
+  cooked_mutton: meatPainter(hex('#e04a4a'), true),
+  melon_slice: (c) =>
+    c.draw(
+      [
+        'XXXXXXXXXXXX',
+        'RRRRRRRRRRRR',
+        'RRRSRRRSRRRR',
+        'RRRRRRRRRRRR',
+        '.RRSRRRRSRR.',
+        '..RRRRRRRR..',
+        '...RRRRRR...',
+        '....RRRR....',
+        '.....RR.....',
+      ],
+      { X: hex('#7fbd2a'), R: hex('#e0463c'), S: hex('#2b1b1b') },
+      2,
+      3,
+    ),
+  rotten_flesh: blob(hex('#8a5a3a'), [
+    '................',
+    '................',
+    '....XXXX........',
+    '...XXXXXXX..XX..',
+    '..XXXDXXXXXXXX..',
+    '..XXXXXXXXXXXX..',
+    '..XXXXXXDDXXX...',
+    '...XXXXXXXXXD...',
+    '....XXDXXXXD....',
+    '.....XXXXXX.....',
+    '................',
+    '................',
+  ]),
+};
+
+/** 生成物品图标；未知 key 返回品红方块。 */
+export function paintItemIcon(key: string): PixelCanvas {
+  const canvas = new PixelCanvas();
+  canvas.fill([0, 0, 0, 0]);
+  const painter = ITEM_ICON_PAINTERS[key];
+  if (!painter) {
+    canvas.rect(2, 2, 12, 12, hex('#ff00ff'));
+    return canvas;
+  }
+  painter(canvas);
+  return canvas;
+}

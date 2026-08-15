@@ -1,0 +1,93 @@
+import * as THREE from 'three';
+import { DEFAULT_RENDER_DISTANCE } from '../constants/world';
+import type { TextureAtlas } from '../textures/TextureAtlas';
+import type { World } from '../world/World';
+import { BlockOutline } from './BlockOutline';
+import { ChunkRenderer } from './ChunkRenderer';
+import { EntityRenderer } from './EntityRenderer';
+import { HandRenderer } from './HandRenderer';
+import { Sky } from './Sky';
+
+const CAMERA_FOV = 70;
+const CAMERA_NEAR = 0.05;
+const CAMERA_FAR = 400;
+const AMBIENT_MIN = 0.35;
+const SUN_INTENSITY = 1.2;
+
+/** three.js 场景装配。 */
+export class Renderer {
+  readonly renderer: THREE.WebGLRenderer;
+  readonly scene = new THREE.Scene();
+  readonly camera: THREE.PerspectiveCamera;
+  readonly chunks: ChunkRenderer;
+  readonly entities: EntityRenderer;
+  readonly sky = new Sky();
+  readonly outline = new BlockOutline();
+  readonly hand: HandRenderer;
+  private readonly ambient: THREE.AmbientLight;
+  private readonly sun: THREE.DirectionalLight;
+  private resizeHandler: () => void;
+
+  constructor(canvas: HTMLCanvasElement, world: World, atlas: TextureAtlas) {
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.autoClear = true;
+    this.camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, CAMERA_NEAR, CAMERA_FAR);
+    this.chunks = new ChunkRenderer(world, atlas, DEFAULT_RENDER_DISTANCE);
+    this.chunks.setRenderDistance(DEFAULT_RENDER_DISTANCE);
+    this.entities = new EntityRenderer(world);
+    this.ambient = new THREE.AmbientLight(0xffffff, AMBIENT_MIN);
+    this.sun = new THREE.DirectionalLight(0xffffff, SUN_INTENSITY);
+    this.sun.position.set(0.4, 1, 0.6);
+    this.hand = new HandRenderer(atlas);
+    this.scene.add(this.chunks.group, this.entities.group, this.sky.group, this.outline.group, this.ambient, this.sun);
+    this.camera.add(this.hand.group);
+    this.scene.add(this.camera);
+    this.resizeHandler = () => this.resize();
+    window.addEventListener('resize', this.resizeHandler);
+    this.resize();
+  }
+
+  private currentRenderDistance = DEFAULT_RENDER_DISTANCE;
+
+  /** 设置渲染距离。 */
+  setRenderDistance(distance: number): void {
+    this.currentRenderDistance = distance;
+    this.chunks.setRenderDistance(distance);
+  }
+
+  private resize(): void {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+
+  /** 渲染一帧。 */
+  render(timeTick: number, isUnderwater: boolean): void {
+    this.sky.update(timeTick, this.camera.position);
+    const skyLevel = this.sky.skyLevel;
+    this.chunks.sharedUniforms.uSkyLevel.value = skyLevel;
+    const fogColor = isUnderwater ? new THREE.Color(0x1a3a8a) : this.sky.color;
+    this.chunks.sharedUniforms.uFogColor.value.copy(fogColor);
+    if (isUnderwater) {
+      this.chunks.sharedUniforms.uFogNear.value = 2;
+      this.chunks.sharedUniforms.uFogFar.value = 24;
+    } else {
+      this.chunks.setRenderDistance(this.currentRenderDistance);
+    }
+    this.scene.background = fogColor;
+    this.ambient.intensity = AMBIENT_MIN + 0.4 * skyLevel;
+    this.sun.intensity = SUN_INTENSITY * skyLevel;
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  /** 释放。 */
+  dispose(): void {
+    window.removeEventListener('resize', this.resizeHandler);
+    this.chunks.dispose();
+    this.entities.dispose();
+    this.renderer.dispose();
+  }
+}

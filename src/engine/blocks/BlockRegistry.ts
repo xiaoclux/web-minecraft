@@ -1,0 +1,398 @@
+/**
+ * 方块注册表：数值 id（存入世界数组）→ 方块属性。
+ * 数值 id 尽量沿用 1.8.9 的编号，方便对照。
+ */
+
+/** 工具类型。 */
+export const ToolType = {
+  PICKAXE: 'pickaxe',
+  AXE: 'axe',
+  SHOVEL: 'shovel',
+  SWORD: 'sword',
+} as const;
+export type ToolType = (typeof ToolType)[keyof typeof ToolType];
+
+/** 工具材质等级：手 -1、木 0、石 1、铁 2、钻石 3。 */
+export const ToolTier = {
+  HAND: -1,
+  WOOD: 0,
+  STONE: 1,
+  IRON: 2,
+  DIAMOND: 3,
+} as const;
+export type ToolTier = (typeof ToolTier)[keyof typeof ToolTier];
+
+/** 方块渲染类型。 */
+export const RenderType = {
+  /** 不透明立方体。 */
+  OPAQUE: 'opaque',
+  /** 镂空立方体（树叶/玻璃），使用 alphaTest。 */
+  CUTOUT: 'cutout',
+  /** 半透明（水）。 */
+  TRANSLUCENT: 'translucent',
+  /** 十字交叉面片（花草/火把）。 */
+  CROSS: 'cross',
+  /** 不渲染。 */
+  NONE: 'none',
+} as const;
+export type RenderType = (typeof RenderType)[keyof typeof RenderType];
+
+/** 六个面各自的贴图 key。 */
+export interface BlockFaceTextures {
+  top: string;
+  bottom: string;
+  north: string;
+  south: string;
+  east: string;
+  west: string;
+}
+
+/** 掉落描述：物品 id 与数量区间。 */
+export interface BlockDrop {
+  item: string;
+  min: number;
+  max: number;
+  /** 掉落概率 0~1，默认 1。 */
+  chance?: number;
+}
+
+/** 方块定义。 */
+export interface BlockDef {
+  id: number;
+  /** 物品 id / 英文名。 */
+  name: string;
+  label: string;
+  textures: BlockFaceTextures;
+  render: RenderType;
+  /** 是否阻挡实体。 */
+  solid: boolean;
+  /** 是否完全遮光（用于面剔除与光照传播）。 */
+  opaque: boolean;
+  /** 硬度（秒基准）；-1 表示不可破坏。 */
+  hardness: number;
+  /** 最有效工具，null 表示任何方式速度相同。 */
+  tool: ToolType | null;
+  /** 需要至少此等级的正确工具才有掉落；undefined 表示徒手也可掉落。 */
+  minTier?: ToolTier;
+  /** 掉落表；未指定则掉自身。 */
+  drops?: BlockDrop[];
+  /** 发光等级 0~15。 */
+  light: number;
+  /** 受重力影响（沙子/砂砾）。 */
+  hasGravity?: boolean;
+  /** 是否为液体。 */
+  isLiquid?: boolean;
+  /** 需要放置在实心方块上（花草/火把）。 */
+  needsSupport?: boolean;
+  /** 挖掘经验区间。 */
+  xp?: [number, number];
+  /** 是否可被玩家右键交互（工作台等）。 */
+  interactive?: boolean;
+  /** 是否可燃烧/被爆炸摧毁（基岩为 false）。 */
+  isBlastResistant?: boolean;
+}
+
+export const BlockId = {
+  AIR: 0,
+  STONE: 1,
+  GRASS: 2,
+  DIRT: 3,
+  COBBLESTONE: 4,
+  PLANKS: 5,
+  SAPLING: 6,
+  BEDROCK: 7,
+  WATER: 9,
+  SAND: 12,
+  GRAVEL: 13,
+  GOLD_ORE: 14,
+  IRON_ORE: 15,
+  COAL_ORE: 16,
+  LOG: 17,
+  LEAVES: 18,
+  GLASS: 20,
+  SANDSTONE: 24,
+  TALL_GRASS: 31,
+  WOOL: 35,
+  DANDELION: 37,
+  POPPY: 38,
+  BRICKS: 45,
+  TNT: 46,
+  BOOKSHELF: 47,
+  MOSSY_COBBLESTONE: 48,
+  OBSIDIAN: 49,
+  TORCH: 50,
+  DIAMOND_ORE: 56,
+  CRAFTING_TABLE: 58,
+  FURNACE: 61,
+  SNOW: 80,
+  GLOWSTONE: 89,
+  STONE_BRICKS: 98,
+  MELON: 103,
+  PUMPKIN: 86,
+} as const;
+export type BlockId = (typeof BlockId)[keyof typeof BlockId];
+
+const same = (t: string): BlockFaceTextures => ({ top: t, bottom: t, north: t, south: t, east: t, west: t });
+const topSide = (top: string, side: string, bottom = top): BlockFaceTextures => ({
+  top,
+  bottom,
+  north: side,
+  south: side,
+  east: side,
+  west: side,
+});
+
+const cube = (
+  id: number,
+  name: string,
+  label: string,
+  textures: BlockFaceTextures,
+  hardness: number,
+  tool: ToolType | null,
+  extra: Partial<BlockDef> = {},
+): BlockDef => ({
+  id,
+  name,
+  label,
+  textures,
+  render: RenderType.OPAQUE,
+  solid: true,
+  opaque: true,
+  hardness,
+  tool,
+  light: 0,
+  ...extra,
+});
+
+const cross = (id: number, name: string, label: string, texture: string, extra: Partial<BlockDef> = {}): BlockDef => ({
+  id,
+  name,
+  label,
+  textures: same(texture),
+  render: RenderType.CROSS,
+  solid: false,
+  opaque: false,
+  hardness: 0,
+  tool: null,
+  light: 0,
+  needsSupport: true,
+  ...extra,
+});
+
+/** 全部方块定义列表。 */
+export const BLOCK_DEFS: BlockDef[] = [
+  {
+    id: BlockId.AIR,
+    name: 'air',
+    label: '空气',
+    textures: same('none'),
+    render: RenderType.NONE,
+    solid: false,
+    opaque: false,
+    hardness: 0,
+    tool: null,
+    light: 0,
+  },
+  cube(BlockId.STONE, 'stone', '石头', same('stone'), 1.5, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+    drops: [{ item: 'cobblestone', min: 1, max: 1 }],
+  }),
+  cube(BlockId.GRASS, 'grass_block', '草方块', topSide('grass_top', 'grass_side', 'dirt'), 0.6, ToolType.SHOVEL, {
+    drops: [{ item: 'dirt', min: 1, max: 1 }],
+  }),
+  cube(BlockId.DIRT, 'dirt', '泥土', same('dirt'), 0.5, ToolType.SHOVEL),
+  cube(BlockId.COBBLESTONE, 'cobblestone', '圆石', same('cobblestone'), 2, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+  }),
+  cube(BlockId.PLANKS, 'planks', '橡木木板', same('planks'), 2, ToolType.AXE),
+  cross(BlockId.SAPLING, 'sapling', '橡树树苗', 'sapling'),
+  cube(BlockId.BEDROCK, 'bedrock', '基岩', same('bedrock'), -1, null, { isBlastResistant: true }),
+  {
+    id: BlockId.WATER,
+    name: 'water',
+    label: '水',
+    textures: same('water'),
+    render: RenderType.TRANSLUCENT,
+    solid: false,
+    opaque: false,
+    hardness: 100,
+    tool: null,
+    light: 0,
+    isLiquid: true,
+    drops: [],
+  },
+  cube(BlockId.SAND, 'sand', '沙子', same('sand'), 0.5, ToolType.SHOVEL, { hasGravity: true }),
+  cube(BlockId.GRAVEL, 'gravel', '砂砾', same('gravel'), 0.6, ToolType.SHOVEL, { hasGravity: true }),
+  cube(BlockId.GOLD_ORE, 'gold_ore', '金矿石', same('gold_ore'), 3, ToolType.PICKAXE, { minTier: ToolTier.IRON }),
+  cube(BlockId.IRON_ORE, 'iron_ore', '铁矿石', same('iron_ore'), 3, ToolType.PICKAXE, { minTier: ToolTier.STONE }),
+  cube(BlockId.COAL_ORE, 'coal_ore', '煤矿石', same('coal_ore'), 3, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+    drops: [{ item: 'coal', min: 1, max: 1 }],
+    xp: [0, 2],
+  }),
+  cube(BlockId.LOG, 'log', '橡木原木', topSide('log_top', 'log_side'), 2, ToolType.AXE),
+  {
+    id: BlockId.LEAVES,
+    name: 'leaves',
+    label: '橡树树叶',
+    textures: same('leaves'),
+    render: RenderType.CUTOUT,
+    solid: true,
+    opaque: false,
+    hardness: 0.2,
+    tool: null,
+    light: 0,
+    drops: [
+      { item: 'sapling', min: 1, max: 1, chance: 0.05 },
+      { item: 'apple', min: 1, max: 1, chance: 0.02 },
+    ],
+  },
+  {
+    id: BlockId.GLASS,
+    name: 'glass',
+    label: '玻璃',
+    textures: same('glass'),
+    render: RenderType.CUTOUT,
+    solid: true,
+    opaque: false,
+    hardness: 0.3,
+    tool: null,
+    light: 0,
+    drops: [],
+  },
+  cube(BlockId.SANDSTONE, 'sandstone', '砂岩', topSide('sandstone_top', 'sandstone_side'), 0.8, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+  }),
+  cross(BlockId.TALL_GRASS, 'tall_grass', '草丛', 'tall_grass', {
+    drops: [{ item: 'wheat_seeds', min: 1, max: 1, chance: 0.125 }],
+  }),
+  cube(BlockId.WOOL, 'wool', '羊毛', same('wool'), 0.8, null),
+  cross(BlockId.DANDELION, 'dandelion', '蒲公英', 'dandelion'),
+  cross(BlockId.POPPY, 'poppy', '虞美人', 'poppy'),
+  cube(BlockId.BRICKS, 'bricks', '砖块', same('bricks'), 2, ToolType.PICKAXE, { minTier: ToolTier.WOOD }),
+  cube(BlockId.TNT, 'tnt', 'TNT', topSide('tnt_top', 'tnt_side', 'tnt_bottom'), 0, null, { interactive: true }),
+  cube(BlockId.BOOKSHELF, 'bookshelf', '书架', topSide('planks', 'bookshelf'), 1.5, ToolType.AXE),
+  cube(BlockId.MOSSY_COBBLESTONE, 'mossy_cobblestone', '苔石', same('mossy_cobblestone'), 2, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+  }),
+  cube(BlockId.OBSIDIAN, 'obsidian', '黑曜石', same('obsidian'), 50, ToolType.PICKAXE, {
+    minTier: ToolTier.DIAMOND,
+    isBlastResistant: true,
+  }),
+  {
+    id: BlockId.TORCH,
+    name: 'torch',
+    label: '火把',
+    textures: same('torch'),
+    render: RenderType.CROSS,
+    solid: false,
+    opaque: false,
+    hardness: 0,
+    tool: null,
+    light: 14,
+    needsSupport: true,
+  },
+  cube(BlockId.DIAMOND_ORE, 'diamond_ore', '钻石矿石', same('diamond_ore'), 3, ToolType.PICKAXE, {
+    minTier: ToolTier.IRON,
+    drops: [{ item: 'diamond', min: 1, max: 1 }],
+    xp: [3, 7],
+  }),
+  cube(
+    BlockId.CRAFTING_TABLE,
+    'crafting_table',
+    '工作台',
+    {
+      top: 'crafting_table_top',
+      bottom: 'planks',
+      north: 'crafting_table_front',
+      south: 'crafting_table_side',
+      east: 'crafting_table_side',
+      west: 'crafting_table_front',
+    },
+    2.5,
+    ToolType.AXE,
+    { interactive: true },
+  ),
+  cube(
+    BlockId.FURNACE,
+    'furnace',
+    '熔炉',
+    {
+      top: 'furnace_top',
+      bottom: 'furnace_top',
+      north: 'furnace_front',
+      south: 'furnace_side',
+      east: 'furnace_side',
+      west: 'furnace_side',
+    },
+    3.5,
+    ToolType.PICKAXE,
+    { minTier: ToolTier.WOOD, interactive: true },
+  ),
+  cube(BlockId.SNOW, 'snow', '雪块', same('snow'), 0.2, ToolType.SHOVEL, {
+    drops: [{ item: 'snowball', min: 4, max: 4 }],
+  }),
+  cube(BlockId.GLOWSTONE, 'glowstone', '萤石', same('glowstone'), 0.3, null, { light: 15 }),
+  cube(BlockId.STONE_BRICKS, 'stone_bricks', '石砖', same('stone_bricks'), 1.5, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+  }),
+  cube(
+    BlockId.PUMPKIN,
+    'pumpkin',
+    '南瓜',
+    {
+      top: 'pumpkin_top',
+      bottom: 'pumpkin_top',
+      north: 'pumpkin_face',
+      south: 'pumpkin_side',
+      east: 'pumpkin_side',
+      west: 'pumpkin_side',
+    },
+    1,
+    ToolType.AXE,
+  ),
+  cube(BlockId.MELON, 'melon', '西瓜', topSide('melon_top', 'melon_side'), 1, ToolType.AXE, {
+    drops: [{ item: 'melon_slice', min: 3, max: 7 }],
+  }),
+];
+
+const BLOCKS_BY_ID: (BlockDef | undefined)[] = [];
+const BLOCKS_BY_NAME = new Map<string, BlockDef>();
+for (const def of BLOCK_DEFS) {
+  BLOCKS_BY_ID[def.id] = def;
+  BLOCKS_BY_NAME.set(def.name, def);
+}
+const AIR_DEF = BLOCKS_BY_ID[BlockId.AIR] as BlockDef;
+
+/** 按数值 id 获取方块定义；未知 id 返回空气。 */
+export function getBlock(id: number): BlockDef {
+  return BLOCKS_BY_ID[id] ?? AIR_DEF;
+}
+
+/** 按名称获取方块定义。 */
+export function getBlockByName(name: string): BlockDef | undefined {
+  return BLOCKS_BY_NAME.get(name);
+}
+
+/** 判断方块是否遮光（用于面剔除）。 */
+export function isOpaque(id: number): boolean {
+  return getBlock(id).opaque;
+}
+
+/** 判断方块是否有碰撞体。 */
+export function isSolid(id: number): boolean {
+  return getBlock(id).solid;
+}
+
+/** 收集所有贴图 key（去重），供图集生成。 */
+export function collectBlockTextureKeys(): string[] {
+  const keys = new Set<string>();
+  for (const def of BLOCK_DEFS) {
+    for (const key of Object.values(def.textures)) {
+      if (key !== 'none') {
+        keys.add(key);
+      }
+    }
+  }
+  return [...keys];
+}
