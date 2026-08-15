@@ -3,6 +3,7 @@ import { Difficulty, GAME_MODE_LABELS, GameMode } from '../engine/constants/game
 import { MAX_SEED_LENGTH, MAX_WORLD_NAME_LENGTH } from '../engine/constants/save';
 import { WORLD_TYPE_LABELS, WorldType } from '../engine/constants/world';
 import { createWorldId, type SaveManager, type WorldMeta, type WorldSave } from '../engine/save/SaveManager';
+import { SettingsPanel } from './SettingsPanel';
 
 interface MainMenuProps {
   saveManager: SaveManager;
@@ -46,6 +47,7 @@ export function MainMenu({ saveManager, onStart }: MainMenuProps) {
   const [generateStructures, setGenerateStructures] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -108,11 +110,17 @@ export function MainMenu({ saveManager, onStart }: MainMenuProps) {
     }
   };
 
+  if (showSettings) {
+    return <SettingsPanel onClose={() => setShowSettings(false)} />;
+  }
   return (
     <div className="main-menu">
       <div className="menu-title">
         <h1>Web Minecraft</h1>
         <p className="muted">React + Three.js · 参考 1.8.9</p>
+        <button className="menu-button" onClick={() => setShowSettings(true)}>
+          设置
+        </button>
       </div>
       <div className="menu-columns">
         <form className="panel menu-panel" onSubmit={handleCreate}>

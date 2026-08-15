@@ -21,17 +21,8 @@ import {
   SPRINT_FOOD_THRESHOLD,
   TICK_MS,
 } from './constants/game';
-import {
-  KEY_DEBUG,
-  KEY_DROP,
-  KEY_ESCAPE,
-  KEY_HOTBAR_PREFIX,
-  KEY_INVENTORY,
-  KEY_JUMP,
-  MOUSE_LEFT,
-  MOUSE_MIDDLE,
-  MOUSE_RIGHT,
-} from './constants/keys';
+import { KEY_ESCAPE, KEY_HOTBAR_PREFIX, MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT } from './constants/keys';
+import { actionForCode, isTouchDevice, settingsStore, type BindingAction } from './settings/Settings';
 import { AUTOSAVE_INTERVAL_TICKS, SAVE_FORMAT_VERSION } from './constants/save';
 import { CREEPER_EXPLOSION_MAX_DAMAGE } from './constants/mobs';
 import { WATER_TICK_INTERVAL } from './constants/fluids';
@@ -129,6 +120,9 @@ export class Game implements EntityContext, ContainerHost {
   private running = false;
   private isPaused = false;
   private isDisposed = false;
+  private readonly unsubscribeSettings: () => void;
+  /** 是否触屏设备（决定是否显示触屏按钮、是否请求指针锁定）。 */
+  readonly isTouch = isTouchDevice();
   private breakTarget: { x: number; y: number; z: number; id: number } | null = null;
   private breakProgressTicks = 0;
   private breakNeededTicks = 0;
@@ -163,7 +157,8 @@ export class Game implements EntityContext, ContainerHost {
     this.fluids = new FluidSimulator(this.world);
     this.atlas = new TextureAtlas();
     this.renderer = new Renderer(options.canvas, this.world, this.atlas);
-    this.controls = new Controls(options.canvas);
+    this.controls = new Controls(options.canvas, settingsStore.get());
+    this.unsubscribeSettings = settingsStore.subscribe(() => this.controls.setSettings(settingsStore.get()));
     this.store = new Store<GameUiState>({
       mode: options.meta.mode,
       health: this.player.health,
@@ -240,6 +235,7 @@ export class Game implements EntityContext, ContainerHost {
     cancelAnimationFrame(this.rafId);
     this.controls.exitLock();
     this.controls.detach();
+    this.unsubscribeSettings();
     this.renderer.dispose();
   }
 
@@ -529,7 +525,7 @@ export class Game implements EntityContext, ContainerHost {
         this.openScreen(Screen.PAUSE);
       }
     };
-    this.controls.onKeyDown = (code, event) => this.handleKey(code, event);
+    this.controls.onKeyDown = (code, ctrlKey) => this.handleKey(code, ctrlKey);
     this.controls.onMouseDown = (button) => this.handleMouseDown(button);
     this.controls.onWheel = (deltaY) => {
       const dir = deltaY > 0 ? 1 : -1;
@@ -537,7 +533,7 @@ export class Game implements EntityContext, ContainerHost {
     };
   }
 
-  private handleKey(code: string, event: KeyboardEvent): void {
+  private handleKey(code: string, ctrlKey: boolean): void {
     const screen = this.store.get().screen;
     if (code === KEY_ESCAPE) {
       if (screen === Screen.NONE) {
@@ -547,11 +543,12 @@ export class Game implements EntityContext, ContainerHost {
       }
       return;
     }
-    if (code === KEY_DEBUG) {
+    const action: BindingAction | null = actionForCode(code, settingsStore.get());
+    if (action === 'debug') {
       this.debugEnabled = !this.debugEnabled;
       return;
     }
-    if (code === KEY_INVENTORY) {
+    if (action === 'inventory') {
       if (screen === Screen.NONE) {
         this.openScreen(Screen.INVENTORY);
       } else if (screen === Screen.INVENTORY || screen === Screen.CRAFTING || screen === Screen.FURNACE) {
@@ -569,11 +566,11 @@ export class Game implements EntityContext, ContainerHost {
       }
       return;
     }
-    if (code === KEY_DROP) {
-      this.dropHeld(event.ctrlKey);
+    if (action === 'drop') {
+      this.dropHeld(ctrlKey);
       return;
     }
-    if (code === KEY_JUMP && this.rules.canFly) {
+    if (action === 'jump' && this.rules.canFly) {
       const now = performance.now();
       if (now - this.lastJumpPressAt < DOUBLE_TAP_MS) {
         this.player.isFlying = !this.player.isFlying;

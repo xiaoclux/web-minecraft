@@ -727,3 +727,43 @@ button:disabled {
   z-index: 7;
   pointer-events: none;
 }
+
+/* 设置面板 */
+.settings-panel {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.key-bindings {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.key-row {
+  display: contents;
+}
+
+.key-row span {
+  color: var(--text);
+  font-size: 13px;
+}
+
+
+.menu-panel .key-button {
+  min-width: 96px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.menu-panel .key-button.capturing {
+  background: var(--accent);
+}
+
+.menu-title .menu-button {
+  margin-top: 8px;
+  width: auto;
+  padding: 6px 18px;
+}
