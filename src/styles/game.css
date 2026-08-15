@@ -7,6 +7,10 @@
   --text: #3f3f3f;
   --accent: #5b8f2f;
   --danger: #a33;
+  /* 格子尺寸：小屏 / 触屏下由媒体查询整体收缩 */
+  --slot-size: 40px;
+  --result-slot-size: 48px;
+  --hotbar-slot-size: 40px;
   font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   color: #eee;
 }
@@ -364,7 +368,7 @@ button:disabled {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  width: 372px;
+  width: calc(var(--hotbar-slot-size) * 9 + 12px);
 }
 
 .stats {
@@ -468,8 +472,8 @@ button:disabled {
 }
 
 .hotbar-slot {
-  width: 40px;
-  height: 40px;
+  width: var(--hotbar-slot-size);
+  height: var(--hotbar-slot-size);
   border: 2px solid #555;
   display: flex;
   align-items: center;
@@ -554,15 +558,15 @@ button:disabled {
 }
 
 .cols-9 {
-  grid-template-columns: repeat(9, 40px);
+  grid-template-columns: repeat(9, var(--slot-size));
 }
 
 .cols-3 {
-  grid-template-columns: repeat(3, 40px);
+  grid-template-columns: repeat(3, var(--slot-size));
 }
 
 .cols-2 {
-  grid-template-columns: repeat(2, 40px);
+  grid-template-columns: repeat(2, var(--slot-size));
 }
 
 .hotbar-row {
@@ -570,8 +574,8 @@ button:disabled {
 }
 
 .slot {
-  width: 40px;
-  height: 40px;
+  width: var(--slot-size);
+  height: var(--slot-size);
   background: var(--slot-bg);
   border-top: 2px solid var(--slot-border-dark);
   border-left: 2px solid var(--slot-border-dark);
@@ -588,8 +592,8 @@ button:disabled {
 }
 
 .slot.result {
-  width: 48px;
-  height: 48px;
+  width: var(--result-slot-size);
+  height: var(--result-slot-size);
 }
 
 .crafting-row,
@@ -909,4 +913,75 @@ button:disabled {
 
 .hud.touch .hotbar {
   pointer-events: auto;
+}
+
+/* 可滚动区域要放行纵向手势（html/body 已禁用 touch-action 以屏蔽页面回弹） */
+.main-menu,
+.inventory-panel,
+.settings-panel,
+.creative-grid,
+.world-list {
+  touch-action: pan-y;
+}
+
+/* 小屏 / 触屏：整体收缩格子与面板，保证手机横屏能完整显示 */
+@media (max-height: 560px), (pointer: coarse) {
+  :root {
+    --slot-size: 32px;
+    --result-slot-size: 40px;
+    --hotbar-slot-size: 34px;
+  }
+
+  .menu-panel {
+    padding: 12px;
+  }
+
+  .inventory-panel {
+    gap: 8px;
+    max-height: 96vh;
+  }
+
+  .creative-grid {
+    max-height: 34vh;
+  }
+
+  .main-menu {
+    padding: 12px 8px;
+  }
+
+  .menu-title h1 {
+    font-size: 28px;
+  }
+
+  .hud-bottom {
+    bottom: calc(4px + env(safe-area-inset-bottom));
+  }
+}
+
+/* 手机横屏（高度 ≈ 390px）：进一步压缩，容器界面尽量一屏放下 */
+@media (max-height: 440px) {
+  :root {
+    --slot-size: 26px;
+    --result-slot-size: 32px;
+    --hotbar-slot-size: 28px;
+  }
+
+  .inventory-panel {
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .inventory-panel h3,
+  .panel-body h3 {
+    margin: 0;
+    font-size: 13px;
+  }
+
+  .creative-grid {
+    max-height: 30vh;
+  }
+
+  .creative-trash {
+    padding: 2px;
+  }
 }

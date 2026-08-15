@@ -1,6 +1,8 @@
-import { useMemo, useState, type MouseEvent } from 'react';
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Game, SlotRef } from '../engine/Game';
 import { GameMode, HOTBAR_SIZE, INVENTORY_SIZE } from '../engine/constants/game';
+import { MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT } from '../engine/constants/keys';
+import { TOUCH_LONG_PRESS_MS } from '../engine/constants/ui';
 import { Screen, type GameUiState } from '../engine/events/GameState';
 import { SMELT_TICKS } from '../engine/items/Furnace';
 import { ITEM_DEFS, ItemKind } from '../engine/items/ItemRegistry';
@@ -30,17 +32,43 @@ function Slot({
   stack: ItemStack | null;
   className?: string;
 }) {
-  const handleMouseDown = (e: MouseEvent): void => {
+  // 触屏没有右键：按住超过 TOUCH_LONG_PRESS_MS 视为右键（取半 / 放一个）
+  const longPressTimer = useRef<number | null>(null);
+  const clearLongPress = (): void => {
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+  const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
     e.preventDefault();
-    if (e.button === 1) {
+    if (e.button === MOUSE_MIDDLE) {
       return;
     }
-    game.handleSlotClick(refer, e.button, e.shiftKey);
+    if (e.pointerType !== 'touch') {
+      game.handleSlotClick(refer, e.button, e.shiftKey);
+      return;
+    }
+    longPressTimer.current = window.setTimeout(() => {
+      longPressTimer.current = null;
+      game.handleSlotClick(refer, MOUSE_RIGHT, false);
+    }, TOUCH_LONG_PRESS_MS);
+  };
+  const handlePointerUp = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (e.pointerType !== 'touch') {
+      return;
+    }
+    if (longPressTimer.current !== null) {
+      clearLongPress();
+      game.handleSlotClick(refer, MOUSE_LEFT, false);
+    }
   };
   return (
     <div
       className={`slot${className ? ` ${className}` : ''}`}
-      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={clearLongPress}
       onContextMenu={(e) => e.preventDefault()}
     >
       <ItemIcon stack={stack} />
@@ -150,7 +178,7 @@ function CreativeList({ game }: { game: Game }) {
           />
         ))}
       </div>
-      <div className="creative-trash" onMouseDown={() => game.clearCursor()}>
+      <div className="creative-trash" onPointerDown={() => game.clearCursor()}>
         🗑 点击此处丢弃光标物品
       </div>
     </div>
@@ -163,7 +191,11 @@ export function InventoryScreen({ game, state }: InventoryScreenProps) {
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
   const cursor = game.cursor;
   return (
-    <div className="overlay inventory-overlay" onMouseMove={(e) => setCursorPos({ x: e.clientX, y: e.clientY })}>
+    <div
+      className="overlay inventory-overlay"
+      onPointerMove={(e) => setCursorPos({ x: e.clientX, y: e.clientY })}
+      onPointerDown={(e) => setCursorPos({ x: e.clientX, y: e.clientY })}
+    >
       <div className="panel inventory-panel">
         <div className="panel-body">
           {state.screen === Screen.INVENTORY && isCreative && <CreativeList game={game} />}
