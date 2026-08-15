@@ -1,7 +1,14 @@
-import { GRAVITY, TERMINAL_VELOCITY, WATER_GRAVITY, WATER_TERMINAL_VELOCITY } from '../constants/game';
+import {
+  GRAVITY,
+  TERMINAL_VELOCITY,
+  WATER_CLIMB_VELOCITY,
+  WATER_GRAVITY,
+  WATER_TERMINAL_VELOCITY,
+} from '../constants/game';
 import { AABB } from '../physics/AABB';
-import { isBoxInLiquid, moveWithCollisions } from '../physics/collision';
+import { isBoxBlocked, isBoxInLiquid, isBoxTouchingLiquid, moveWithCollisions } from '../physics/collision';
 import type { EntityContext } from './EntityContext';
+import type { World } from '../world/World';
 
 let nextEntityId = 1;
 
@@ -20,6 +27,13 @@ const AIR_DRAG = 0.91;
 const WATER_DRAG = 0.8;
 const GROUND_FRICTION = 0.6;
 const DRAG_TICK_BASE = 20;
+/** 判定“身体在水中”时忽略的顶部高度（1.8 为 0.4）与最小身体高度。 */
+const WATER_BODY_TOP_MARGIN = 0.4;
+const WATER_BODY_MIN_HEIGHT = 0.2;
+/** 攀岸探测：前方探测距离、可攀台阶最大高度（相对脚部）、触发所需的最小水平位移。 */
+const WATER_CLIMB_PROBE_DISTANCE = 0.3;
+const WATER_CLIMB_MAX_HEIGHT = 1.8;
+const WATER_CLIMB_MIN_MOVE = 1e-4;
 
 /** 实体基类：位置、速度、包围盒、基础物理。 */
 export abstract class Entity {
@@ -37,6 +51,10 @@ export abstract class Entity {
   height = 1.8;
   onGround = false;
   inWater = false;
+  /** 上一次移动是否在水平方向撞到方块。 */
+  collidedHorizontally = false;
+  /** 水中攀岸的目标脚部高度；null 表示未在攀爬。 */
+  private climbTargetY: number | null = null;
   isDead = false;
   age = 0;
   /** 是否受重力。 */
@@ -87,7 +105,9 @@ export abstract class Entity {
       this.z += this.vz * dt;
       return;
     }
-    const result = moveWithCollisions(world, before, this.vx * dt, this.vy * dt, this.vz * dt);
+    const wantedDx = this.vx * dt;
+    const wantedDz = this.vz * dt;
+    const result = moveWithCollisions(world, before, wantedDx, this.vy * dt, wantedDz);
     const wasFalling = this.vy < 0;
     this.x = (result.box.minX + result.box.maxX) / 2;
     this.y = result.box.minY;
@@ -98,6 +118,7 @@ export abstract class Entity {
     if (result.collidedZ) {
       this.vz = 0;
     }
+    this.collidedHorizontally = result.collidedX || result.collidedZ;
     if (result.collidedY) {
       if (wasFalling && result.onGround) {
         this.onLand(ctx, this.fallDistance);
@@ -114,6 +135,53 @@ export abstract class Entity {
     if (this.inWater) {
       this.vy *= Math.pow(WATER_DRAG, dt * DRAG_TICK_BASE);
     }
+    this.updateWaterClimb(world, wantedDx, wantedDz);
+  }
+
+  /**
+   * 水中贴墙自动攀上岸（对应 1.8 游泳撞墙时 motionY = 0.3）：
+   * 身体下部碰到水、水平方向被挡、且前方台阶顶不高于 WATER_CLIMB_MAX_HEIGHT 并有站立空间时，
+   * 持续给向上速度直到脚高过台阶顶；离开水后只要仍在攀爬中且还顶着墙就继续，避免半途落回水里。
+   */
+  private updateWaterClimb(world: World, wantedDx: number, wantedDz: number): void {
+    const horizontal = Math.hypot(wantedDx, wantedDz);
+    if (!this.collidedHorizontally || horizontal < WATER_CLIMB_MIN_MOVE) {
+      this.climbTargetY = null;
+      return;
+    }
+    const box = this.box();
+    const bodyTop = box.minY + Math.max(WATER_BODY_MIN_HEIGHT, this.height - WATER_BODY_TOP_MARGIN);
+    const body = new AABB(box.minX, box.minY, box.minZ, box.maxX, bodyTop, box.maxZ);
+    const touchesWater = this.inWater || isBoxTouchingLiquid(world, body);
+    if (this.climbTargetY === null && !touchesWater) {
+      return;
+    }
+    if (this.climbTargetY !== null && this.y >= this.climbTargetY) {
+      this.climbTargetY = null;
+      return;
+    }
+    if (this.climbTargetY === null) {
+      const dirX = (wantedDx / horizontal) * WATER_CLIMB_PROBE_DISTANCE;
+      const dirZ = (wantedDz / horizontal) * WATER_CLIMB_PROBE_DISTANCE;
+      const ledgeTop = this.findLedgeTop(world, box.offset(dirX, 0, dirZ));
+      if (ledgeTop === null || ledgeTop - this.y > WATER_CLIMB_MAX_HEIGHT) {
+        return;
+      }
+      this.climbTargetY = ledgeTop;
+    }
+    this.vy = Math.max(this.vy, WATER_CLIMB_VELOCITY);
+  }
+
+  /** 前方包围盒从脚所在高度往上找第一个能容纳整个身体的台阶顶高度；找不到返回 null。 */
+  private findLedgeTop(world: World, ahead: AABB): number | null {
+    const feet = Math.floor(ahead.minY);
+    for (let y = feet + 1; y <= feet + WATER_CLIMB_MAX_HEIGHT + 1; y++) {
+      const candidate = new AABB(ahead.minX, y, ahead.minZ, ahead.maxX, y + this.height, ahead.maxZ);
+      if (!isBoxBlocked(world, candidate)) {
+        return y;
+      }
+    }
+    return null;
   }
 
   /** 对水平速度施加地面摩擦 / 空气阻力（按 tick 归一化）。 */

@@ -48,6 +48,11 @@ export const GRAVITY = 32;
 export const WATER_GRAVITY = 4;
 export const TERMINAL_VELOCITY = 78;
 export const WATER_TERMINAL_VELOCITY = 3;
+/** 水中按住跳跃的上浮加速度与上浮速度上限（格/秒）。 */
+export const WATER_SWIM_UP_ACCEL = 24;
+export const WATER_SWIM_UP_MAX = 3.5;
+/** 水中贴墙攀上岸时的向上速度（格/秒，对应 1.8 的 motionY = 0.3/tick）。 */
+export const WATER_CLIMB_VELOCITY = 6;
 export const FALL_DAMAGE_THRESHOLD = 3;
 export const AIR_TICKS_MAX = 300;
 export const DROWN_DAMAGE_INTERVAL_TICKS = 20;

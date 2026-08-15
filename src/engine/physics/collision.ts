@@ -114,9 +114,44 @@ export function isBoxBlocked(world: World, box: AABB): boolean {
   return collectBlockBoxes(world, box).some((b) => b.intersects(box));
 }
 
-/** 包围盒是否浸在液体中（按中心点采样）。 */
+/** 采样点向包围盒内收缩的距离，避免恰好落在相邻方块列上。 */
+const LIQUID_SAMPLE_INSET = 0.05;
+
+/**
+ * 包围盒是否浸在液体中：在指定高度比例的水平面上采样中心与四角，任一处为液体即视为在水中。
+ */
 export function isBoxInLiquid(world: World, box: AABB, fraction = 0.5): boolean {
+  const y = Math.floor(box.minY + (box.maxY - box.minY) * fraction);
   const [cx, , cz] = box.center();
-  const y = box.minY + (box.maxY - box.minY) * fraction;
-  return world.isLiquidAt(Math.floor(cx), Math.floor(y), Math.floor(cz));
+  const x0 = box.minX + LIQUID_SAMPLE_INSET;
+  const x1 = box.maxX - LIQUID_SAMPLE_INSET;
+  const z0 = box.minZ + LIQUID_SAMPLE_INSET;
+  const z1 = box.maxZ - LIQUID_SAMPLE_INSET;
+  return (
+    world.isLiquidAt(Math.floor(cx), y, Math.floor(cz)) ||
+    world.isLiquidAt(Math.floor(x0), y, Math.floor(z0)) ||
+    world.isLiquidAt(Math.floor(x1), y, Math.floor(z0)) ||
+    world.isLiquidAt(Math.floor(x0), y, Math.floor(z1)) ||
+    world.isLiquidAt(Math.floor(x1), y, Math.floor(z1))
+  );
+}
+
+/** 包围盒是否与任何液体方块相交。 */
+export function isBoxTouchingLiquid(world: World, box: AABB): boolean {
+  const x0 = Math.floor(box.minX);
+  const x1 = Math.floor(box.maxX - EPSILON);
+  const y0 = Math.floor(box.minY);
+  const y1 = Math.floor(box.maxY - EPSILON);
+  const z0 = Math.floor(box.minZ);
+  const z1 = Math.floor(box.maxZ - EPSILON);
+  for (let y = y0; y <= y1; y++) {
+    for (let z = z0; z <= z1; z++) {
+      for (let x = x0; x <= x1; x++) {
+        if (world.isLiquidAt(x, y, z)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }

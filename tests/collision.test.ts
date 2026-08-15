@@ -4,6 +4,10 @@ import { AABB } from '../src/engine/physics/AABB';
 import { moveWithCollisions } from '../src/engine/physics/collision';
 import { raycastBlocks } from '../src/engine/physics/raycast';
 import { World } from '../src/engine/world/World';
+import { WATER_CLIMB_VELOCITY } from '../src/engine/constants/game';
+import type { EntityContext } from '../src/engine/entities/EntityContext';
+import { ItemDropEntity } from '../src/engine/entities/ItemDropEntity';
+import { createStack } from '../src/engine/items/ItemStack';
 
 describe('collision', () => {
   it('下落时停在地面上', () => {
@@ -50,5 +54,56 @@ describe('raycast', () => {
     world.setBlockRaw(10, 5, 5, BlockId.WATER);
     expect(raycastBlocks(world, 10.5, 5.5, 10.5, 0, 0, -1, 10)).toBeNull();
     expect(raycastBlocks(world, 10.5, 5.5, 10.5, 0, 0, -1, 10, true)?.z).toBe(5);
+  });
+});
+
+describe('water climb', () => {
+  /** 只提供物理所需字段的最小上下文。 */
+  function physicsContext(world: World): EntityContext {
+    return { world } as unknown as EntityContext;
+  }
+
+  /** 两格深的水池（y=4..5），x=13 处是岸，岸顶高度由 shoreTop 决定。 */
+  function buildPool(shoreTop: number): World {
+    const world = new World();
+    for (let x = 8; x <= 12; x++) {
+      for (let z = 8; z <= 12; z++) {
+        world.setBlockRaw(x, 3, z, BlockId.STONE);
+        world.setBlockRaw(x, 4, z, BlockId.WATER);
+        world.setBlockRaw(x, 5, z, BlockId.WATER);
+      }
+    }
+    for (let z = 8; z <= 12; z++) {
+      for (let y = 3; y <= shoreTop; y++) {
+        world.setBlockRaw(13, y, z, BlockId.STONE);
+      }
+    }
+    return world;
+  }
+
+  function swimmer(): ItemDropEntity {
+    const entity = new ItemDropEntity(createStack('stone'));
+    entity.width = 0.6;
+    entity.height = 1.8;
+    // 游泳时身体在水面附近上下浮动，这里取脚在水面下 0.5 的时刻
+    entity.setPosition(12.5, 5.5, 10.5);
+    entity.vx = 10;
+    return entity;
+  }
+
+  it('游泳时贴着高出水面一格的岸边会获得攀爬速度', () => {
+    const world = buildPool(5);
+    const entity = swimmer();
+    entity.move(physicsContext(world), 0.05);
+    expect(entity.collidedHorizontally).toBe(true);
+    expect(entity.vy).toBeCloseTo(WATER_CLIMB_VELOCITY, 5);
+  });
+
+  it('岸边上方仍有方块时不会攀爬', () => {
+    const world = buildPool(8);
+    const entity = swimmer();
+    entity.move(physicsContext(world), 0.05);
+    expect(entity.collidedHorizontally).toBe(true);
+    expect(entity.vy).toBeLessThan(1);
   });
 });

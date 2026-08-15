@@ -16,6 +16,8 @@ import {
   PLAYER_SPRINT_MULTIPLIER,
   PLAYER_SWIM_SPEED,
   PLAYER_WALK_SPEED,
+  WATER_SWIM_UP_ACCEL,
+  WATER_SWIM_UP_MAX,
   SPRINT_FOOD_THRESHOLD,
   TICK_MS,
 } from './constants/game';
@@ -675,8 +677,11 @@ export class Game implements EntityContext, ContainerHost {
     const accel = p.onGround ? 14 : p.inWater ? 6 : 2.5;
     this.steerPlayer(dirX * speed, dirZ * speed, dt, accel);
     if (input.jump) {
-      if (p.inWater) {
-        p.vy = Math.min(p.vy + 24 * dt, 3.5);
+      if (p.inWater && p.onGround && !this.jumpWasDown) {
+        p.vy = PLAYER_JUMP_VELOCITY;
+        p.onJump();
+      } else if (p.inWater) {
+        p.vy = Math.min(p.vy + WATER_SWIM_UP_ACCEL * dt, WATER_SWIM_UP_MAX);
       } else if (p.onGround && !this.jumpWasDown) {
         p.vy = PLAYER_JUMP_VELOCITY;
         p.onJump();
