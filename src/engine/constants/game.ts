@@ -88,3 +88,6 @@ export const DIFFICULTY_DAMAGE_MULTIPLIER: Record<Difficulty, number> = {
   2: 1,
   3: 1.5,
 };
+
+/** 睡觉：附近有敌对生物则无法入睡的检查半径（格）。 */
+export const SLEEP_MONSTER_RADIUS = 8;

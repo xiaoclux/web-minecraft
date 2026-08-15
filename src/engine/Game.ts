@@ -30,6 +30,7 @@ import {
   PLAYER_WALK_SPEED,
   WATER_SWIM_UP_ACCEL,
   WATER_SWIM_UP_MAX,
+  SLEEP_MONSTER_RADIUS,
   SPRINT_FOOD_THRESHOLD,
   TICK_MS,
 } from './constants/game';
@@ -39,7 +40,14 @@ import { AUTOSAVE_INTERVAL_TICKS, SAVE_FORMAT_VERSION } from './constants/save';
 import { CREEPER_EXPLOSION_MAX_DAMAGE } from './constants/mobs';
 import { CHEST_SLOT_COUNT } from './constants/ui';
 import { WATER_TICK_INTERVAL } from './constants/fluids';
-import { DAY_LENGTH_TICKS, DEFAULT_RENDER_DISTANCE, MAX_LIGHT, SPAWN_PRELOAD_RADIUS } from './constants/world';
+import {
+  DAY_LENGTH_TICKS,
+  DEFAULT_RENDER_DISTANCE,
+  MAX_LIGHT,
+  NIGHT_END_TICK,
+  NIGHT_START_TICK,
+  SPAWN_PRELOAD_RADIUS,
+} from './constants/world';
 import { BlockEntityStore, BlockEntityType } from './world/BlockEntityStore';
 import { ArrowEntity } from './entities/ArrowEntity';
 import { Entity, allocateEntityId, resetEntityIds, type EntitySaveData } from './entities/Entity';
@@ -1075,6 +1083,9 @@ export class Game implements EntityContext, ContainerHost {
         }));
         this.openScreen(Screen.FURNACE, { x: hit.x, y: hit.y, z: hit.z });
         return true;
+      case BlockId.BED:
+        this.useBed(hit.x, hit.y, hit.z);
+        return true;
       case BlockId.TNT:
         this.primeTnt(hit.x, hit.y, hit.z);
         return true;
@@ -1494,6 +1505,46 @@ export class Game implements EntityContext, ContainerHost {
     this.player.lastDamageCause = 'generic';
     this.store.patch({ screen: Screen.NONE, deathMessage: '' });
     this.controls.requestLock();
+  }
+
+  /**
+   * 右键床：把重生点设在床边，若是夜里且附近没有敌对生物就一觉睡到天亮。
+   * （原版只在真正躺下时设置重生点，这里放宽为点一下就设，避免夜里被怪堵着白跑一趟。）
+   */
+  private useBed(x: number, y: number, z: number): void {
+    const foot =
+      (this.world.getMeta(x, y, z) & BED_HEAD_BIT) === 0 ? { x, y, z } : (this.bedPartner(x, y, z) ?? { x, y, z });
+    this.player.spawnX = foot.x + 0.5;
+    this.player.spawnY = foot.y;
+    this.player.spawnZ = foot.z + 0.5;
+    const dayTick = this.timeTick % DAY_LENGTH_TICKS;
+    if (dayTick < NIGHT_START_TICK || dayTick >= NIGHT_END_TICK) {
+      this.showToast('重生点已设置，天亮时睡不着');
+      return;
+    }
+    if (this.hasMonsterNearby(x, y, z)) {
+      this.showToast('附近有怪物，睡不着');
+      return;
+    }
+    this.timeTick += DAY_LENGTH_TICKS - dayTick;
+    this.showToast('重生点已设置，一觉到天亮');
+  }
+
+  /** 床附近是否有敌对生物。 */
+  private hasMonsterNearby(x: number, y: number, z: number): boolean {
+    for (const e of this.entities.values()) {
+      if (!(e instanceof Mob) || !e.def.hostile || e.isDead) {
+        continue;
+      }
+      if (
+        Math.abs(e.x - x) <= SLEEP_MONSTER_RADIUS &&
+        Math.abs(e.y - y) <= SLEEP_MONSTER_RADIUS &&
+        Math.abs(e.z - z) <= SLEEP_MONSTER_RADIUS
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private showToast(text: string): void {
