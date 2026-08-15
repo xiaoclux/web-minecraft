@@ -1,15 +1,14 @@
 import { getBlock } from '../blocks/BlockRegistry';
-import { CHUNK_SIZE, MAX_LIGHT, WORLD_SIZE_Y } from '../constants/world';
+import { CHUNK_SIZE, CHUNK_VOLUME, MAX_LIGHT, WORLD_SIZE_Y } from '../constants/world';
 import type { Chunk } from './Chunk';
-import { toChunkCoord } from './Chunk';
+import { localIndex, toChunkCoord } from './Chunk';
 import type { World } from './World';
 
-/** 局部重算的水平半径（≥ MAX_LIGHT+1 才能保证正确）。 */
-const LOCAL_RADIUS = MAX_LIGHT + 1;
 /** 水对光照的额外衰减。 */
 const WATER_ATTENUATION = 2;
-/** 初始队列容量（一个 chunk 的体积）。 */
-const INITIAL_QUEUE_CAPACITY = CHUNK_SIZE * CHUNK_SIZE * WORLD_SIZE_Y;
+/** 队列条目宽度：x, y, z, level。 */
+const QUEUE_STRIDE = 4;
+const INITIAL_QUEUE_ENTRIES = CHUNK_VOLUME;
 
 const DIRS: readonly (readonly [number, number, number])[] = [
   [1, 0, 0],
@@ -20,305 +19,287 @@ const DIRS: readonly (readonly [number, number, number])[] = [
   [0, 0, -1],
 ];
 
-/** 一次计算的范围：重算区域 + 允许传播的更大范围（均为方块坐标闭区间）。 */
-interface LightRegion {
-  x0: number;
-  x1: number;
-  z0: number;
-  z1: number;
-  /** 传播边界。 */
-  px0: number;
-  px1: number;
-  pz0: number;
-  pz1: number;
-  /** 传播边界内各 chunk 是否可写（已加载且已点亮）。 */
-  loaded: Uint8Array;
-  loadedCx0: number;
-  loadedCz0: number;
-  loadedWidth: number;
+/** 光照通道：按 chunk 取对应的数组。 */
+type ChannelArray = (chunk: Chunk) => Uint8Array;
+const SKY: ChannelArray = (chunk) => chunk.skyLight;
+const BLOCK: ChannelArray = (chunk) => chunk.blockLight;
+
+/** 可增长的 (x,y,z,level) 队列。 */
+class LightQueue {
+  private data = new Int32Array(INITIAL_QUEUE_ENTRIES * QUEUE_STRIDE);
+  private head = 0;
+  private tail = 0;
+
+  get isEmpty(): boolean {
+    return this.head >= this.tail;
+  }
+
+  clear(): void {
+    this.head = 0;
+    this.tail = 0;
+  }
+
+  push(x: number, y: number, z: number, level: number): void {
+    if (this.tail + QUEUE_STRIDE > this.data.length) {
+      this.compactOrGrow();
+    }
+    const d = this.data;
+    d[this.tail] = x;
+    d[this.tail + 1] = y;
+    d[this.tail + 2] = z;
+    d[this.tail + 3] = level;
+    this.tail += QUEUE_STRIDE;
+  }
+
+  /** 弹出到 out（长度 ≥4）。 */
+  pop(out: Int32Array): void {
+    const d = this.data;
+    out[0] = d[this.head];
+    out[1] = d[this.head + 1];
+    out[2] = d[this.head + 2];
+    out[3] = d[this.head + 3];
+    this.head += QUEUE_STRIDE;
+  }
+
+  private compactOrGrow(): void {
+    const pending = this.tail - this.head;
+    if (this.head > 0) {
+      this.data.copyWithin(0, this.head, this.tail);
+    } else {
+      const grown = new Int32Array(this.data.length * 2);
+      grown.set(this.data);
+      this.data = grown;
+    }
+    this.head = 0;
+    this.tail = pending;
+  }
 }
 
-type LightChannel = 'sky' | 'block';
-
 /**
- * 天空光 + 方块光（火把等）计算。按 chunk 点亮新加载的分块；按区域局部重算方块变更。
- * 所有读写都通过 World 的按坐标接口完成，因此可跨 chunk 传播。
+ * 天空光 + 方块光（火把等）：
+ * - 新 chunk 加载时整体点亮并向已点亮的邻居传播；
+ * - 单个方块变化时做增量更新（先撤光再补光），代价只与受影响的格子数成正比。
+ * 通过 World 的方块变化事件自动驱动。
  */
 export class LightEngine {
-  private queue = new Int32Array(INITIAL_QUEUE_CAPACITY);
-  private queueHead = 0;
-  private queueTail = 0;
+  private readonly skyAdds = new LightQueue();
+  private readonly blockAdds = new LightQueue();
+  private readonly removeQueue = new LightQueue();
+  private readonly popped = new Int32Array(QUEUE_STRIDE);
+  /** 定位缓存（避免每格都查 Map）。 */
+  private cacheChunk: Chunk | null = null;
+  private cacheIndex = 0;
+  /** 本次更新写过的范围，用于标脏。 */
+  private touchedMinX = Infinity;
+  private touchedMaxX = -Infinity;
+  private touchedMinZ = Infinity;
+  private touchedMaxZ = -Infinity;
 
-  constructor(private readonly world: World) {}
+  constructor(private readonly world: World) {
+    world.onBlockChange((x, y, z) => this.onBlockChanged(x, y, z));
+    world.onBatchChange((changes) => {
+      for (const c of changes) {
+        this.onBlockChanged(c.x, c.y, c.z);
+      }
+    });
+  }
 
   /**
-   * 点亮一个新加载的 chunk：算它自己的直射天光与光源，并允许光传播到 3×3 邻域内已点亮的 chunk
-   * （光只增不减，因此不需要重算邻居）。
+   * 点亮一个新加载的 chunk：算它自己的直射天光与光源，并向已点亮的邻居传播（光只增不减，无需重算邻居）。
    */
   lightChunk(chunk: Chunk): void {
     const w = this.world;
     chunk.skyLight.fill(0);
     chunk.blockLight.fill(0);
+    chunk.isLit = true;
+    const x0 = chunk.originX;
+    const z0 = chunk.originZ;
+    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+      for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        w.recomputeHeight(x0 + lx, z0 + lz);
+      }
+    }
+    // 直射天光 + 侧向种子（相邻列更高的部分）
+    this.skyAdds.clear();
+    this.blockAdds.clear();
+    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+      for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        const x = x0 + lx;
+        const z = z0 + lz;
+        const h = chunk.heightMap[lz * CHUNK_SIZE + lx];
+        for (let y = h; y < WORLD_SIZE_Y; y++) {
+          chunk.skyLight[localIndex(lx, y, lz)] = MAX_LIGHT;
+        }
+        const neighborMax = Math.max(
+          w.getHeight(x + 1, z),
+          w.getHeight(x - 1, z),
+          w.getHeight(x, z + 1),
+          w.getHeight(x, z - 1),
+        );
+        for (let y = h; y < neighborMax && y < WORLD_SIZE_Y; y++) {
+          this.skyAdds.push(x, y, z, MAX_LIGHT);
+        }
+      }
+    }
+    this.seedShell(chunk, SKY);
+    this.propagate(SKY, this.skyAdds);
+    // 方块光源
+    for (let idx = 0; idx < CHUNK_VOLUME; idx++) {
+      const light = getBlock(chunk.blocks[idx]).light;
+      if (light > 0) {
+        chunk.blockLight[idx] = light;
+        const lx = idx % CHUNK_SIZE;
+        const lz = Math.floor(idx / CHUNK_SIZE) % CHUNK_SIZE;
+        const y = Math.floor(idx / (CHUNK_SIZE * CHUNK_SIZE));
+        this.blockAdds.push(x0 + lx, y, z0 + lz, light);
+      }
+    }
+    this.seedShell(chunk, BLOCK);
+    this.propagate(BLOCK, this.blockAdds);
+    this.resetTouched();
+  }
+
+  /** 把 chunk 四周已点亮邻居的边界列中有光的格子入队作为源。 */
+  private seedShell(chunk: Chunk, channel: ChannelArray): void {
     const x0 = chunk.originX;
     const z0 = chunk.originZ;
     const x1 = x0 + CHUNK_SIZE - 1;
     const z1 = z0 + CHUNK_SIZE - 1;
-    for (let z = z0; z <= z1; z++) {
-      for (let x = x0; x <= x1; x++) {
-        w.recomputeHeight(x, z);
-      }
-    }
-    chunk.isLit = true;
-    const region = this.buildRegion(x0, x1, z0, z1, x0 - CHUNK_SIZE, x1 + CHUNK_SIZE, z0 - CHUNK_SIZE, z1 + CHUNK_SIZE);
-    this.computeRegion(region);
-    for (let dz = -1; dz <= 1; dz++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        w.markDirty(chunk.cx + dx, chunk.cz + dz);
-      }
+    for (let i = 0; i < CHUNK_SIZE; i++) {
+      this.seedColumn(x0 - 1, z0 + i, channel);
+      this.seedColumn(x1 + 1, z0 + i, channel);
+      this.seedColumn(x0 + i, z0 - 1, channel);
+      this.seedColumn(x0 + i, z1 + 1, channel);
     }
   }
 
-  /** 单个方块变化后局部重算。 */
-  updateAround(x: number, z: number): void {
-    this.updateArea(x, x, z, z);
+  private seedColumn(x: number, z: number, channel: ChannelArray): void {
+    const chunk = this.world.getChunkAt(x, z);
+    if (!chunk || !chunk.isLit) {
+      return;
+    }
+    const arr = channel(chunk);
+    const lx = x - chunk.originX;
+    const lz = z - chunk.originZ;
+    for (let y = 0; y < WORLD_SIZE_Y; y++) {
+      const level = arr[localIndex(lx, y, lz)];
+      if (level > 1) {
+        (channel === SKY ? this.skyAdds : this.blockAdds).push(x, y, z, level);
+      }
+    }
   }
 
   /**
-   * 对 [x0..x1]×[z0..z1] 范围内的方块变更做局部重算：
-   * 区域向外扩 LOCAL_RADIUS，重算后只把光照真正变化的 chunk 标脏。
+   * 单个方块变化后的增量更新：
+   * 1) 列高度变化 → 直射天光的增减；2) 撤掉该格原有的光并沿传播路径回收；3) 从周围与新光源重新补光。
    */
-  updateArea(minX: number, maxX: number, minZ: number, maxZ: number): void {
+  onBlockChanged(x: number, y: number, z: number): void {
     const w = this.world;
-    const x0 = minX - LOCAL_RADIUS;
-    const x1 = maxX + LOCAL_RADIUS;
-    const z0 = minZ - LOCAL_RADIUS;
-    const z1 = maxZ + LOCAL_RADIUS;
-    const region = this.buildRegion(x0, x1, z0, z1, x0, x1, z0, z1);
-    for (let zz = z0; zz <= z1; zz++) {
-      for (let xx = x0; xx <= x1; xx++) {
-        w.recomputeHeight(xx, zz);
-      }
-    }
-    const width = x1 - x0 + 1;
-    const depth = z1 - z0 + 1;
-    const snapshotSky = new Uint8Array(width * depth * w.sizeY);
-    const snapshotBlock = new Uint8Array(width * depth * w.sizeY);
-    let cursor = 0;
-    for (let y = 0; y < w.sizeY; y++) {
-      for (let zz = z0; zz <= z1; zz++) {
-        for (let xx = x0; xx <= x1; xx++) {
-          if (this.isWritable(region, xx, zz)) {
-            snapshotSky[cursor] = w.getSkyLight(xx, y, zz);
-            snapshotBlock[cursor] = w.getBlockLight(xx, y, zz);
-            w.setSkyLight(xx, y, zz, 0);
-            w.setBlockLight(xx, y, zz, 0);
-          }
-          cursor++;
-        }
-      }
-    }
-    this.computeRegion(region);
-    // 找出光照实际变化的范围
-    let cx0 = Infinity;
-    let cx1 = -Infinity;
-    let cz0 = Infinity;
-    let cz1 = -Infinity;
-    cursor = 0;
-    for (let y = 0; y < w.sizeY; y++) {
-      for (let zz = z0; zz <= z1; zz++) {
-        for (let xx = x0; xx <= x1; xx++) {
-          if (
-            this.isWritable(region, xx, zz) &&
-            (w.getSkyLight(xx, y, zz) !== snapshotSky[cursor] || w.getBlockLight(xx, y, zz) !== snapshotBlock[cursor])
-          ) {
-            cx0 = Math.min(cx0, xx);
-            cx1 = Math.max(cx1, xx);
-            cz0 = Math.min(cz0, zz);
-            cz1 = Math.max(cz1, zz);
-          }
-          cursor++;
-        }
-      }
-    }
-    if (cx0 === Infinity) {
+    const chunk = w.getChunkAt(x, z);
+    if (!chunk || !chunk.isLit || y < 0 || y >= WORLD_SIZE_Y) {
       return;
     }
-    // 光照变化会影响相邻方块面的平滑光照，因此向外扩 1
-    const dcx0 = toChunkCoord(cx0 - 1);
-    const dcx1 = toChunkCoord(cx1 + 1);
-    const dcz0 = toChunkCoord(cz0 - 1);
-    const dcz1 = toChunkCoord(cz1 + 1);
-    for (let cz = dcz0; cz <= dcz1; cz++) {
-      for (let cx = dcx0; cx <= dcx1; cx++) {
-        w.markDirty(cx, cz);
+    const oldHeight = w.getHeight(x, z);
+    w.recomputeHeight(x, z);
+    const newHeight = w.getHeight(x, z);
+    this.resetTouched();
+    this.skyAdds.clear();
+    this.blockAdds.clear();
+    this.removeQueue.clear();
+    // 撤光：不再直射的列段 + 该格自身（两个通道）
+    for (let yy = oldHeight; yy < newHeight; yy++) {
+      this.seedRemoval(SKY, x, yy, z);
+    }
+    this.seedRemoval(SKY, x, y, z);
+    this.propagateRemoval(SKY);
+    this.seedRemoval(BLOCK, x, y, z);
+    this.propagateRemoval(BLOCK);
+    // 补光：新直射的列段
+    for (let yy = newHeight; yy < oldHeight; yy++) {
+      this.setLevel(SKY, x, yy, z, MAX_LIGHT);
+      this.skyAdds.push(x, yy, z, MAX_LIGHT);
+    }
+    const def = getBlock(w.getBlock(x, y, z));
+    if (def.light > 0) {
+      this.setLevel(BLOCK, x, y, z, def.light);
+      this.blockAdds.push(x, y, z, def.light);
+    }
+    // 该格若可透光，让邻居的光重新流入（含衰减规则变化，如水）
+    if (!def.opaque) {
+      for (const [dx, dy, dz] of DIRS) {
+        this.pushIfLit(SKY, x + dx, y + dy, z + dz);
+        this.pushIfLit(BLOCK, x + dx, y + dy, z + dz);
       }
     }
+    this.propagate(SKY, this.skyAdds);
+    this.propagate(BLOCK, this.blockAdds);
+    this.markTouched();
   }
 
-  private buildRegion(
-    x0: number,
-    x1: number,
-    z0: number,
-    z1: number,
-    px0: number,
-    px1: number,
-    pz0: number,
-    pz1: number,
-  ): LightRegion {
-    const loadedCx0 = toChunkCoord(px0);
-    const loadedCz0 = toChunkCoord(pz0);
-    const loadedWidth = toChunkCoord(px1) - loadedCx0 + 1;
-    const loadedDepth = toChunkCoord(pz1) - loadedCz0 + 1;
-    const loaded = new Uint8Array(loadedWidth * loadedDepth);
-    for (let cz = 0; cz < loadedDepth; cz++) {
-      for (let cx = 0; cx < loadedWidth; cx++) {
-        const chunk = this.world.getChunk(loadedCx0 + cx, loadedCz0 + cz);
-        loaded[cz * loadedWidth + cx] = chunk?.isLit ? 1 : 0;
-      }
+  /** 邻居格若有光则作为该通道的补光源入队。 */
+  private pushIfLit(channel: ChannelArray, x: number, y: number, z: number): void {
+    if (!this.locate(x, y, z)) {
+      return;
     }
-    return { x0, x1, z0, z1, px0, px1, pz0, pz1, loaded, loadedCx0, loadedCz0, loadedWidth };
-  }
-
-  private isWritable(region: LightRegion, x: number, z: number): boolean {
-    if (x < region.px0 || x > region.px1 || z < region.pz0 || z > region.pz1) {
-      return false;
+    const level = channel(this.cacheChunk!)[this.cacheIndex];
+    if (level > 1) {
+      (channel === SKY ? this.skyAdds : this.blockAdds).push(x, y, z, level);
     }
-    const cx = toChunkCoord(x) - region.loadedCx0;
-    const cz = toChunkCoord(z) - region.loadedCz0;
-    return region.loaded[cz * region.loadedWidth + cx] === 1;
   }
 
-  private computeRegion(region: LightRegion): void {
-    this.computeSky(region);
-    this.computeBlockLight(region);
+  /** 撤光种子：记录旧值、清零并入撤光队列。 */
+  private seedRemoval(channel: ChannelArray, x: number, y: number, z: number): void {
+    if (!this.locate(x, y, z)) {
+      return;
+    }
+    const arr = channel(this.cacheChunk!);
+    const level = arr[this.cacheIndex];
+    if (level === 0) {
+      return;
+    }
+    arr[this.cacheIndex] = 0;
+    this.touch(x, z);
+    this.removeQueue.push(x, y, z, level);
   }
 
-  private computeSky(region: LightRegion): void {
-    const w = this.world;
-    this.resetQueue();
-    // 1) 直射天空光：列高度以上全部 15
-    for (let z = region.z0; z <= region.z1; z++) {
-      for (let x = region.x0; x <= region.x1; x++) {
-        if (!this.isWritable(region, x, z)) {
+  /** 撤光 BFS：比源弱的邻居一并撤掉，不弱于源的邻居作为补光源。 */
+  private propagateRemoval(channel: ChannelArray): void {
+    const adds = channel === SKY ? this.skyAdds : this.blockAdds;
+    while (!this.removeQueue.isEmpty) {
+      this.removeQueue.pop(this.popped);
+      const [x, y, z, level] = this.popped;
+      for (const [dx, dy, dz] of DIRS) {
+        const nx = x + dx;
+        const ny = y + dy;
+        const nz = z + dz;
+        if (!this.locate(nx, ny, nz)) {
           continue;
         }
-        const h = w.getHeight(x, z);
-        for (let y = h; y < w.sizeY; y++) {
-          w.setSkyLight(x, y, z, MAX_LIGHT);
-        }
-      }
-    }
-    // 2) 种子：直射区里可能向侧面扩散的格子（相邻列更高）+ 区域外壳的现有光
-    for (let z = region.z0; z <= region.z1; z++) {
-      for (let x = region.x0; x <= region.x1; x++) {
-        if (!this.isWritable(region, x, z)) {
+        const arr = channel(this.cacheChunk!);
+        const nl = arr[this.cacheIndex];
+        if (nl === 0) {
           continue;
         }
-        const h = w.getHeight(x, z);
-        const neighborMax = Math.max(
-          this.heightOrZero(x + 1, z),
-          this.heightOrZero(x - 1, z),
-          this.heightOrZero(x, z + 1),
-          this.heightOrZero(x, z - 1),
-        );
-        for (let y = h; y < neighborMax && y < w.sizeY; y++) {
-          this.push(region, x, y, z);
+        if (nl < level) {
+          arr[this.cacheIndex] = 0;
+          this.touch(nx, nz);
+          this.removeQueue.push(nx, ny, nz, nl);
+        } else {
+          adds.push(nx, ny, nz, nl);
         }
       }
     }
-    this.seedShell(region, 'sky');
-    this.propagate(region, 'sky');
   }
 
-  /** 邻列高度；未加载列视为 0（不会产生侧向种子）。 */
-  private heightOrZero(x: number, z: number): number {
-    return this.world.hasChunkAt(x, z) ? this.world.getHeight(x, z) : 0;
-  }
-
-  private computeBlockLight(region: LightRegion): void {
-    const w = this.world;
-    this.resetQueue();
-    for (let y = 0; y < w.sizeY; y++) {
-      for (let z = region.z0; z <= region.z1; z++) {
-        for (let x = region.x0; x <= region.x1; x++) {
-          if (!this.isWritable(region, x, z)) {
-            continue;
-          }
-          const light = getBlock(w.getBlock(x, y, z)).light;
-          if (light > 0) {
-            w.setBlockLight(x, y, z, light);
-            this.push(region, x, y, z);
-          }
-        }
-      }
-    }
-    this.seedShell(region, 'block');
-    this.propagate(region, 'block');
-  }
-
-  /** 把重算区域外壳（x0-1、x1+1、z0-1、z1+1）上有光且可写的格子入队作为源。 */
-  private seedShell(region: LightRegion, channel: LightChannel): void {
-    const w = this.world;
-    const shellColumns: [number, number][] = [];
-    for (let z = region.z0 - 1; z <= region.z1 + 1; z++) {
-      shellColumns.push([region.x0 - 1, z], [region.x1 + 1, z]);
-    }
-    for (let x = region.x0; x <= region.x1; x++) {
-      shellColumns.push([x, region.z0 - 1], [x, region.z1 + 1]);
-    }
-    for (const [x, z] of shellColumns) {
-      if (!this.isWritable(region, x, z)) {
+  /** 补光 BFS。 */
+  private propagate(channel: ChannelArray, queue: LightQueue): void {
+    while (!queue.isEmpty) {
+      queue.pop(this.popped);
+      const [x, y, z] = this.popped;
+      if (!this.locate(x, y, z)) {
         continue;
       }
-      for (let y = 0; y < w.sizeY; y++) {
-        const level = channel === 'sky' ? w.getSkyLight(x, y, z) : w.getBlockLight(x, y, z);
-        if (level > 1) {
-          this.push(region, x, y, z);
-        }
-      }
-    }
-  }
-
-  private resetQueue(): void {
-    this.queueHead = 0;
-    this.queueTail = 0;
-  }
-
-  /** 队列元素为传播边界内的局部索引。 */
-  private push(region: LightRegion, x: number, y: number, z: number): void {
-    const width = region.px1 - region.px0 + 1;
-    const depth = region.pz1 - region.pz0 + 1;
-    const idx = (y * depth + (z - region.pz0)) * width + (x - region.px0);
-    if (this.queueTail >= this.queue.length) {
-      this.compactOrGrow();
-    }
-    this.queue[this.queueTail++] = idx;
-  }
-
-  private compactOrGrow(): void {
-    const pending = this.queueTail - this.queueHead;
-    if (this.queueHead > 0) {
-      this.queue.copyWithin(0, this.queueHead, this.queueTail);
-    } else {
-      const grown = new Int32Array(this.queue.length * 2);
-      grown.set(this.queue);
-      this.queue = grown;
-    }
-    this.queueHead = 0;
-    this.queueTail = pending;
-  }
-
-  private propagate(region: LightRegion, channel: LightChannel): void {
-    const w = this.world;
-    const width = region.px1 - region.px0 + 1;
-    const depth = region.pz1 - region.pz0 + 1;
-    const isSky = channel === 'sky';
-    while (this.queueHead < this.queueTail) {
-      const idx = this.queue[this.queueHead++];
-      const x = (idx % width) + region.px0;
-      const z = (Math.floor(idx / width) % depth) + region.pz0;
-      const y = Math.floor(idx / (width * depth));
-      const level = isSky ? w.getSkyLight(x, y, z) : w.getBlockLight(x, y, z);
+      const level = channel(this.cacheChunk!)[this.cacheIndex];
       if (level <= 1) {
         continue;
       }
@@ -326,23 +307,78 @@ export class LightEngine {
         const nx = x + dx;
         const ny = y + dy;
         const nz = z + dz;
-        if (ny < 0 || ny >= w.sizeY || !this.isWritable(region, nx, nz)) {
+        if (!this.locate(nx, ny, nz)) {
           continue;
         }
-        const def = getBlock(w.getBlock(nx, ny, nz));
+        const chunk = this.cacheChunk!;
+        const idx = this.cacheIndex;
+        const def = getBlock(chunk.blocks[idx]);
         if (def.opaque) {
           continue;
         }
         const next = level - 1 - (def.isLiquid ? WATER_ATTENUATION : 0);
-        const current = isSky ? w.getSkyLight(nx, ny, nz) : w.getBlockLight(nx, ny, nz);
-        if (next > current) {
-          if (isSky) {
-            w.setSkyLight(nx, ny, nz, next);
-          } else {
-            w.setBlockLight(nx, ny, nz, next);
-          }
-          this.push(region, nx, ny, nz);
+        const arr = channel(chunk);
+        if (next > arr[idx]) {
+          arr[idx] = next;
+          this.touch(nx, nz);
+          queue.push(nx, ny, nz, next);
         }
+      }
+    }
+  }
+
+  private setLevel(channel: ChannelArray, x: number, y: number, z: number, level: number): void {
+    if (this.locate(x, y, z)) {
+      channel(this.cacheChunk!)[this.cacheIndex] = level;
+      this.touch(x, z);
+    }
+  }
+
+  /** 定位到已点亮 chunk 的格子；结果放在 cacheChunk / cacheIndex。 */
+  private locate(x: number, y: number, z: number): boolean {
+    if (y < 0 || y >= WORLD_SIZE_Y) {
+      return false;
+    }
+    const cx = toChunkCoord(x);
+    const cz = toChunkCoord(z);
+    let chunk = this.cacheChunk;
+    if (!chunk || chunk.cx !== cx || chunk.cz !== cz) {
+      chunk = this.world.getChunk(cx, cz);
+      if (!chunk || !chunk.isLit) {
+        return false;
+      }
+      this.cacheChunk = chunk;
+    }
+    this.cacheIndex = localIndex(x - chunk.originX, y, z - chunk.originZ);
+    return true;
+  }
+
+  private touch(x: number, z: number): void {
+    this.touchedMinX = Math.min(this.touchedMinX, x);
+    this.touchedMaxX = Math.max(this.touchedMaxX, x);
+    this.touchedMinZ = Math.min(this.touchedMinZ, z);
+    this.touchedMaxZ = Math.max(this.touchedMaxZ, z);
+  }
+
+  private resetTouched(): void {
+    this.touchedMinX = Infinity;
+    this.touchedMaxX = -Infinity;
+    this.touchedMinZ = Infinity;
+    this.touchedMaxZ = -Infinity;
+  }
+
+  /** 光照变化会影响相邻方块面的平滑光照，因此范围向外扩 1 再标脏。 */
+  private markTouched(): void {
+    if (this.touchedMinX === Infinity) {
+      return;
+    }
+    const cx0 = toChunkCoord(this.touchedMinX - 1);
+    const cx1 = toChunkCoord(this.touchedMaxX + 1);
+    const cz0 = toChunkCoord(this.touchedMinZ - 1);
+    const cz1 = toChunkCoord(this.touchedMaxZ + 1);
+    for (let cz = cz0; cz <= cz1; cz++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        this.world.markDirty(cx, cz);
       }
     }
   }

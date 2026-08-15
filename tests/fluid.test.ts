@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { emptyWorld } from './helpers';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
 import { WATER_FALLING_META, WATER_MAX_LEVEL, WATER_SOURCE_META } from '../src/engine/constants/fluids';
-import { FluidSimulator, waterHeight } from '../src/engine/world/FluidSimulator';
+import { waterHeight } from '../src/engine/blocks/waterShape';
+import { FluidSimulator } from '../src/engine/world/FluidSimulator';
 import type { World } from '../src/engine/world/World';
 
 /** 铺一层 y=4 的石板并把变更接到模拟器。 */
@@ -13,9 +14,7 @@ function setup(): { world: World; fluids: FluidSimulator } {
       world.setBlockRaw(x, 4, z, BlockId.STONE);
     }
   }
-  const fluids = new FluidSimulator(world);
-  world.onBlockChange((x, y, z) => fluids.scheduleAround(x, y, z));
-  return { world, fluids };
+  return { world, fluids: new FluidSimulator(world) };
 }
 
 function run(fluids: FluidSimulator, rounds: number): void {

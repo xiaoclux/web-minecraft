@@ -1,5 +1,6 @@
 import { Chunk } from '../src/engine/world/Chunk';
 import type { ChunkGenerator } from '../src/engine/world/ChunkGenerator';
+import { ChunkManager } from '../src/engine/world/ChunkManager';
 import { LightEngine } from '../src/engine/world/LightEngine';
 import { World } from '../src/engine/world/World';
 
@@ -32,13 +33,10 @@ export function emptyWorld(radius = 4): World {
 /** 用生成器生成 [c0..c1]² 范围的 chunk 并点亮。 */
 export function generateArea(generator: ChunkGenerator, c0: number, c1: number): World {
   const world = new World();
-  const light = new LightEngine(world);
+  const manager = new ChunkManager(world, generator, new LightEngine(world));
   for (let cz = c0; cz <= c1; cz++) {
     for (let cx = c0; cx <= c1; cx++) {
-      const chunk = new Chunk(cx, cz);
-      generator.generateChunk(chunk);
-      world.addChunk(chunk);
-      light.lightChunk(chunk);
+      manager.loadChunk(cx, cz);
     }
   }
   return world;

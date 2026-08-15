@@ -69,12 +69,24 @@ const TREE_MIN_HEIGHT = 4;
 const TREE_HEIGHT_VARIANCE = 3;
 const TREE_CANOPY_RADIUS = 2;
 const TREE_CHANCE: Record<Biome, number> = { plains: 0.003, forest: 0.05, desert: 0, mountains: 0.006, snowy: 0.012 };
+/** 树概率上限：随机数超过它的列不用再查群系。 */
+const MAX_TREE_CHANCE = Math.max(...Object.values(TREE_CHANCE));
 const GRASS_CHANCE: Record<Biome, number> = { plains: 0.08, forest: 0.06, desert: 0, mountains: 0.02, snowy: 0 };
 const FLOWER_CHANCE: Record<Biome, number> = { plains: 0.012, forest: 0.008, desert: 0, mountains: 0.003, snowy: 0 };
 const PUMPKIN_CHANCE = 0.0006;
 /** 出生点搜索半径与步长。 */
 const SPAWN_SEARCH_RADIUS = 256;
 const SPAWN_SEARCH_STEP = 2;
+
+/** 一列的噪声派生信息。 */
+interface ColumnInfo {
+  height: number;
+  biome: Biome;
+}
+/** 列缓存键的坐标偏移 / 跨度与容量（约 6 个 chunk 邻域的列数）。 */
+const COLUMN_KEY_OFFSET = 1 << 25;
+const COLUMN_KEY_SPAN = 1 << 26;
+const COLUMN_CACHE_LIMIT = 16384;
 
 /** 一棵树的确定性描述。 */
 export interface TreePlacement {
@@ -101,10 +113,11 @@ export class TerrainGenerator implements ChunkGenerator {
   private readonly cave: (x: number, y: number, z: number) => number;
   /** 村庄生成器（关闭结构时为 null）。 */
   readonly villages: VillageGenerator | null;
+  private readonly columnCache = new Map<number, ColumnInfo>();
 
   constructor(
     readonly seed: string,
-    readonly generateStructures = true,
+    generateStructures = true,
   ) {
     this.base = hashString(seed);
     this.continent = createNoise2D(createRng(this.base + 1));
@@ -149,23 +162,24 @@ export class TerrainGenerator implements ChunkGenerator {
 
   /** 计算群系。 */
   biomeAt(x: number, z: number): Biome {
-    const t = this.temperature(x * BIOME_SCALE, z * BIOME_SCALE);
-    const h = this.humidity(x * BIOME_SCALE + 100, z * BIOME_SCALE + 100);
-    const mountain = this.continent(x * CONTINENT_SCALE, z * CONTINENT_SCALE);
-    if (mountain > MOUNTAIN_THRESHOLD) {
-      return t < -0.2 ? Biome.SNOWY : Biome.MOUNTAINS;
-    }
-    if (t > 0.45 && h < 0) {
-      return Biome.DESERT;
-    }
-    if (t < -0.5) {
-      return Biome.SNOWY;
-    }
-    return h > 0.1 ? Biome.FOREST : Biome.PLAINS;
+    return this.column(x, z).biome;
   }
 
   /** 计算地表高度（最高实心方块的 y）。 */
   heightAt(x: number, z: number): number {
+    return this.column(x, z).height;
+  }
+
+  /**
+   * 一列的噪声信息（高度 + 群系），5 个 2D 噪声只算一次并缓存。
+   * 缓存以最近使用的列为主，超出容量即清空——同一 chunk 生成期间的 3×3 邻域访问全部命中。
+   */
+  private column(x: number, z: number): ColumnInfo {
+    const key = (x + COLUMN_KEY_OFFSET) * COLUMN_KEY_SPAN + (z + COLUMN_KEY_OFFSET);
+    const cached = this.columnCache.get(key);
+    if (cached) {
+      return cached;
+    }
     const c = this.continent(x * CONTINENT_SCALE, z * CONTINENT_SCALE);
     const h = this.hills(x * HILL_SCALE, z * HILL_SCALE);
     const d = this.detail(x * DETAIL_SCALE, z * DETAIL_SCALE);
@@ -174,7 +188,27 @@ export class TerrainGenerator implements ChunkGenerator {
       const m = (c - MOUNTAIN_THRESHOLD) / (1 - MOUNTAIN_THRESHOLD);
       height += m * m * MOUNTAIN_EXTRA + Math.abs(h) * 6;
     }
-    return Math.max(MIN_TERRAIN_HEIGHT, Math.min(MAX_TERRAIN_HEIGHT, Math.floor(height)));
+    const t = this.temperature(x * BIOME_SCALE, z * BIOME_SCALE);
+    const hum = this.humidity(x * BIOME_SCALE + 100, z * BIOME_SCALE + 100);
+    let biome: Biome;
+    if (c > MOUNTAIN_THRESHOLD) {
+      biome = t < -0.2 ? Biome.SNOWY : Biome.MOUNTAINS;
+    } else if (t > 0.45 && hum < 0) {
+      biome = Biome.DESERT;
+    } else if (t < -0.5) {
+      biome = Biome.SNOWY;
+    } else {
+      biome = hum > 0.1 ? Biome.FOREST : Biome.PLAINS;
+    }
+    const info: ColumnInfo = {
+      height: Math.max(MIN_TERRAIN_HEIGHT, Math.min(MAX_TERRAIN_HEIGHT, Math.floor(height))),
+      biome,
+    };
+    if (this.columnCache.size >= COLUMN_CACHE_LIMIT) {
+      this.columnCache.clear();
+    }
+    this.columnCache.set(key, info);
+    return info;
   }
 
   /** 该列的地表方块（与 generateColumn 一致，供结构/植被判断，不读取方块数据）。 */
@@ -274,10 +308,8 @@ export class TerrainGenerator implements ChunkGenerator {
     let py = y;
     let pz = z;
     for (let i = 0; i < ore.size; i++) {
-      if (chunk.containsColumn(px, pz) && py >= 0 && py < WORLD_SIZE_Y) {
-        if (chunk.getLocal(px - chunk.originX, py, pz - chunk.originZ) === BlockId.STONE) {
-          chunk.setWorld(px, py, pz, ore.block);
-        }
+      if (chunk.getWorld(px, py, pz) === BlockId.STONE) {
+        chunk.setWorld(px, py, pz, ore.block);
       }
       px += Math.floor(rng() * 3) - 1;
       py += Math.floor(rng() * 3) - 1;
@@ -308,6 +340,9 @@ export class TerrainGenerator implements ChunkGenerator {
         const roll = rng();
         const heightRoll = rng();
         const cornerSeed = Math.floor(rng() * 0xffffffff);
+        if (roll >= MAX_TREE_CHANCE) {
+          continue;
+        }
         const x = x0 + lx;
         const z = z0 + lz;
         const biome = this.biomeAt(x, z);
@@ -341,7 +376,7 @@ export class TerrainGenerator implements ChunkGenerator {
           const x = tree.x + dx;
           const y = tree.y + dy;
           const z = tree.z + dz;
-          if (chunk.containsColumn(x, z) && chunk.getLocal(x - chunk.originX, y, z - chunk.originZ) === BlockId.AIR) {
+          if (chunk.getWorld(x, y, z) === BlockId.AIR) {
             chunk.setWorld(x, y, z, BlockId.LEAVES);
           }
         }

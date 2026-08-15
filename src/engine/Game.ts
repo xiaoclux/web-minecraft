@@ -35,14 +35,7 @@ import {
 import { AUTOSAVE_INTERVAL_TICKS, SAVE_FORMAT_VERSION } from './constants/save';
 import { CREEPER_EXPLOSION_MAX_DAMAGE } from './constants/mobs';
 import { WATER_TICK_INTERVAL } from './constants/fluids';
-import {
-  CHUNK_AREA,
-  CHUNK_SIZE,
-  DAY_LENGTH_TICKS,
-  DEFAULT_RENDER_DISTANCE,
-  MAX_LIGHT,
-  SPAWN_PRELOAD_RADIUS,
-} from './constants/world';
+import { DAY_LENGTH_TICKS, DEFAULT_RENDER_DISTANCE, MAX_LIGHT, SPAWN_PRELOAD_RADIUS } from './constants/world';
 import { ArrowEntity } from './entities/ArrowEntity';
 import { Entity, allocateEntityId, resetEntityIds, type EntitySaveData } from './entities/Entity';
 import type { EntityContext } from './entities/EntityContext';
@@ -67,16 +60,16 @@ import type { Inventory } from './items/Inventory';
 import { Renderer } from './render/Renderer';
 import { Sky } from './render/Sky';
 import { SoundManager } from './render/SoundManager';
-import { rleDecode, rleEncode } from './save/serialize';
-import { SaveManager, type ChunkSaveData, type WorldMeta, type WorldSave } from './save/SaveManager';
+import { deserializeChunk, serializeChunk } from './save/chunkSerializer';
+import { SaveManager, type WorldMeta, type WorldSave } from './save/SaveManager';
 import { TextureAtlas } from './textures/TextureAtlas';
 import { createRng, hashString } from './textures/PixelCanvas';
-import { Chunk, toChunkCoord } from './world/Chunk';
+import type { Chunk } from './world/Chunk';
+import { toChunkCoord } from './world/Chunk';
 import { createChunkGenerator, type ChunkGenerator } from './world/ChunkGenerator';
 import { ChunkManager } from './world/ChunkManager';
 import { FluidSimulator } from './world/FluidSimulator';
 import { LightEngine } from './world/LightEngine';
-import { TerrainGenerator } from './world/TerrainGenerator';
 import { World } from './world/World';
 
 /** 游戏初始化参数。 */
@@ -206,16 +199,8 @@ export class Game implements EntityContext, ContainerHost {
     } else {
       this.createNewWorld();
     }
-    this.world.onBlockChange((x, y, z) => {
-      this.light.updateAround(x, z);
-      this.fluids.scheduleAround(x, y, z);
-    });
     this.fluids.onWashed((x, y, z, id) => this.onBlockWashed(x, y, z, id));
     this.world.onChunkUnload((chunk) => this.onChunkUnloaded(chunk));
-    this.world.onBatchChange((minX, maxX, minZ, maxZ) => {
-      this.light.updateArea(minX, maxX, minZ, maxZ);
-      this.fluids.scheduleArea(minX - 1, maxX + 1, 0, this.world.sizeY - 1, minZ - 1, maxZ + 1);
-    });
     this.player.inventory.subscribe(() =>
       this.store.patch({ inventoryVersion: this.store.get().inventoryVersion + 1 }),
     );
@@ -275,12 +260,7 @@ export class Game implements EntityContext, ContainerHost {
 
   private loadFrom(save: WorldSave): void {
     for (const data of save.chunks) {
-      const chunk = new Chunk(data.cx, data.cz);
-      chunk.blocks.set(rleDecode(data.blocks, chunk.blocks.length));
-      chunk.meta.set(rleDecode(data.meta, chunk.meta.length));
-      chunk.isModified = true;
-      this.chunkManager.addLoadedChunk(chunk);
-      this.rescheduleFlowingWater(chunk);
+      this.chunkManager.addLoadedChunk(deserializeChunk(data));
     }
     this.chunkManager.ensureLoaded(save.player.x, save.player.z, SPAWN_PRELOAD_RADIUS);
     this.tick = save.tick;
@@ -303,18 +283,6 @@ export class Game implements EntityContext, ContainerHost {
     }
     if (this.player.health <= 0) {
       this.player.respawn();
-    }
-  }
-
-  /** 读档后让 chunk 内未静止的流动水继续更新。 */
-  private rescheduleFlowingWater(chunk: Chunk): void {
-    for (let idx = 0; idx < chunk.blocks.length; idx++) {
-      if (chunk.blocks[idx] === BlockId.WATER && chunk.meta[idx] !== 0) {
-        const lx = idx % CHUNK_SIZE;
-        const lz = Math.floor(idx / CHUNK_SIZE) % CHUNK_SIZE;
-        const y = Math.floor(idx / CHUNK_AREA);
-        this.fluids.scheduleAround(chunk.originX + lx, y, chunk.originZ + lz);
-      }
     }
   }
 
@@ -350,23 +318,12 @@ export class Game implements EntityContext, ContainerHost {
       meta: { ...this.meta, lastPlayed: Date.now() },
       tick: this.tick,
       timeTick: this.timeTick,
-      chunks: this.serializeChunks(),
+      chunks: this.world.listModifiedChunks().map(serializeChunk),
       player: this.player.serialize(),
       entities,
       nextEntityId: allocateEntityId(),
       furnaces,
     };
-  }
-
-  /** 只序列化被修改过的 chunk；其余可由种子确定性再生。 */
-  private serializeChunks(): ChunkSaveData[] {
-    const out: ChunkSaveData[] = [];
-    for (const chunk of this.world.chunks.values()) {
-      if (chunk.isModified) {
-        out.push({ cx: chunk.cx, cz: chunk.cz, blocks: rleEncode(chunk.blocks), meta: rleEncode(chunk.meta) });
-      }
-    }
-    return out;
   }
 
   /** 保存到 IndexedDB。 */
@@ -554,7 +511,7 @@ export class Game implements EntityContext, ContainerHost {
       z: p.z,
       chunkX: toChunkCoord(bx),
       chunkZ: toChunkCoord(bz),
-      biome: this.generator instanceof TerrainGenerator ? this.generator.biomeAt(bx, bz) : 'flat',
+      biome: this.generator.biomeAt(bx, bz),
       chunks: this.world.chunkCount,
       entities: this.entities.size,
       light: `sky ${this.world.getSkyLight(bx, by, bz)} block ${this.world.getBlockLight(bx, by, bz)}`,
@@ -751,21 +708,16 @@ export class Game implements EntityContext, ContainerHost {
     const accel = p.onGround ? 14 : p.inWater ? 6 : 2.5;
     this.steerPlayer(dirX * speed, dirZ * speed, dt, accel);
     if (input.jump) {
-      if (p.inWater && p.onGround && !this.jumpWasDown) {
+      if (p.onGround) {
+        // 站在地上（含浅水底）就正常起跳；疾跑起跳只在刚按下时加一次前冲
         p.vy = PLAYER_JUMP_VELOCITY;
         p.onJump();
-      } else if (p.inWater) {
-        p.vy = Math.min(p.vy + WATER_SWIM_UP_ACCEL * dt, WATER_SWIM_UP_MAX);
-      } else if (p.onGround && !this.jumpWasDown) {
-        p.vy = PLAYER_JUMP_VELOCITY;
-        p.onJump();
-        if (p.isSprinting) {
+        if (p.isSprinting && !this.jumpWasDown) {
           p.vx += forwardX * 1.5;
           p.vz += forwardZ * 1.5;
         }
-      } else if (p.onGround) {
-        p.vy = PLAYER_JUMP_VELOCITY;
-        p.onJump();
+      } else if (p.inWater) {
+        p.vy = Math.min(p.vy + WATER_SWIM_UP_ACCEL * dt, WATER_SWIM_UP_MAX);
       }
     }
     this.jumpWasDown = input.jump;
@@ -933,11 +885,7 @@ export class Game implements EntityContext, ContainerHost {
     const above = getBlock(aboveId);
     if (above.needsSupport) {
       this.world.setBlock(x, y + 1, z, BlockId.AIR);
-      if (!this.rules.infiniteItems) {
-        for (const drop of rollDrops(above, null, this.rng)) {
-          this.dropItem(x + 0.5, y + 1.5, z + 0.5, drop, 0.2);
-        }
-      }
+      this.dropBlockLoot(x, y + 1, z, above);
     }
     if (above.hasGravity) {
       this.pendingGravity.push({ x, y: y + 1, z });
@@ -946,10 +894,15 @@ export class Game implements EntityContext, ContainerHost {
 
   /** 植物等被水冲走时掉落物品。 */
   private onBlockWashed(x: number, y: number, z: number, id: number): void {
+    this.dropBlockLoot(x, y, z, getBlock(id));
+  }
+
+  /** 在方块中心掉落其战利品（创造模式不掉落）。 */
+  private dropBlockLoot(x: number, y: number, z: number, def: BlockDef): void {
     if (this.rules.infiniteItems) {
       return;
     }
-    for (const drop of rollDrops(getBlock(id), null, this.rng)) {
+    for (const drop of rollDrops(def, null, this.rng)) {
       this.dropItem(x + 0.5, y + 0.5, z + 0.5, drop, 0.2);
     }
   }

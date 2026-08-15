@@ -11,6 +11,8 @@ import { Sky } from './Sky';
 const CAMERA_FOV = 70;
 const CAMERA_NEAR = 0.05;
 const CAMERA_FAR = 400;
+/** 像素比上限：Retina 屏按 1 渲染即可（贴图本就是像素风），否则 4 倍片元开销。 */
+const MAX_PIXEL_RATIO = 1;
 const AMBIENT_MIN = 0.35;
 const SUN_INTENSITY = 1.2;
 
@@ -30,7 +32,7 @@ export class Renderer {
 
   constructor(canvas: HTMLCanvasElement, world: World, atlas: TextureAtlas) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     this.renderer.autoClear = true;
     this.camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, CAMERA_NEAR, CAMERA_FAR);
     this.chunks = new ChunkRenderer(world, atlas, DEFAULT_RENDER_DISTANCE);

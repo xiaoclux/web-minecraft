@@ -7,7 +7,17 @@ import {
   WATER_MAX_LEVEL,
   WATER_SOURCE_META,
 } from '../constants/fluids';
+import { CHUNK_SIZE, WORLD_SIZE_Y } from '../constants/world';
+import type { Chunk } from './Chunk';
+import { localIndex } from './Chunk';
 import type { World } from './World';
+
+/** 位置打包为数字键：x/z 各占 ±2^21，y 占 64。 */
+const POS_OFFSET = 1 << 21;
+const POS_SPAN = 1 << 22;
+function packPos(x: number, y: number, z: number): number {
+  return ((x + POS_OFFSET) * POS_SPAN + (z + POS_OFFSET)) * WORLD_SIZE_Y + y;
+}
 
 const SIDES: readonly (readonly [number, number])[] = [
   [1, 0],
@@ -33,10 +43,18 @@ export type WashedListener = (x: number, y: number, z: number, blockId: number) 
  * 两侧都是源且下方稳固的流动水升级为源（无限水）。
  */
 export class FluidSimulator {
-  private pending = new Set<string>();
+  private pending = new Set<number>();
   private readonly washedListeners = new Set<WashedListener>();
 
-  constructor(private readonly world: World) {}
+  constructor(private readonly world: World) {
+    world.onBlockChange((x, y, z) => this.scheduleAround(x, y, z));
+    world.onBatchChange((changes) => {
+      for (const c of changes) {
+        this.scheduleAround(c.x, c.y, c.z);
+      }
+    });
+    world.onChunkLoad((chunk) => this.scheduleFlowingIn(chunk));
+  }
 
   /** 订阅“方块被水冲走”。 */
   onWashed(listener: WashedListener): () => void {
@@ -57,12 +75,15 @@ export class FluidSimulator {
     }
   }
 
-  /** 把范围内所有水加入待更新（批量变更 / 读档）。 */
-  scheduleArea(minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number): void {
-    for (let y = minY; y <= maxY; y++) {
-      for (let z = minZ; z <= maxZ; z++) {
-        for (let x = minX; x <= maxX; x++) {
-          this.scheduleIfWater(x, y, z);
+  /** chunk 加载（读档 / 生成）后：让其中未静止的流动水继续更新（生成的海水全是源，不会被调度）。 */
+  private scheduleFlowingIn(chunk: Chunk): void {
+    for (let y = 0; y < WORLD_SIZE_Y; y++) {
+      for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+          const idx = localIndex(lx, y, lz);
+          if (chunk.blocks[idx] === BlockId.WATER && chunk.meta[idx] !== WATER_SOURCE_META) {
+            this.pending.add(packPos(chunk.originX + lx, y, chunk.originZ + lz));
+          }
         }
       }
     }
@@ -70,7 +91,7 @@ export class FluidSimulator {
 
   private scheduleIfWater(x: number, y: number, z: number): void {
     if (this.world.getBlock(x, y, z) === BlockId.WATER) {
-      this.pending.add(`${x},${y},${z}`);
+      this.pending.add(packPos(x, y, z));
     }
   }
 
@@ -80,9 +101,12 @@ export class FluidSimulator {
       return;
     }
     const batch = this.pending;
-    this.pending = new Set<string>();
+    this.pending = new Set<number>();
     for (const key of batch) {
-      const [x, y, z] = key.split(',').map(Number);
+      const y = key % WORLD_SIZE_Y;
+      const rest = (key - y) / WORLD_SIZE_Y;
+      const z = (rest % POS_SPAN) - POS_OFFSET;
+      const x = (rest - (z + POS_OFFSET)) / POS_SPAN - POS_OFFSET;
       this.updateWater(x, y, z);
     }
   }
@@ -106,13 +130,12 @@ export class FluidSimulator {
         meta = next;
       }
     }
-    const spreadLevel = meta === WATER_FALLING_META ? 0 : meta;
-    const belowId = world.getBlock(x, y - 1, z);
+    const spreadLevel = effectiveLevel(meta);
     if (this.canFlowInto(x, y - 1, z)) {
       this.flowInto(x, y - 1, z, WATER_FALLING_META);
       return;
     }
-    const belowSolid = getBlock(belowId).solid;
+    const belowSolid = getBlock(world.getBlock(x, y - 1, z)).solid;
     const canSpread = meta === WATER_SOURCE_META || belowSolid;
     if (!canSpread || spreadLevel + 1 > WATER_MAX_LEVEL) {
       return;
@@ -140,7 +163,7 @@ export class FluidSimulator {
       if (m === WATER_SOURCE_META) {
         sources++;
       }
-      min = Math.min(min, m === WATER_FALLING_META ? 0 : m);
+      min = Math.min(min, effectiveLevel(m));
     }
     const belowId = world.getBlock(x, y - 1, z);
     const belowStable =
@@ -156,10 +179,14 @@ export class FluidSimulator {
 
   /** 目标位置能否被水占据：空气或非实心、非液体的小方块（草花火把等，会被冲走）。 */
   private canFlowInto(x: number, y: number, z: number): boolean {
-    if (y < 0 || !this.world.hasChunkAt(x, z)) {
+    if (y < 0) {
       return false;
     }
-    const def = getBlock(this.world.getBlock(x, y, z));
+    const chunk = this.world.getChunkAt(x, z);
+    if (!chunk) {
+      return false;
+    }
+    const def = getBlock(chunk.getLocal(x - chunk.originX, y, z - chunk.originZ));
     return !def.solid && !def.isLiquid;
   }
 
@@ -198,12 +225,14 @@ export class FluidSimulator {
 
   /** 搜索路径上可穿过：非实心且不是水源（流动水可以穿过）。 */
   private isPassable(x: number, y: number, z: number): boolean {
-    if (!this.world.hasChunkAt(x, z)) {
+    const chunk = this.world.getChunkAt(x, z);
+    if (!chunk) {
       return false;
     }
-    const id = this.world.getBlock(x, y, z);
+    const idx = localIndex(x - chunk.originX, y, z - chunk.originZ);
+    const id = chunk.blocks[idx];
     if (id === BlockId.WATER) {
-      return this.world.getMeta(x, y, z) !== WATER_SOURCE_META;
+      return chunk.meta[idx] !== WATER_SOURCE_META;
     }
     return !getBlock(id).solid;
   }
@@ -233,14 +262,14 @@ export class FluidSimulator {
     if (world.getBlock(x, y, z) !== BlockId.WATER) {
       return { x: 0, z: 0 };
     }
-    const own = this.effectiveLevel(world.getMeta(x, y, z));
+    const own = effectiveLevel(world.getMeta(x, y, z));
     let vx = 0;
     let vz = 0;
     for (const [dx, dz] of SIDES) {
       const nx = x + dx;
       const nz = z + dz;
       if (world.getBlock(nx, y, nz) === BlockId.WATER) {
-        const diff = this.effectiveLevel(world.getMeta(nx, y, nz)) - own;
+        const diff = effectiveLevel(world.getMeta(nx, y, nz)) - own;
         vx += dx * diff;
         vz += dz * diff;
       } else if (this.canFlowInto(nx, y, nz) && this.canFlowInto(nx, y - 1, nz)) {
@@ -252,16 +281,9 @@ export class FluidSimulator {
     const len = Math.hypot(vx, vz);
     return len === 0 ? { x: 0, z: 0 } : { x: vx / len, z: vz / len };
   }
-
-  private effectiveLevel(meta: number): number {
-    return meta === WATER_FALLING_META ? 0 : meta;
-  }
 }
 
-/** 水面高度（方块内 0..1）：源约 0.89，越浅越低；下落水或上方有水时为满高。 */
-export function waterHeight(meta: number, aboveIsWater: boolean): number {
-  if (aboveIsWater || meta === WATER_FALLING_META) {
-    return 1;
-  }
-  return 1 - (meta + 1) / (WATER_MAX_LEVEL + 2);
+/** 参与扩散计算的有效水位：下落水按源（0）处理。 */
+function effectiveLevel(meta: number): number {
+  return meta === WATER_FALLING_META ? 0 : meta;
 }

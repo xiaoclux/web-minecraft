@@ -21,6 +21,8 @@ export interface ChunkGenerator {
   generateChunk(chunk: Chunk): void;
   /** 计算出生点（不依赖已加载的 chunk）。 */
   findSpawn(): SpawnPoint;
+  /** 该列的群系名（调试面板显示）。 */
+  biomeAt(x: number, z: number): string;
 }
 
 /** 根据世界元数据创建生成器。 */

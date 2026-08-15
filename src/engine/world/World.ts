@@ -2,10 +2,18 @@ import { BlockId, getBlock } from '../blocks/BlockRegistry';
 import { CHUNK_SIZE, MAX_LIGHT, WORLD_SIZE_Y } from '../constants/world';
 import { Chunk, chunkKey, localIndex, toChunkCoord } from './Chunk';
 
-export { chunkKey } from './Chunk';
+/** 一次方块变更。 */
+export interface BlockChange {
+  x: number;
+  y: number;
+  z: number;
+  oldId: number;
+  newId: number;
+}
 
 type BlockListener = (x: number, y: number, z: number, oldId: number, newId: number) => void;
-type BatchListener = (minX: number, maxX: number, minZ: number, maxZ: number) => void;
+/** 批量变更结束时收到本批全部变更（按发生顺序）。 */
+type BatchListener = (changes: readonly BlockChange[]) => void;
 type ChunkListener = (chunk: Chunk) => void;
 
 /**
@@ -22,8 +30,11 @@ export class World {
   private readonly chunkLoadListeners = new Set<ChunkListener>();
   private readonly chunkUnloadListeners = new Set<ChunkListener>();
   private batchDepth = 0;
-  private batchBounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
+  private batchChanges: BlockChange[] = [];
   private lastChunk: Chunk | null = null;
+  /** locate() 的输出槽（避免每次访问分配对象；调用后立即消费）。 */
+  private hitChunk: Chunk | null = null;
+  private hitIndex = 0;
 
   // ---------------------------------------------------------------- chunk 管理
 
@@ -55,14 +66,38 @@ export class World {
     return this.chunks.size;
   }
 
-  /** 加入 chunk 并标脏它与四邻（邻居朝向它的面需要重建）。 */
+  /** chunk 是否已加载。 */
+  hasChunk(cx: number, cz: number): boolean {
+    return this.chunks.has(chunkKey(cx, cz));
+  }
+
+  /** chunk 是否可以建网格：自身已点亮且四邻已加载（避免在未加载边界留缝）。 */
+  isChunkRenderable(cx: number, cz: number): boolean {
+    const chunk = this.getChunk(cx, cz);
+    return (
+      chunk !== null &&
+      chunk.isLit &&
+      this.hasChunk(cx - 1, cz) &&
+      this.hasChunk(cx + 1, cz) &&
+      this.hasChunk(cx, cz - 1) &&
+      this.hasChunk(cx, cz + 1)
+    );
+  }
+
+  /** 玩家改动过的 chunk（需要存档）。 */
+  listModifiedChunks(): Chunk[] {
+    const out: Chunk[] = [];
+    for (const chunk of this.chunks.values()) {
+      if (chunk.isModified) {
+        out.push(chunk);
+      }
+    }
+    return out;
+  }
+
+  /** 加入 chunk（标脏由 ChunkManager 在点亮后统一处理）。 */
   addChunk(chunk: Chunk): void {
     this.chunks.set(chunk.key, chunk);
-    this.markDirty(chunk.cx, chunk.cz);
-    this.markDirty(chunk.cx - 1, chunk.cz);
-    this.markDirty(chunk.cx + 1, chunk.cz);
-    this.markDirty(chunk.cx, chunk.cz - 1);
-    this.markDirty(chunk.cx, chunk.cz + 1);
     for (const listener of this.chunkLoadListeners) {
       listener(chunk);
     }
@@ -103,35 +138,41 @@ export class World {
     return y >= 0 && y < this.sizeY && this.hasChunkAt(x, z);
   }
 
-  private locate(x: number, y: number, z: number): { chunk: Chunk; idx: number } | null {
+  /** 定位坐标所在 chunk 与局部索引，写入 hitChunk / hitIndex；未加载或 y 越界返回 false。 */
+  private locate(x: number, y: number, z: number): boolean {
     if (y < 0 || y >= this.sizeY) {
-      return null;
+      return false;
     }
-    const chunk = this.getChunkAt(x, z);
-    if (!chunk) {
-      return null;
+    const cx = toChunkCoord(x);
+    const cz = toChunkCoord(z);
+    let chunk = this.lastChunk;
+    if (!chunk || chunk.cx !== cx || chunk.cz !== cz) {
+      chunk = this.chunks.get(chunkKey(cx, cz)) ?? null;
+      if (!chunk) {
+        return false;
+      }
+      this.lastChunk = chunk;
     }
-    return { chunk, idx: localIndex(x - chunk.originX, y, z - chunk.originZ) };
+    this.hitChunk = chunk;
+    this.hitIndex = (y * CHUNK_SIZE + (z - chunk.originZ)) * CHUNK_SIZE + (x - chunk.originX);
+    return true;
   }
 
   /** 读取方块；未加载 / 越界返回空气。 */
   getBlock(x: number, y: number, z: number): number {
-    const loc = this.locate(x, y, z);
-    return loc ? loc.chunk.blocks[loc.idx] : BlockId.AIR;
+    return this.locate(x, y, z) ? this.hitChunk!.blocks[this.hitIndex] : BlockId.AIR;
   }
 
   /** 读取方块附加数据；未加载返回 0。 */
   getMeta(x: number, y: number, z: number): number {
-    const loc = this.locate(x, y, z);
-    return loc ? loc.chunk.meta[loc.idx] : 0;
+    return this.locate(x, y, z) ? this.hitChunk!.meta[this.hitIndex] : 0;
   }
 
   /** 直接写入方块（不触发光照与脏标记、不标记修改），用于世界生成 / 测试搭建。 */
   setBlockRaw(x: number, y: number, z: number, id: number, meta = 0): void {
-    const loc = this.locate(x, y, z);
-    if (loc) {
-      loc.chunk.blocks[loc.idx] = id;
-      loc.chunk.meta[loc.idx] = meta;
+    if (this.locate(x, y, z)) {
+      this.hitChunk!.blocks[this.hitIndex] = id;
+      this.hitChunk!.meta[this.hitIndex] = meta;
     }
   }
 
@@ -139,21 +180,22 @@ export class World {
    * 修改方块并标记相关 chunk 为脏；返回是否发生变化。光照由 LightEngine 监听更新。
    */
   setBlock(x: number, y: number, z: number, id: number, meta = 0): boolean {
-    const loc = this.locate(x, y, z);
-    if (!loc) {
+    if (!this.locate(x, y, z)) {
       return false;
     }
-    const old = loc.chunk.blocks[loc.idx];
-    const oldMeta = loc.chunk.meta[loc.idx];
+    const chunk = this.hitChunk!;
+    const idx = this.hitIndex;
+    const old = chunk.blocks[idx];
+    const oldMeta = chunk.meta[idx];
     if (old === id && oldMeta === meta) {
       return false;
     }
-    loc.chunk.blocks[loc.idx] = id;
-    loc.chunk.meta[loc.idx] = meta;
-    loc.chunk.isModified = true;
+    chunk.blocks[idx] = id;
+    chunk.meta[idx] = meta;
+    chunk.isModified = true;
     this.markDirtyAround(x, y, z);
     if (this.batchDepth > 0) {
-      this.extendBatch(x, z);
+      this.batchChanges.push({ x, y, z, oldId: old, newId: id });
     } else {
       for (const listener of this.listeners) {
         listener(x, y, z, old, id);
@@ -164,12 +206,11 @@ export class World {
 
   /** 只修改附加数据（不触发光照重算，但标脏网格与修改标记）。 */
   setMeta(x: number, y: number, z: number, meta: number): boolean {
-    const loc = this.locate(x, y, z);
-    if (!loc || loc.chunk.meta[loc.idx] === meta) {
+    if (!this.locate(x, y, z) || this.hitChunk!.meta[this.hitIndex] === meta) {
       return false;
     }
-    loc.chunk.meta[loc.idx] = meta;
-    loc.chunk.isModified = true;
+    this.hitChunk!.meta[this.hitIndex] = meta;
+    this.hitChunk!.isModified = true;
     this.markDirtyAround(x, y, z);
     return true;
   }
@@ -183,11 +224,11 @@ export class World {
       fn();
     } finally {
       this.batchDepth--;
-      if (this.batchDepth === 0 && this.batchBounds) {
-        const b = this.batchBounds;
-        this.batchBounds = null;
+      if (this.batchDepth === 0 && this.batchChanges.length > 0) {
+        const changes = this.batchChanges;
+        this.batchChanges = [];
         for (const listener of this.batchListeners) {
-          listener(b.minX, b.maxX, b.minZ, b.maxZ);
+          listener(changes);
         }
       }
     }
@@ -197,18 +238,6 @@ export class World {
   onBatchChange(listener: BatchListener): () => void {
     this.batchListeners.add(listener);
     return () => this.batchListeners.delete(listener);
-  }
-
-  private extendBatch(x: number, z: number): void {
-    if (!this.batchBounds) {
-      this.batchBounds = { minX: x, maxX: x, minZ: z, maxZ: z };
-      return;
-    }
-    const b = this.batchBounds;
-    b.minX = Math.min(b.minX, x);
-    b.maxX = Math.max(b.maxX, x);
-    b.minZ = Math.min(b.minZ, z);
-    b.maxZ = Math.max(b.maxZ, z);
   }
 
   /** 订阅方块变化。 */
@@ -240,6 +269,15 @@ export class World {
     }
   }
 
+  /** 标记以 (cx,cz) 为中心 radius 内的 chunk 为脏。 */
+  markDirtyRadius(cx: number, cz: number, radius: number): void {
+    for (let dz = -radius; dz <= radius; dz++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        this.markDirty(cx + dx, cz + dz);
+      }
+    }
+  }
+
   /** 标记 chunk 为脏（未加载则忽略）。 */
   markDirty(cx: number, cz: number): void {
     const key = chunkKey(cx, cz);
@@ -258,32 +296,28 @@ export class World {
     if (y < 0) {
       return 0;
     }
-    const chunk = this.getChunkAt(x, z);
-    if (!chunk) {
+    if (!this.locate(x, y, z)) {
       return MAX_LIGHT;
     }
-    return chunk.skyLight[localIndex(x - chunk.originX, y, z - chunk.originZ)];
+    return this.hitChunk!.skyLight[this.hitIndex];
   }
 
   /** 读取方块光；未加载 / 越界返回 0。 */
   getBlockLight(x: number, y: number, z: number): number {
-    const loc = this.locate(x, y, z);
-    return loc ? loc.chunk.blockLight[loc.idx] : 0;
+    return this.locate(x, y, z) ? this.hitChunk!.blockLight[this.hitIndex] : 0;
   }
 
   /** 写入天空光（LightEngine 用）；未加载忽略。 */
   setSkyLight(x: number, y: number, z: number, level: number): void {
-    const loc = this.locate(x, y, z);
-    if (loc) {
-      loc.chunk.skyLight[loc.idx] = level;
+    if (this.locate(x, y, z)) {
+      this.hitChunk!.skyLight[this.hitIndex] = level;
     }
   }
 
   /** 写入方块光（LightEngine 用）；未加载忽略。 */
   setBlockLight(x: number, y: number, z: number, level: number): void {
-    const loc = this.locate(x, y, z);
-    if (loc) {
-      loc.chunk.blockLight[loc.idx] = level;
+    if (this.locate(x, y, z)) {
+      this.hitChunk!.blockLight[this.hitIndex] = level;
     }
   }
 
@@ -300,11 +334,10 @@ export class World {
     if (y < 0) {
       return true;
     }
-    const chunk = this.getChunkAt(x, z);
-    if (!chunk) {
+    if (!this.locate(x, y, z)) {
       return true;
     }
-    return getBlock(chunk.blocks[localIndex(x - chunk.originX, y, z - chunk.originZ)]).solid;
+    return getBlock(this.hitChunk!.blocks[this.hitIndex]).solid;
   }
 
   /** 该位置是否为液体。 */

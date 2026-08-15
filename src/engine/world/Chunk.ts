@@ -59,14 +59,18 @@ export class Chunk {
   }
 
   /** 用世界坐标写入；落在本 chunk 外或 y 越界则忽略。生成器裁剪用。 */
-  setWorld(x: number, y: number, z: number, id: number, meta = 0): boolean {
-    const lx = x - this.originX;
-    const lz = z - this.originZ;
-    if (lx < 0 || lz < 0 || lx >= CHUNK_SIZE || lz >= CHUNK_SIZE || y < 0 || y >= WORLD_SIZE_Y) {
-      return false;
+  setWorld(x: number, y: number, z: number, id: number, meta = 0): void {
+    if (this.containsColumn(x, z) && y >= 0 && y < WORLD_SIZE_Y) {
+      this.setLocal(x - this.originX, y, z - this.originZ, id, meta);
     }
-    this.setLocal(lx, y, lz, id, meta);
-    return true;
+  }
+
+  /** 用世界坐标读取；落在本 chunk 外或 y 越界返回 null。 */
+  getWorld(x: number, y: number, z: number): number | null {
+    if (this.containsColumn(x, z) && y >= 0 && y < WORLD_SIZE_Y) {
+      return this.getLocal(x - this.originX, y, z - this.originZ);
+    }
+    return null;
   }
 
   /** 世界坐标是否落在本 chunk 内（忽略 y）。 */

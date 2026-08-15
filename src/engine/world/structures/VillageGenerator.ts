@@ -1,7 +1,7 @@
 import { BlockId } from '../../blocks/BlockRegistry';
 import { CHUNK_SIZE, WORLD_SIZE_Y } from '../../constants/world';
 import { createRng, hashCoords, hashString } from '../../textures/PixelCanvas';
-import type { Chunk } from '../Chunk';
+import { chunkKey, toChunkCoord, type Chunk } from '../Chunk';
 import {
   StructureBuilder,
   boundsIntersectXZ,
@@ -102,7 +102,7 @@ export type VillageStyleFn = (x: number, z: number) => VillageStyle | null;
  */
 export class VillageGenerator {
   private readonly base: number;
-  private readonly cache = new Map<string, Village | null>();
+  private readonly cache = new Map<number, Village | null>();
 
   constructor(
     seed: string,
@@ -147,9 +147,7 @@ export class VillageGenerator {
 
   /** 该列是否被村庄建筑占用（用于避免在建筑上长树 / 草）。 */
   isReserved(x: number, z: number): boolean {
-    const cx = Math.floor(x / CHUNK_SIZE);
-    const cz = Math.floor(z / CHUNK_SIZE);
-    for (const village of this.villagesNear(cx, cz)) {
+    for (const village of this.villagesNear(toChunkCoord(x), toChunkCoord(z))) {
       if (x < village.bounds.minX || x > village.bounds.maxX || z < village.bounds.minZ || z > village.bounds.maxZ) {
         continue;
       }
@@ -165,7 +163,7 @@ export class VillageGenerator {
 
   /** 获取（并缓存）某格子的村庄。 */
   getVillage(cellX: number, cellZ: number): Village | null {
-    const key = `${cellX},${cellZ}`;
+    const key = chunkKey(cellX, cellZ);
     const cached = this.cache.get(key);
     if (cached !== undefined) {
       return cached;

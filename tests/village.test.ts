@@ -4,6 +4,7 @@ import { CHUNK_SIZE } from '../src/engine/constants/world';
 import { Chunk, toChunkCoord } from '../src/engine/world/Chunk';
 import { FlatGenerator } from '../src/engine/world/FlatGenerator';
 import { TerrainGenerator } from '../src/engine/world/TerrainGenerator';
+import { boundsIntersectXZ } from '../src/engine/world/structures/StructureBuilder';
 import { VillageGenerator, type Village } from '../src/engine/world/structures/VillageGenerator';
 
 /** 在原点附近的格子里找一座村庄。 */
@@ -39,10 +40,7 @@ describe('VillageGenerator', () => {
     expect(houses.length).toBeGreaterThanOrEqual(4);
     for (let i = 0; i < houses.length; i++) {
       for (let j = i + 1; j < houses.length; j++) {
-        const a = houses[i].bounds;
-        const b = houses[j].bounds;
-        const overlap = a.minX <= b.maxX && a.maxX >= b.minX && a.minZ <= b.maxZ && a.maxZ >= b.minZ;
-        expect(overlap).toBe(false);
+        expect(boundsIntersectXZ(houses[i].bounds, houses[j].bounds)).toBe(false);
       }
     }
   });

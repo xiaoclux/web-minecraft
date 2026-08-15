@@ -1,3 +1,4 @@
+import { CHUNK_SIZE, WORLD_SIZE_Y } from '../../constants/world';
 import type { Chunk } from '../Chunk';
 
 /** 结构中的一个方块。 */
@@ -29,10 +30,10 @@ export function chunkBounds(chunk: Chunk): Bounds {
   return {
     minX: chunk.originX,
     minZ: chunk.originZ,
-    maxX: chunk.originX + 15,
-    maxZ: chunk.originZ + 15,
+    maxX: chunk.originX + CHUNK_SIZE - 1,
+    maxZ: chunk.originZ + CHUNK_SIZE - 1,
     minY: 0,
-    maxY: 63,
+    maxY: WORLD_SIZE_Y - 1,
   };
 }
 

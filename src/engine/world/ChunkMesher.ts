@@ -1,8 +1,8 @@
 import { BlockId, RenderType, getBlock, type BlockDef, type BlockFaceTextures } from '../blocks/BlockRegistry';
-import { CHUNK_SIZE, MAX_LIGHT } from '../constants/world';
+import { CHUNK_SIZE, MAX_LIGHT, WORLD_SIZE_Y } from '../constants/world';
 import type { TextureAtlas } from '../textures/TextureAtlas';
 import { localIndex } from './Chunk';
-import { waterHeight } from './FluidSimulator';
+import { waterHeight } from '../blocks/waterShape';
 import type { World } from './World';
 
 /** 一个 chunk 的三层网格数据。 */
@@ -33,7 +33,6 @@ const FACE_SHADE_BOTTOM = 0.5;
 const FACE_SHADE_X = 0.6;
 const FACE_SHADE_Z = 0.8;
 const AO_FACTORS = [0.45, 0.65, 0.82, 1];
-const WATER_SURFACE_HEIGHT = 0.875;
 const UV_CORNERS: readonly (readonly [number, number])[] = [
   [0, 0],
   [1, 0],
@@ -166,8 +165,102 @@ class BufferBuilder {
   }
 }
 
+/** 快照在 x/z 方向各向外扩 1 格、y 方向上下各扩 1 格。 */
+const PAD = 1;
+const SNAP_SIZE_XZ = CHUNK_SIZE + PAD * 2;
+const SNAP_SIZE_Y = WORLD_SIZE_Y + PAD * 2;
+const SNAP_VOLUME = SNAP_SIZE_XZ * SNAP_SIZE_XZ * SNAP_SIZE_Y;
+/** 水面四角对应的邻格偏移表（索引 = cornerX*2 + cornerZ）。 */
+const WATER_CORNER_OFFSETS: readonly (readonly [number, number])[] = [
+  [-1, -1],
+  [-1, 1],
+  [1, -1],
+  [1, 1],
+];
+
+/**
+ * chunk 及其一圈邻居的局部快照：方块 / 附加数据 / 光照 / 遮光 / 列是否加载，
+ * 全部是连续类型化数组，网格生成期间的所有邻居查询都在这里完成，不再回到 World。
+ */
+class ChunkSnapshot {
+  readonly blocks = new Uint8Array(SNAP_VOLUME);
+  readonly meta = new Uint8Array(SNAP_VOLUME);
+  readonly sky = new Uint8Array(SNAP_VOLUME);
+  readonly blockLight = new Uint8Array(SNAP_VOLUME);
+  readonly opaque = new Uint8Array(SNAP_VOLUME);
+  readonly columnLoaded = new Uint8Array(SNAP_SIZE_XZ * SNAP_SIZE_XZ);
+  private originX = 0;
+  private originZ = 0;
+
+  /** 从世界复制 (cx,cz) 周围的数据；返回是否成功（中心 chunk 不存在则失败）。 */
+  capture(world: World, cx: number, cz: number): boolean {
+    if (!world.getChunk(cx, cz)) {
+      return false;
+    }
+    this.originX = cx * CHUNK_SIZE - PAD;
+    this.originZ = cz * CHUNK_SIZE - PAD;
+    // 世界外（y<0 / y≥64）的默认值：下方无光、上方满天光；方块都是空气
+    this.blocks.fill(BlockId.AIR);
+    this.meta.fill(0);
+    this.opaque.fill(0);
+    this.blockLight.fill(0);
+    for (let sz = 0; sz < SNAP_SIZE_XZ; sz++) {
+      for (let sx = 0; sx < SNAP_SIZE_XZ; sx++) {
+        const wx = this.originX + sx;
+        const wz = this.originZ + sz;
+        const chunk = world.getChunkAt(wx, wz);
+        const col = sz * SNAP_SIZE_XZ + sx;
+        this.columnLoaded[col] = chunk ? 1 : 0;
+        this.sky[this.index(sx, 0, sz)] = 0;
+        this.sky[this.index(sx, SNAP_SIZE_Y - 1, sz)] = MAX_LIGHT;
+        if (!chunk) {
+          for (let y = 0; y < WORLD_SIZE_Y; y++) {
+            this.sky[this.index(sx, y + PAD, sz)] = MAX_LIGHT;
+          }
+          continue;
+        }
+        const lx = wx - chunk.originX;
+        const lz = wz - chunk.originZ;
+        for (let y = 0; y < WORLD_SIZE_Y; y++) {
+          const src = localIndex(lx, y, lz);
+          const dst = this.index(sx, y + PAD, sz);
+          const id = chunk.blocks[src];
+          this.blocks[dst] = id;
+          this.meta[dst] = chunk.meta[src];
+          this.sky[dst] = chunk.skyLight[src];
+          this.blockLight[dst] = chunk.blockLight[src];
+          this.opaque[dst] = OPAQUE_BY_ID[id];
+        }
+      }
+    }
+    return true;
+  }
+
+  /** 世界坐标 → 快照索引（调用方保证在快照范围内）。 */
+  index(sx: number, sy: number, sz: number): number {
+    return (sy * SNAP_SIZE_XZ + sz) * SNAP_SIZE_XZ + sx;
+  }
+
+  /** 世界坐标 → 快照索引。 */
+  at(x: number, y: number, z: number): number {
+    return this.index(x - this.originX, y + PAD, z - this.originZ);
+  }
+
+  isColumnLoaded(x: number, z: number): boolean {
+    return this.columnLoaded[(z - this.originZ) * SNAP_SIZE_XZ + (x - this.originX)] === 1;
+  }
+}
+
+/** 按方块 id 预计算的遮光表。 */
+const OPAQUE_BY_ID = new Uint8Array(256);
+for (let id = 0; id < OPAQUE_BY_ID.length; id++) {
+  OPAQUE_BY_ID[id] = getBlock(id).opaque ? 1 : 0;
+}
+
 /** 把一个 chunk 转成顶点数据（面剔除 + 平滑光照 + AO）。 */
 export class ChunkMesher {
+  private readonly snap = new ChunkSnapshot();
+
   constructor(
     private readonly world: World,
     private readonly atlas: TextureAtlas,
@@ -178,17 +271,16 @@ export class ChunkMesher {
     const opaque = new BufferBuilder();
     const cutout = new BufferBuilder();
     const translucent = new BufferBuilder();
-    const x0 = cx * CHUNK_SIZE;
-    const z0 = cz * CHUNK_SIZE;
-    const world = this.world;
-    const chunk = world.getChunk(cx, cz);
-    if (!chunk) {
+    if (!this.snap.capture(this.world, cx, cz)) {
       return { opaque: opaque.build(), cutout: cutout.build(), translucent: translucent.build() };
     }
-    for (let y = 0; y < world.sizeY; y++) {
+    const snap = this.snap;
+    const x0 = cx * CHUNK_SIZE;
+    const z0 = cz * CHUNK_SIZE;
+    for (let y = 0; y < WORLD_SIZE_Y; y++) {
       for (let z = z0; z < z0 + CHUNK_SIZE; z++) {
         for (let x = x0; x < x0 + CHUNK_SIZE; x++) {
-          const id = chunk.blocks[localIndex(x - x0, y, z - z0)];
+          const id = snap.blocks[snap.at(x, y, z)];
           if (id === BlockId.AIR) {
             continue;
           }
@@ -216,22 +308,23 @@ export class ChunkMesher {
   }
 
   private shouldDrawFace(def: BlockDef, nx: number, ny: number, nz: number): boolean {
-    const world = this.world;
     if (ny < 0) {
       return false;
     }
-    if (ny >= world.sizeY) {
+    if (ny >= WORLD_SIZE_Y) {
       return true;
     }
-    if (!world.hasChunkAt(nx, nz)) {
+    const snap = this.snap;
+    if (!snap.isColumnLoaded(nx, nz)) {
       // 邻 chunk 未加载：不画，等它加载时本 chunk 会被标脏补画
       return false;
     }
-    const neighborId = world.getBlock(nx, ny, nz);
+    const idx = snap.at(nx, ny, nz);
+    const neighborId = snap.blocks[idx];
     if (neighborId === def.id && (def.render === RenderType.CUTOUT || def.isLiquid) && def.id !== BlockId.LEAVES) {
       return false;
     }
-    return !getBlock(neighborId).opaque;
+    return snap.opaque[idx] === 0;
   }
 
   private cube(builder: BufferBuilder, def: BlockDef, x: number, y: number, z: number): void {
@@ -251,7 +344,7 @@ export class ChunkMesher {
   }
 
   private water(builder: BufferBuilder, def: BlockDef, x: number, y: number, z: number): void {
-    const world = this.world;
+    const snap = this.snap;
     const heights = this.waterCornerHeights(x, y, z);
     for (const face of FACES) {
       const nx = x + face.normal[0];
@@ -265,11 +358,23 @@ export class ChunkMesher {
         const top = heights[cx * 2 + cz];
         return [x + cx, y + (cy === 1 ? top : 0), z + cz] as const;
       });
-      const sky = world.getSkyLight(nx, ny, nz) / MAX_LIGHT;
-      const block = world.getBlockLight(nx, ny, nz) / MAX_LIGHT;
+      const idx = snap.at(nx, ny, nz);
+      const sky = snap.sky[idx] / MAX_LIGHT;
+      const block = snap.blockLight[idx] / MAX_LIGHT;
       const light = [sky, block, face.shade] as const;
       builder.quad(corners, region, [light, light, light, light], false);
     }
+  }
+
+  /** 该位置若是水，返回其表面高度；否则返回 -1。 */
+  private waterHeightAt(x: number, y: number, z: number): number {
+    const snap = this.snap;
+    const idx = snap.at(x, y, z);
+    if (snap.blocks[idx] !== BlockId.WATER) {
+      return -1;
+    }
+    const aboveIsWater = y + 1 < WORLD_SIZE_Y && snap.blocks[snap.at(x, y + 1, z)] === BlockId.WATER;
+    return waterHeight(snap.meta[idx], aboveIsWater);
   }
 
   /**
@@ -277,26 +382,26 @@ export class ChunkMesher {
    * 任一相邻水块上方仍是水则该角为满高。
    */
   private waterCornerHeights(x: number, y: number, z: number): [number, number, number, number] {
-    const world = this.world;
-    const heightAt = (bx: number, bz: number): number | null => {
-      if (world.getBlock(bx, y, bz) !== BlockId.WATER) {
-        return null;
+    const own = this.waterHeightAt(x, y, z);
+    if (own >= 1) {
+      return [1, 1, 1, 1];
+    }
+    // 3×3 邻域高度采样一次（-1 表示不是水）
+    const around: number[] = [];
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        around.push(dx === 0 && dz === 0 ? own : this.waterHeightAt(x + dx, y, z + dz));
       }
-      return waterHeight(world.getMeta(bx, y, bz), world.getBlock(bx, y + 1, bz) === BlockId.WATER);
-    };
-    const own = heightAt(x, z) ?? WATER_SURFACE_HEIGHT;
-    const corner = (dx: number, dz: number): number => {
+    }
+    const sampleAt = (dx: number, dz: number): number => around[(dz + 1) * 3 + (dx + 1)];
+    const result: [number, number, number, number] = [own, own, own, own];
+    for (let i = 0; i < WATER_CORNER_OFFSETS.length; i++) {
+      const [dx, dz] = WATER_CORNER_OFFSETS[i];
       let sum = 0;
       let count = 0;
       let full = false;
-      for (const [ox, oz] of [
-        [0, 0],
-        [dx, 0],
-        [0, dz],
-        [dx, dz],
-      ]) {
-        const h = heightAt(x + ox, z + oz);
-        if (h === null) {
+      for (const h of [own, sampleAt(dx, 0), sampleAt(0, dz), sampleAt(dx, dz)]) {
+        if (h < 0) {
           continue;
         }
         if (h >= 1) {
@@ -305,19 +410,17 @@ export class ChunkMesher {
         sum += h;
         count++;
       }
-      if (full) {
-        return 1;
-      }
-      return count === 0 ? own : sum / count;
-    };
-    return [corner(-1, -1), corner(-1, 1), corner(1, -1), corner(1, 1)];
+      result[i] = full ? 1 : count === 0 ? own : sum / count;
+    }
+    return result;
   }
 
   private cross(builder: BufferBuilder, def: BlockDef, x: number, y: number, z: number): void {
-    const world = this.world;
+    const snap = this.snap;
     const region = this.atlas.region(def.textures.north);
-    const sky = world.getSkyLight(x, y, z) / MAX_LIGHT;
-    const block = Math.max(world.getBlockLight(x, y, z), def.light) / MAX_LIGHT;
+    const idx = snap.at(x, y, z);
+    const sky = snap.sky[idx] / MAX_LIGHT;
+    const block = Math.max(snap.blockLight[idx], def.light) / MAX_LIGHT;
     const light = [sky, block, 1] as const;
     for (const quad of CROSS_QUADS) {
       const corners = quad.map(([cx, cy, cz]) => [x + cx, y + cy, z + cz] as const);
@@ -335,7 +438,7 @@ export class ChunkMesher {
     face: FaceSpec,
     corner: readonly [number, number, number],
   ): [number, number, number] {
-    const world = this.world;
+    const snap = this.snap;
     const [nx, ny, nz] = face.normal;
     // 面法线方向的相邻格
     const bx = x + nx;
@@ -344,7 +447,6 @@ export class ChunkMesher {
     // 与法线垂直的两个轴的偏移方向
     let ax = 0;
     let ay = 0;
-    let az = 0;
     let cxo = 0;
     let cyo = 0;
     let czo = 0;
@@ -358,36 +460,31 @@ export class ChunkMesher {
       ax = corner[0] === 1 ? 1 : -1;
       cyo = corner[1] === 1 ? 1 : -1;
     }
-    const s1x = bx + ax;
-    const s1y = by + ay;
-    const s1z = bz + az;
-    const s2x = bx + cxo;
-    const s2y = by + cyo;
-    const s2z = bz + czo;
-    const ccx = bx + ax + cxo;
-    const ccy = by + ay + cyo;
-    const ccz = bz + az + czo;
-    const side1 = world.isOpaqueAt(s1x, s1y, s1z);
-    const side2 = world.isOpaqueAt(s2x, s2y, s2z);
-    const cornerOpaque = world.isOpaqueAt(ccx, ccy, ccz);
+    const iFront = snap.at(bx, by, bz);
+    const iSide1 = snap.at(bx + ax, by + ay, bz);
+    const iSide2 = snap.at(bx + cxo, by + cyo, bz + czo);
+    const iCorner = snap.at(bx + ax + cxo, by + ay + cyo, bz + czo);
+    const side1 = snap.opaque[iSide1] === 1;
+    const side2 = snap.opaque[iSide2] === 1;
+    const cornerOpaque = snap.opaque[iCorner] === 1;
     const aoLevel = side1 && side2 ? 0 : 3 - (Number(side1) + Number(side2) + Number(cornerOpaque));
 
     let skySum = 0;
     let blockSum = 0;
     let count = 0;
-    const sample = (sx: number, sy: number, sz: number, opaque: boolean): void => {
+    const sample = (idx: number, opaque: boolean): void => {
       if (opaque) {
         return;
       }
-      skySum += world.getSkyLight(sx, sy, sz);
-      blockSum += world.getBlockLight(sx, sy, sz);
+      skySum += snap.sky[idx];
+      blockSum += snap.blockLight[idx];
       count++;
     };
-    sample(bx, by, bz, world.isOpaqueAt(bx, by, bz));
-    sample(s1x, s1y, s1z, side1);
-    sample(s2x, s2y, s2z, side2);
+    sample(iFront, snap.opaque[iFront] === 1);
+    sample(iSide1, side1);
+    sample(iSide2, side2);
     if (!(side1 && side2)) {
-      sample(ccx, ccy, ccz, cornerOpaque);
+      sample(iCorner, cornerOpaque);
     }
     const sky = count > 0 ? skySum / count / MAX_LIGHT : 0;
     const block = count > 0 ? blockSum / count / MAX_LIGHT : 0;

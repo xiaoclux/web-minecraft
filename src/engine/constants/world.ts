@@ -11,8 +11,8 @@ export const DEFAULT_RENDER_DISTANCE = 8;
 /** 加载半径 = 渲染距离 + 该值；卸载半径 = 渲染距离 + 该值。 */
 export const LOAD_DISTANCE_EXTRA = 1;
 export const UNLOAD_DISTANCE_EXTRA = 3;
-/** 每帧最多生成的 chunk 数。 */
-export const CHUNK_GENERATE_BUDGET_PER_FRAME = 2;
+/** 每帧用于生成 / 点亮 chunk 的时间预算（毫秒）。 */
+export const CHUNK_LOAD_TIME_BUDGET_MS = 6;
 /** 新建 / 读档时同步预载出生点周围的 chunk 半径。 */
 export const SPAWN_PRELOAD_RADIUS = 2;
 /** 光照最大等级（0~15）。 */
