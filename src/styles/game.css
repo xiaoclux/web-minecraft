@@ -23,6 +23,10 @@ body,
   height: 100%;
   overflow: hidden;
   background: #101010;
+  /* 移动端：禁止页面滚动/回弹与双击缩放，手势全部交给游戏处理 */
+  overscroll-behavior: none;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button {
@@ -766,4 +770,46 @@ button:disabled {
   margin-top: 8px;
   width: auto;
   padding: 6px 18px;
+}
+
+/* 竖屏提示 */
+.orientation-gate {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  text-align: center;
+  background: #101010;
+  color: #eee;
+}
+
+.orientation-gate h2 {
+  margin: 0;
+}
+
+.orientation-gate .muted {
+  color: #999;
+}
+
+.orientation-phone {
+  width: 64px;
+  height: 108px;
+  border: 4px solid #eee;
+  border-radius: 10px;
+  animation: rotate-hint 2s ease-in-out infinite;
+}
+
+@keyframes rotate-hint {
+  0%,
+  40% {
+    transform: rotate(0deg);
+  }
+  60%,
+  100% {
+    transform: rotate(-90deg);
+  }
 }
