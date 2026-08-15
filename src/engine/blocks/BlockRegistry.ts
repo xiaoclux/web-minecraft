@@ -107,6 +107,8 @@ export interface BlockDef {
   texturesForMeta?: (meta: number) => BlockFaceTextures;
   /** 可攀爬（梯子）：实体在其中可以上下爬且不会摔落。 */
   climbable?: boolean;
+  /** 连接组：同组的连接型方块（栅栏、玻璃板等）之间会连成一片。 */
+  connectGroup?: string;
 }
 
 export const BlockId = {
@@ -140,6 +142,7 @@ export const BlockId = {
   TORCH: 50,
   DIAMOND_ORE: 56,
   BED: 26,
+  FENCE: 85,
   WOODEN_DOOR: 64,
   LADDER: 65,
   CHEST: 54,
@@ -418,6 +421,14 @@ export const BLOCK_DEFS: BlockDef[] = [
   cube(BlockId.MELON, 'melon', '西瓜', topSide('melon_top', 'melon_side'), 1, ToolType.AXE, {
     drops: [{ item: 'melon_slice', min: 3, max: 7 }],
   }),
+  {
+    ...cube(BlockId.FENCE, 'fence', '橡木栅栏', same('planks'), 2, ToolType.AXE, {
+      render: RenderType.CUTOUT,
+      opaque: false,
+    }),
+    shape: BlockShape.FENCE,
+    connectGroup: 'fence',
+  },
   {
     ...cube(BlockId.WOODEN_DOOR, 'wooden_door', '木门', same('door_lower'), 3, ToolType.AXE, {
       render: RenderType.CUTOUT,

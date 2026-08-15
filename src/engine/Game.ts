@@ -12,8 +12,11 @@ import {
   SLAB_TOP_BIT,
   STAIRS_FLIP_BIT,
   collisionBoxes,
+  computeConnections,
   facingIndexOf,
+  needsConnections,
   outlineBox,
+  type BlockBox,
 } from './blocks/blockShapes';
 import {
   ATTACK_COOLDOWN_TICKS,
@@ -432,7 +435,7 @@ export class Game implements EntityContext, ContainerHost {
     this.renderer.outline.set(
       hit,
       hit
-        ? outlineBox(getBlock(this.world.getBlock(hit.x, hit.y, hit.z)), this.world.getMeta(hit.x, hit.y, hit.z))
+        ? this.outlineBoxAt(hit.x, hit.y, hit.z)
         : FULL_BOX,
       this.breakNeededTicks > 0 ? this.breakProgressTicks / this.breakNeededTicks : 0,
     );
@@ -1180,6 +1183,15 @@ export class Game implements EntityContext, ContainerHost {
       return false;
     }
     return this.world.isSolidAt(x, y - 1, z) && this.world.isSolidAt(hx, y - 1, hz);
+  }
+
+  /** 取某个方块的选中线框包围盒（连接型方块要先算四邻连接）。 */
+  private outlineBoxAt(x: number, y: number, z: number): BlockBox {
+    const def = getBlock(this.world.getBlock(x, y, z));
+    const connections = needsConnections(def)
+      ? computeConnections(def, (dx, dz) => getBlock(this.world.getBlock(x + dx, y, z + dz)))
+      : 0;
+    return outlineBox(def, this.world.getMeta(x, y, z), connections);
   }
 
   /** 门要占上下两格，且下方得有支撑。 */

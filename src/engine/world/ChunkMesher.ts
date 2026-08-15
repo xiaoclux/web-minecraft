@@ -1,5 +1,13 @@
 import { BlockId, RenderType, getBlock, type BlockDef, type BlockFaceTextures } from '../blocks/BlockRegistry';
-import { FACINGS, FACING_MASK, isFullCube, shapeBoxes, type BlockBox } from '../blocks/blockShapes';
+import {
+  FACINGS,
+  FACING_MASK,
+  computeConnections,
+  isFullCube,
+  needsConnections,
+  shapeBoxes,
+  type BlockBox,
+} from '../blocks/blockShapes';
 import { CHUNK_SIZE, MAX_LIGHT, SECTION_HEIGHT, SECTION_SHIFT, WORLD_SIZE_Y } from '../constants/world';
 import type { TextureAtlas } from '../textures/TextureAtlas';
 import { sectionIndex } from './Chunk';
@@ -483,7 +491,10 @@ export class ChunkMesher {
     const meta = snap.meta[snap.at(x, y, z)];
     const ownIdx = snap.at(x, y, z);
     const textures = texturesFor(def, meta);
-    for (const b of shapeBoxes(def, meta)) {
+    const connections = needsConnections(def)
+      ? computeConnections(def, (dx, dz) => getBlock(snap.blocks[snap.at(x + dx, y, z + dz)]))
+      : 0;
+    for (const b of shapeBoxes(def, meta, connections)) {
       for (const face of FACES) {
         const [nx, ny, nz] = face.normal;
         const onBoundary = isFaceOnBoundary(face, b);

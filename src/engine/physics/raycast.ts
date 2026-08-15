@@ -1,5 +1,5 @@
 import { getBlock } from '../blocks/BlockRegistry';
-import { isFullCube, shapeBoxes, type BlockBox } from '../blocks/blockShapes';
+import { computeConnections, isFullCube, needsConnections, shapeBoxes, type BlockBox } from '../blocks/blockShapes';
 import type { World } from '../world/World';
 
 /** 射线命中结果。 */
@@ -124,7 +124,10 @@ export function raycastBlocks(
         }
         // 非完整立方体：逐子盒求交，都打不中就继续沿射线前进
         let best: BoxHit | null = null;
-        for (const b of shapeBoxes(def, world.getMeta(x, y, z))) {
+        const connections = needsConnections(def)
+          ? computeConnections(def, (ddx, ddz) => getBlock(world.getBlock(x + ddx, y, z + ddz)))
+          : 0;
+        for (const b of shapeBoxes(def, world.getMeta(x, y, z), connections)) {
           const hit = rayBox(ox, oy, oz, dx, dy, dz, b, x, y, z);
           if (hit && hit.t <= maxDistance && (!best || hit.t < best.t)) {
             best = hit;

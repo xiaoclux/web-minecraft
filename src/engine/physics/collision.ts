@@ -1,5 +1,5 @@
 import { BlockId, getBlock } from '../blocks/BlockRegistry';
-import { collisionBoxes, isFullCube } from '../blocks/blockShapes';
+import { collisionBoxes, computeConnections, isFullCube, needsConnections } from '../blocks/blockShapes';
 import type { World } from '../world/World';
 import { AABB } from './AABB';
 
@@ -34,7 +34,10 @@ export function collectBlockBoxes(world: World, box: AABB): AABB[] {
           out.push(new AABB(x, y, z, x + 1, y + 1, z + 1));
           continue;
         }
-        for (const b of collisionBoxes(def, world.getMeta(x, y, z))) {
+        const connections = needsConnections(def)
+          ? computeConnections(def, (dx, dz) => getBlock(world.getBlock(x + dx, y, z + dz)))
+          : 0;
+        for (const b of collisionBoxes(def, world.getMeta(x, y, z), connections)) {
           out.push(new AABB(x + b.x0, y + b.y0, z + b.z0, x + b.x1, y + b.y1, z + b.z1));
         }
       }

@@ -6,10 +6,14 @@ import {
   DOOR_OPEN_BIT,
   DOOR_THICKNESS,
   DOOR_UPPER_BIT,
+  FENCE_COLLISION_HEIGHT,
   SLAB_TOP_BIT,
   FACINGS,
   STAIRS_FLIP_BIT,
+  canConnect,
   collisionBoxes,
+  computeConnections,
+  connectionBit,
   outlineBox,
   shapeBoxes,
 } from '../src/engine/blocks/blockShapes';
@@ -73,6 +77,34 @@ describe('门与床的形状', () => {
     const bed = getBlock(BlockId.BED);
     expect(bed.texturesForMeta?.(0).top).toBe('bed_foot_top');
     expect(bed.texturesForMeta?.(BED_HEAD_BIT).top).toBe('bed_head_top');
+  });
+});
+
+describe('栅栏的连接形状', () => {
+  const FENCE = getBlock(BlockId.FENCE);
+
+  it('孤立的栅栏只有中心柱，连接后长出横杆', () => {
+    expect(shapeBoxes(FENCE, 0, 0)).toHaveLength(1);
+    // 一个方向连接 = 中心柱 + 上下两根横杆
+    expect(shapeBoxes(FENCE, 0, connectionBit(0))).toHaveLength(3);
+    expect(shapeBoxes(FENCE, 0, connectionBit(0) | connectionBit(2))).toHaveLength(5);
+  });
+
+  it('碰撞盒比外观高，跳不过去', () => {
+    expect(collisionBoxes(FENCE, 0, 0)[0].y1).toBe(FENCE_COLLISION_HEIGHT);
+    expect(shapeBoxes(FENCE, 0, 0)[0].y1).toBe(1);
+  });
+
+  it('栅栏与栅栏、与实心整方块相连，与空气不相连', () => {
+    expect(canConnect(FENCE, getBlock(BlockId.FENCE))).toBe(true);
+    expect(canConnect(FENCE, getBlock(BlockId.STONE))).toBe(true);
+    expect(canConnect(FENCE, getBlock(BlockId.AIR))).toBe(false);
+    expect(canConnect(FENCE, getBlock(BlockId.TALL_GRASS))).toBe(false);
+  });
+
+  it('computeConnections 按四邻算掩码', () => {
+    const mask = computeConnections(FENCE, (dx) => getBlock(dx === 1 ? BlockId.STONE : BlockId.AIR));
+    expect(mask).toBe(connectionBit(FACINGS.findIndex(([x]) => x === 1)));
   });
 });
 

@@ -31,6 +31,8 @@ export const BlockShape = {
   LADDER: 'ladder',
   /** 门：占两格高的一扇薄板，可开合。 */
   DOOR: 'door',
+  /** 栅栏：中心柱 + 朝已连接方向伸出的横杆。 */
+  FENCE: 'fence',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -48,6 +50,14 @@ export const DOOR_OPEN_BIT = 4;
 export const DOOR_UPPER_BIT = 8;
 /** 门板厚度（1.8.9 为 3/16）。 */
 export const DOOR_THICKNESS = 3 / 16;
+/** 栅栏的碰撞高度（1.8.9 为 1.5 格，防止跳过去）。 */
+export const FENCE_COLLISION_HEIGHT = 1.5;
+/** 连接掩码的位：按 FACINGS 顺序。 */
+export function connectionBit(facing: number): number {
+  return 1 << facing;
+}
+/** 连接掩码的取值个数（4 个方向）。 */
+const CONNECTION_COUNT = 16;
 /** 床的高度（1.8.9 为 9/16）。 */
 export const BED_HEIGHT = 9 / 16;
 /** 水平朝向序号 → 单位方向。 */
@@ -111,6 +121,46 @@ const DOOR_BOXES: readonly BlockBox[][][] = FACINGS.map(([fx, fz]) => [
   [panelBox(-fz, fx, DOOR_THICKNESS)],
 ]);
 
+/** 栅栏：中心柱 4/16 见方，横杆在 6~9 与 12~15 两层。 */
+const FENCE_POST_MIN = 6 / 16;
+const FENCE_POST_MAX = 10 / 16;
+const FENCE_ARM_MIN = 7 / 16;
+const FENCE_ARM_MAX = 9 / 16;
+const FENCE_ARM_LEVELS: readonly (readonly [number, number])[] = [
+  [6 / 16, 9 / 16],
+  [12 / 16, 15 / 16],
+];
+
+/** 生成某个连接掩码下的栅栏子盒；postTop 用于把碰撞盒抬高到 1.5 格。 */
+function buildFenceBoxes(mask: number, postTop: number): BlockBox[] {
+  const boxes: BlockBox[] = [box(FENCE_POST_MIN, 0, FENCE_POST_MIN, FENCE_POST_MAX, postTop, FENCE_POST_MAX)];
+  for (let facing = 0; facing < FACINGS.length; facing++) {
+    if ((mask & connectionBit(facing)) === 0) {
+      continue;
+    }
+    const [dx, dz] = FACINGS[facing];
+    for (const [y0, y1] of FENCE_ARM_LEVELS) {
+      if (dx !== 0) {
+        const x0 = dx > 0 ? FENCE_POST_MAX : 0;
+        const x1 = dx > 0 ? 1 : FENCE_POST_MIN;
+        boxes.push(box(x0, y0, FENCE_ARM_MIN, x1, y1, FENCE_ARM_MAX));
+      } else {
+        const z0 = dz > 0 ? FENCE_POST_MAX : 0;
+        const z1 = dz > 0 ? 1 : FENCE_POST_MIN;
+        boxes.push(box(FENCE_ARM_MIN, y0, z0, FENCE_ARM_MAX, y1, z1));
+      }
+    }
+  }
+  return boxes;
+}
+
+const FENCE_BOXES: readonly BlockBox[][] = Array.from({ length: CONNECTION_COUNT }, (_, mask) =>
+  buildFenceBoxes(mask, 1),
+);
+const FENCE_COLLISION_BOXES: readonly BlockBox[][] = Array.from({ length: CONNECTION_COUNT }, (_, mask) =>
+  buildFenceBoxes(mask, FENCE_COLLISION_HEIGHT),
+);
+
 /** 梯子厚度（1.8.9 为 2/16）。 */
 const LADDER_THICKNESS = 2 / 16;
 /** 按朝向序号索引：朝向是梯子正面对着的方向，背面贴墙。 */
@@ -140,9 +190,14 @@ const STAIRS_BOXES: readonly BlockBox[][][] = FACINGS.map(([dx, dz]) => {
   return [upright, flipped];
 });
 
-/** 方块在给定 meta 下的子盒（渲染与选中用）。 */
-export function shapeBoxes(def: BlockDef, meta: number): readonly BlockBox[] {
+/**
+ * 方块在给定 meta 下的子盒（渲染与选中用）。
+ * @param connections 连接型方块（栅栏等）的四邻连接掩码，其余形状忽略
+ */
+export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readonly BlockBox[] {
   switch (def.shape) {
+    case BlockShape.FENCE:
+      return FENCE_BOXES[connections & (CONNECTION_COUNT - 1)];
     case BlockShape.CROSS:
       return CROSS_BOXES;
     case BlockShape.SLAB:
@@ -160,17 +215,20 @@ export function shapeBoxes(def: BlockDef, meta: number): readonly BlockBox[] {
   }
 }
 
-/** 方块在给定 meta 下的碰撞盒；不阻挡实体时为空。 */
-export function collisionBoxes(def: BlockDef, meta: number): readonly BlockBox[] {
+/** 方块在给定 meta 下的碰撞盒；不阻挡实体时为空。栅栏的碰撞比外观高，跳不过去。 */
+export function collisionBoxes(def: BlockDef, meta: number, connections = 0): readonly BlockBox[] {
   if (!def.solid) {
     return NO_BOXES;
   }
-  return shapeBoxes(def, meta);
+  if (def.shape === BlockShape.FENCE) {
+    return FENCE_COLLISION_BOXES[connections & (CONNECTION_COUNT - 1)];
+  }
+  return shapeBoxes(def, meta, connections);
 }
 
 /** 方块所有子盒的并集（选中线框用；楼梯等多盒方块整体框住，与 1.8.9 一致）。 */
-export function outlineBox(def: BlockDef, meta: number): BlockBox {
-  const boxes = shapeBoxes(def, meta);
+export function outlineBox(def: BlockDef, meta: number, connections = 0): BlockBox {
+  const boxes = shapeBoxes(def, meta, connections);
   if (boxes.length === 1) {
     return boxes[0];
   }
@@ -194,4 +252,29 @@ export function outlineBox(def: BlockDef, meta: number): BlockBox {
 /** 是否是完整立方体（面剔除与环境光遮蔽只认完整立方体）。 */
 export function isFullCube(def: BlockDef): boolean {
   return def.shape === undefined || def.shape === BlockShape.FULL;
+}
+
+/** 形状是否需要知道四邻的连接情况。 */
+export function needsConnections(def: BlockDef): boolean {
+  return def.shape === BlockShape.FENCE;
+}
+
+/** 按四邻算出连接掩码；getNeighbor 返回该方向相邻方块的定义。 */
+export function computeConnections(def: BlockDef, getNeighbor: (dx: number, dz: number) => BlockDef): number {
+  let mask = 0;
+  for (let facing = 0; facing < FACINGS.length; facing++) {
+    const [dx, dz] = FACINGS[facing];
+    if (canConnect(def, getNeighbor(dx, dz))) {
+      mask |= connectionBit(facing);
+    }
+  }
+  return mask;
+}
+
+/** 连接型方块之间是否相连：同一连接组之间相连，与完整实心方块也相连。 */
+export function canConnect(def: BlockDef, neighbor: BlockDef): boolean {
+  if (def.connectGroup !== undefined && def.connectGroup === neighbor.connectGroup) {
+    return true;
+  }
+  return neighbor.solid && isFullCube(neighbor);
 }
