@@ -45,17 +45,19 @@ export class ContainerController {
     return this.cursorStack;
   }
 
-  /** 收回光标物品到背包（关闭界面时）。 */
-  returnCursor(): void {
+  /**
+   * 收回光标物品到背包（关闭界面时）。
+   * 背包放不下时**保留在光标上**而不是丢进世界——玩家在界面里选中的东西不应该凭空掉到地上。
+   * @returns 放不下的数量，0 表示已全部收回
+   */
+  returnCursor(): number {
     if (!this.cursorStack) {
-      return;
+      return 0;
     }
     const remaining = this.host.inventory.add(this.cursorStack);
-    if (remaining > 0) {
-      this.host.dropAtPlayer({ ...this.cursorStack, count: remaining });
-    }
-    this.cursorStack = null;
+    this.cursorStack = remaining > 0 ? { ...this.cursorStack, count: remaining } : null;
     this.host.notifyChanged();
+    return remaining;
   }
 
   private getSlot(ref: SlotRef): ItemStack | null {
@@ -337,18 +339,45 @@ export class ContainerController {
     return remaining > 0 ? { ...stack, count: remaining } : null;
   }
 
-  /** 关闭界面时把合成格物品放回背包（放不下则掉落）。 */
-  returnCraftingItems(): void {
+  /**
+   * 关闭界面时把合成格物品放回背包；放不下的留在原格，同样不丢进世界。
+   * @returns 放不下的总数量，0 表示已全部收回
+   */
+  returnCraftingItems(): number {
+    let leftover = 0;
+    for (let i = 0; i < CRAFT_GRID_SIZE; i++) {
+      const s = this.host.craftingGrid[i];
+      if (!s) {
+        continue;
+      }
+      const remaining = this.host.inventory.add(s);
+      this.host.craftingGrid[i] = remaining > 0 ? { ...s, count: remaining } : null;
+      leftover += remaining;
+    }
+    return leftover;
+  }
+
+  /**
+   * 清空光标与合成格并返回其中的物品（玩家死亡时使用）。
+   * @returns 被取出的物品，调用方决定是掉落还是丢弃
+   */
+  drainWorkspace(): ItemStack[] {
+    const stacks: ItemStack[] = [];
+    if (this.cursorStack) {
+      stacks.push(this.cursorStack);
+      this.cursorStack = null;
+    }
     for (let i = 0; i < CRAFT_GRID_SIZE; i++) {
       const s = this.host.craftingGrid[i];
       if (s) {
-        const remaining = this.host.inventory.add(s);
-        if (remaining > 0) {
-          this.host.dropAtPlayer({ ...s, count: remaining });
-        }
+        stacks.push(s);
         this.host.craftingGrid[i] = null;
       }
     }
+    if (stacks.length > 0) {
+      this.host.notifyChanged();
+    }
+    return stacks;
   }
 
   // ---------------------------------------------------------------- 死亡 / 复活

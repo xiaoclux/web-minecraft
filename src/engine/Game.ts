@@ -639,10 +639,17 @@ export class Game implements EntityContext, ContainerHost {
     }
   }
 
-  /** 关闭界面并回到游戏。 */
+  /**
+   * 关闭界面并回到游戏。
+   * 合成格与光标上的物品必须先收回背包；背包放不下时保持界面打开并提示，
+   * 避免玩家正在挪动的物品被丢进世界。
+   */
   closeScreen(): void {
-    this.containers.returnCraftingItems();
-    this.containers.returnCursor();
+    const leftover = this.containers.returnCraftingItems() + this.containers.returnCursor();
+    if (leftover > 0) {
+      this.showToast('背包已满，请先腾出空间');
+      return;
+    }
     this.isPaused = false;
     this.store.patch({ screen: Screen.NONE, openBlock: null, cursorStack: null });
     this.controls.requestLock();
@@ -1265,8 +1272,10 @@ export class Game implements EntityContext, ContainerHost {
   private onPlayerDeath(): void {
     this.resetBreaking();
     this.containers.returnCraftingItems();
+    this.containers.returnCursor();
+    const workspace = this.containers.drainWorkspace();
     if (!this.rules.infiniteItems) {
-      for (const stack of this.player.inventory.drainAll()) {
+      for (const stack of [...workspace, ...this.player.inventory.drainAll()]) {
         this.dropItem(this.player.x, this.player.y + 1, this.player.z, stack, 0.5);
       }
     }

@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { ContainerController, type ContainerHost } from '../src/engine/items/ContainerController';
 import { createFurnace, type FurnaceState } from '../src/engine/items/Furnace';
 import { Inventory } from '../src/engine/items/Inventory';
-import type { ItemStack } from '../src/engine/items/ItemStack';
+import { maxStackOf, type ItemStack } from '../src/engine/items/ItemStack';
 
 const LEFT = 0;
 const RIGHT = 2;
+const INVENTORY_SLOTS = 36;
 
 function setup(screen: 'inventory' | 'crafting' | 'furnace' = 'inventory', isCreative = false) {
   const inventory = new Inventory();
@@ -71,10 +72,47 @@ describe('ContainerController', () => {
     inventory.set(0, { id: 'log', count: 2 });
     ctrl.handleSlotClick({ kind: 'inventory', index: 0 }, LEFT, false);
     ctrl.handleSlotClick({ kind: 'craft', index: 1 }, RIGHT, false);
-    ctrl.returnCraftingItems();
-    ctrl.returnCursor();
+    expect(ctrl.returnCraftingItems()).toBe(0);
+    expect(ctrl.returnCursor()).toBe(0);
     expect(inventory.countOf('log')).toBe(2);
     expect(ctrl.cursor).toBeNull();
+  });
+
+  it('背包满时收回光标不会掉落物品，物品保留在光标上', () => {
+    const { inventory, ctrl, dropped } = setup();
+    inventory.set(0, { id: 'dirt', count: 10 });
+    ctrl.handleSlotClick({ kind: 'inventory', index: 0 }, LEFT, false);
+    for (let i = 0; i < INVENTORY_SLOTS; i++) {
+      inventory.set(i, { id: 'stone', count: maxStackOf('stone') });
+    }
+    expect(ctrl.returnCursor()).toBe(10);
+    expect(ctrl.cursor).toEqual({ id: 'dirt', count: 10 });
+    expect(dropped).toHaveLength(0);
+  });
+
+  it('背包满时收回合成格物品会留在原格且不掉落', () => {
+    const { inventory, craftingGrid, ctrl, dropped } = setup();
+    craftingGrid[0] = { id: 'log', count: 3 };
+    for (let i = 0; i < INVENTORY_SLOTS; i++) {
+      inventory.set(i, { id: 'stone', count: maxStackOf('stone') });
+    }
+    expect(ctrl.returnCraftingItems()).toBe(3);
+    expect(craftingGrid[0]).toEqual({ id: 'log', count: 3 });
+    expect(dropped).toHaveLength(0);
+  });
+
+  it('死亡时清空光标与合成格并交出物品', () => {
+    const { craftingGrid, ctrl } = setup();
+    craftingGrid[0] = { id: 'log', count: 1 };
+    ctrl.handleSlotClick({ kind: 'craft', index: 0 }, LEFT, false);
+    craftingGrid[1] = { id: 'dirt', count: 2 };
+    const stacks = ctrl.drainWorkspace();
+    expect(stacks).toEqual([
+      { id: 'log', count: 1 },
+      { id: 'dirt', count: 2 },
+    ]);
+    expect(ctrl.cursor).toBeNull();
+    expect(craftingGrid[1]).toBeNull();
   });
 
   it('熔炉：shift 点击矿石进入入料、燃料进入燃料格，燃料格拒绝非燃料', () => {
