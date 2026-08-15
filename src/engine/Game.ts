@@ -97,6 +97,11 @@ const FACING_LABELS = ['南 (+Z)', '西 (-X)', '北 (-Z)', '东 (+X)'];
 const XP_PER_MOB_KILL_MULTIPLIER = 1;
 const SPAWN_PROTECTION_TICKS = 40;
 const REPLACEABLE_BLOCKS: ReadonlySet<number> = new Set<number>([BlockId.AIR, BlockId.WATER, BlockId.TALL_GRASS]);
+/** 破坏一个方块炸出的碎屑数量。 */
+const BREAK_PARTICLE_COUNT = 12;
+/** 爆炸粒子数量与取样贴图（用石头的灰色当烟）。 */
+const EXPLOSION_PARTICLE_COUNT = 40;
+const EXPLOSION_PARTICLE_TEXTURE = 'stone';
 
 /** 游戏主循环与全部玩法逻辑的编排者。 */
 export class Game implements EntityContext, ContainerHost {
@@ -417,6 +422,7 @@ export class Game implements EntityContext, ContainerHost {
       this.breakNeededTicks > 0 ? this.breakProgressTicks / this.breakNeededTicks : 0,
     );
     const brightness = this.brightnessAtPlayer();
+    this.renderer.particles.update(dt);
     this.renderer.hand.update(this.player.heldItem?.id ?? null, brightness);
     this.renderer.render(this.timeTick, this.isPlayerUnderwater());
   }
@@ -844,6 +850,12 @@ export class Game implements EntityContext, ContainerHost {
     return this.world.isLiquidAt(Math.floor(p.x), Math.floor(p.eyeY), Math.floor(p.z));
   }
 
+  /** 方块被破坏时炸出一小把碎屑（贴图取自方块顶面）。 */
+  private spawnBreakParticles(x: number, y: number, z: number, def: BlockDef): void {
+    const level = this.lightLevelAt(x, y + 1, z) / MAX_LIGHT;
+    this.renderer.particles.spawnBlockBreak(x, y, z, def.textures.top, BREAK_PARTICLE_COUNT, 0.3 + 0.7 * level);
+  }
+
   private brightnessAtPlayer(): number {
     const p = this.player;
     const level = this.lightLevelAt(Math.floor(p.x), Math.floor(p.eyeY), Math.floor(p.z)) / MAX_LIGHT;
@@ -906,6 +918,7 @@ export class Game implements EntityContext, ContainerHost {
       return;
     }
     const def = getBlock(id);
+    this.spawnBreakParticles(x, y, z, def);
     this.world.setBlock(x, y, z, BlockId.AIR);
     this.sound.play('break');
     this.renderer.hand.swing();
@@ -1480,6 +1493,15 @@ export class Game implements EntityContext, ContainerHost {
   explode(x: number, y: number, z: number, radius: number, sourceId: number): void {
     this.sound.play('explode', Math.hypot(x - this.player.x, y - this.player.y, z - this.player.z));
     const r = Math.ceil(radius);
+    for (let i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) {
+      this.renderer.particles.spawn(
+        x + (Math.random() - 0.5) * radius,
+        y + (Math.random() - 0.5) * radius,
+        z + (Math.random() - 0.5) * radius,
+        EXPLOSION_PARTICLE_TEXTURE,
+        { speed: 6, minLife: 0.5, maxLife: 1.4, size: 0.25, brightness: 1 },
+      );
+    }
     this.world.batch(() => this.destroyBlocksInRadius(x, y, z, radius, r));
     this.damageEntitiesByExplosion(x, y, z, radius, sourceId);
   }

@@ -6,6 +6,7 @@ import { BlockOutline } from './BlockOutline';
 import { ChunkRenderer } from './ChunkRenderer';
 import { EntityRenderer } from './EntityRenderer';
 import { HandRenderer } from './HandRenderer';
+import { ParticleSystem } from './ParticleSystem';
 import { Sky } from './Sky';
 
 const CAMERA_FOV = 70;
@@ -26,6 +27,7 @@ export class Renderer {
   readonly sky = new Sky();
   readonly outline: BlockOutline;
   readonly hand: HandRenderer;
+  readonly particles: ParticleSystem;
   private readonly ambient: THREE.AmbientLight;
   private readonly sun: THREE.DirectionalLight;
   private resizeHandler: () => void;
@@ -43,7 +45,17 @@ export class Renderer {
     this.sun.position.set(0.4, 1, 0.6);
     this.hand = new HandRenderer(atlas);
     this.outline = new BlockOutline(atlas);
-    this.scene.add(this.chunks.group, this.entities.group, this.sky.group, this.outline.group, this.ambient, this.sun);
+    this.particles = new ParticleSystem(atlas);
+    this.particles.setSolidTest((x, y, z) => world.isSolidAt(x, y, z));
+    this.scene.add(
+      this.chunks.group,
+      this.entities.group,
+      this.sky.group,
+      this.outline.group,
+      this.particles.mesh,
+      this.ambient,
+      this.sun,
+    );
     this.camera.add(this.hand.group);
     this.scene.add(this.camera);
     this.resizeHandler = () => this.resize();
@@ -91,6 +103,7 @@ export class Renderer {
     window.removeEventListener('resize', this.resizeHandler);
     this.chunks.dispose();
     this.entities.dispose();
+    this.particles.dispose();
     this.renderer.dispose();
   }
 }
