@@ -35,9 +35,23 @@ const NETHER_HOSTILE_TYPES: MobType[] = [
   MobType.WITHER_SKELETON,
 ];
 const NETHER_HOSTILE_WEIGHTS = [6, 2, 1, 1, 1];
+/** 末地只刷末影人。 */
+const END_HOSTILE_TYPES: MobType[] = [MobType.ENDERMAN];
+const END_HOSTILE_WEIGHTS = [1];
+const END_DIMENSION = 'end';
 /** 下界不看光照（到处都黑），改成按维度直接生成。 */
 const NETHER_DIMENSION = 'nether';
 const OVERWORLD_DIMENSION = 'overworld';
+
+/** 各维度的敌对生物表。 */
+const HOSTILE_TYPES_BY_DIMENSION: Readonly<Record<string, MobType[]>> = {
+  [NETHER_DIMENSION]: NETHER_HOSTILE_TYPES,
+  [END_DIMENSION]: END_HOSTILE_TYPES,
+};
+const HOSTILE_WEIGHTS_BY_DIMENSION: Readonly<Record<string, number[]>> = {
+  [NETHER_DIMENSION]: NETHER_HOSTILE_WEIGHTS,
+  [END_DIMENSION]: END_HOSTILE_WEIGHTS,
+};
 const PASSIVE_TYPES: MobType[] = [MobType.PIG, MobType.COW, MobType.SHEEP, MobType.CHICKEN];
 const PASSIVE_GROUP_MIN = 2;
 const PASSIVE_GROUP_MAX = 4;
@@ -148,9 +162,8 @@ export class MobSpawner {
 
   /** 按当前维度挑一种敌对生物。 */
   private pickWeighted(ctx: EntityContext): MobType {
-    const nether = ctx.dimensionId === NETHER_DIMENSION;
-    const types = nether ? NETHER_HOSTILE_TYPES : HOSTILE_TYPES;
-    const weights = nether ? NETHER_HOSTILE_WEIGHTS : HOSTILE_WEIGHTS;
+    const types = HOSTILE_TYPES_BY_DIMENSION[ctx.dimensionId] ?? HOSTILE_TYPES;
+    const weights = HOSTILE_WEIGHTS_BY_DIMENSION[ctx.dimensionId] ?? HOSTILE_WEIGHTS;
     const total = weights.reduce((a, b) => a + b, 0);
     let r = ctx.random() * total;
     for (let i = 0; i < types.length; i++) {
@@ -186,8 +199,8 @@ export class MobSpawner {
       ctx.random() < SURFACE_SPAWN_RATIO
         ? surfaceY
         : 1 + Math.floor(ctx.random() * Math.max(1, surfaceY - 1));
-    // 下界没有天空光，到处都够黑，不再看光照
-    if (ctx.dimensionId !== NETHER_DIMENSION && ctx.lightLevelAt(pos.x, y, pos.z) > HOSTILE_SPAWN_LIGHT_MAX) {
+    // 下界 / 末地没有天空光，到处都够黑，不再看光照
+    if (ctx.dimensionId === OVERWORLD_DIMENSION && ctx.lightLevelAt(pos.x, y, pos.z) > HOSTILE_SPAWN_LIGHT_MAX) {
       return;
     }
     this.spawnMobAt(ctx, this.pickWeighted(ctx), pos.x, y, pos.z);

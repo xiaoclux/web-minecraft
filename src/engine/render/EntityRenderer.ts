@@ -7,6 +7,8 @@ import type { Entity } from '../entities/Entity';
 import { ItemDropEntity } from '../entities/ItemDropEntity';
 import { ThrownPotionEntity } from '../entities/ThrownPotionEntity';
 import { FireballEntity } from '../entities/FireballEntity';
+import { EnderCrystalEntity } from '../entities/EnderCrystalEntity';
+import { EnderDragonEntity } from '../entities/EnderDragonEntity';
 import type { ItemStack } from '../items/ItemStack';
 import { Mob } from '../entities/Mob';
 import { getItem, ItemKind } from '../items/ItemRegistry';
@@ -31,13 +33,17 @@ const ARROW_LENGTH = 0.6;
 const XP_ORB_COLOR = 0x8fff26;
 const XP_ORB_PULSE_SPEED = 6;
 const ARROW_THICKNESS = 0.06;
+/** 末影水晶的渲染尺寸。 */
+const CRYSTAL_RENDER_SIZE = 1.2;
+/** 末影龙即使在暗处也保留一点可见度。 */
+const DRAGON_MIN_BRIGHTNESS = 0.35;
 const SHEEP_SHEARED_COLOR = '#f0a0a0';
 
 interface RenderedEntity {
   group: THREE.Group;
   parts: { mesh: THREE.Mesh; spec: PartSpec }[];
   materials: THREE.MeshLambertMaterial[];
-  kind: 'mob' | 'item' | 'arrow' | 'xp' | 'fireball';
+  kind: 'mob' | 'item' | 'arrow' | 'xp' | 'fireball' | 'crystal' | 'dragon';
 }
 
 /** 负责实体的 three.js 表现：模型、动画、受伤闪烁、光照。 */
@@ -108,6 +114,12 @@ export class EntityRenderer {
     }
     if (entity instanceof FireballEntity) {
       return this.createFireball(entity);
+    }
+    if (entity instanceof EnderCrystalEntity) {
+      return this.createCrystal();
+    }
+    if (entity instanceof EnderDragonEntity) {
+      return this.createDragon();
     }
     if (entity instanceof XpOrbEntity) {
       return this.createXpOrb();
@@ -257,6 +269,31 @@ export class EntityRenderer {
     return { group, parts: [], materials: [m], kind: 'fireball' };
   }
 
+  /** 末影水晶：一颗发光的紫色棱形块。 */
+  private createCrystal(): RenderedEntity {
+    const group = new THREE.Group();
+    const m = new THREE.MeshLambertMaterial({ color: 0xc77ffb, emissive: 0x6a2fa0 });
+    const mesh = new THREE.Mesh(this.boxGeometry(CRYSTAL_RENDER_SIZE, CRYSTAL_RENDER_SIZE, CRYSTAL_RENDER_SIZE), m);
+    mesh.rotation.set(Math.PI / 4, Math.PI / 4, 0);
+    group.add(mesh);
+    return { group, parts: [], materials: [m], kind: 'crystal' };
+  }
+
+  /** 末影龙：黑色的身体 + 头 + 两片翅膀（用盒子拼）。 */
+  private createDragon(): RenderedEntity {
+    const group = new THREE.Group();
+    const m = new THREE.MeshLambertMaterial({ color: 0x1b1b26 });
+    const body = new THREE.Mesh(this.boxGeometry(2.4, 1.4, 5), m);
+    const head = new THREE.Mesh(this.boxGeometry(1.6, 1.4, 2), m);
+    head.position.set(0, 0.2, -3.2);
+    const wingLeft = new THREE.Mesh(this.boxGeometry(5, 0.3, 2.4), m);
+    wingLeft.position.set(3.4, 0.5, 0);
+    const wingRight = wingLeft.clone();
+    wingRight.position.x = -3.4;
+    group.add(body, head, wingLeft, wingRight);
+    return { group, parts: [], materials: [m], kind: 'dragon' };
+  }
+
   private createArrow(): RenderedEntity {
     const group = new THREE.Group();
     const m = new THREE.MeshLambertMaterial({ color: 0x8f6b3a });
@@ -328,6 +365,19 @@ export class EntityRenderer {
       const pulse = 0.5 + 0.5 * Math.sin(time * XP_ORB_PULSE_SPEED + entity.id);
       for (const m of r.materials) {
         m.color.setRGB(0.55 + 0.45 * pulse, 1, 0.15);
+      }
+      return;
+    }
+    if (r.kind === 'crystal') {
+      // 水晶自转 + 上下浮动，且自发光不受环境亮度影响
+      r.group.rotation.y = time;
+      r.group.position.y = entity.y + Math.sin(time * 2) * 0.15;
+      return;
+    }
+    if (r.kind === 'dragon') {
+      r.group.rotation.set(0, entity.yaw, 0);
+      for (const m of r.materials) {
+        m.color.setScalar(Math.max(brightness, DRAGON_MIN_BRIGHTNESS));
       }
       return;
     }

@@ -660,6 +660,42 @@ function netherWart(stage: number): Painter {
   };
 }
 
+/** 石英块：接近纯白，带一点点纹理。 */
+const quartzBlock: Painter = (c, rng) => {
+  c.noise(hex('#ece7e0'), 0.05, rng);
+};
+
+/** 末地传送门：近黑底 + 星点。 */
+const endPortal: Painter = (c, rng) => {
+  c.noise(hex('#0d0d1a'), 0.1, rng);
+  c.speckle(hex('#9ad8d8'), 18, rng);
+  c.speckle(hex('#5a3a8a'), 12, rng);
+};
+
+/** 末地传送门框架：末地石底 + 顶面的绿松石凹槽。 */
+const endPortalFrameTop: Painter = (c, rng) => {
+  c.noise(hex('#dbdc9b'), 0.08, rng);
+  c.rect(3, 3, 10, 10, hex('#2f8f7f'));
+};
+const endPortalFrameSide: Painter = (c, rng) => {
+  c.noise(hex('#dbdc9b'), 0.08, rng);
+  c.rect(0, 0, 16, 4, hex('#b6b77c'));
+};
+
+/** 镶了末影之眼的框架顶面。 */
+const endPortalFrameEye: Painter = (c, rng) => {
+  c.noise(hex('#dbdc9b'), 0.08, rng);
+  c.rect(3, 3, 10, 10, hex('#2f8f7f'));
+  c.rect(5, 5, 6, 6, hex('#0f7a5a'));
+  c.rect(6, 6, 4, 4, hex('#c8f0d8'));
+};
+
+/** 龙蛋：黑色带紫斑的蛋。 */
+const dragonEgg: Painter = (c, rng) => {
+  c.noise(hex('#0d0d12'), 0.12, rng);
+  c.speckle(hex('#4b2a6b'), 14, rng);
+};
+
 /** 末地石：米黄色带斑点。 */
 const endStone: Painter = (c, rng) => {
   c.noise(hex('#dbdc9b'), 0.1, rng);
@@ -924,6 +960,12 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   brewing_stand: brewingStand,
   netherrack,
   end_stone: endStone,
+  quartz_block: quartzBlock,
+  end_portal: endPortal,
+  end_portal_frame_top: endPortalFrameTop,
+  end_portal_frame_eye: endPortalFrameEye,
+  end_portal_frame_side: endPortalFrameSide,
+  dragon_egg: dragonEgg,
   nether_wart_0: netherWart(0),
   nether_wart_1: netherWart(1),
   nether_wart_2: netherWart(2),

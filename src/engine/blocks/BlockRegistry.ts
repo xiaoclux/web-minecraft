@@ -152,6 +152,9 @@ export interface BlockDef {
   };
 }
 
+/** 末地传送门框架 meta 里"已镶末影之眼"的位。 */
+export const END_PORTAL_FRAME_EYE_BIT = 4;
+
 /** 下界疣的最大生长阶段（1.8.9 是 3 段）。 */
 export const NETHER_WART_MAX_STAGE = 2;
 
@@ -217,6 +220,10 @@ export const BlockId = {
   NETHER_PORTAL: 90,
   END_STONE: 121,
   NETHER_WART: 115,
+  END_PORTAL: 119,
+  END_PORTAL_FRAME: 120,
+  DRAGON_EGG: 122,
+  QUARTZ_BLOCK: 155,
   SUGAR_CANE: 83,
   GLOWSTONE: 89,
   STONE_BRICKS: 98,
@@ -690,6 +697,34 @@ export const BLOCK_DEFS: BlockDef[] = [
   cube(BlockId.END_STONE, 'end_stone', '末地石', same('end_stone'), 3, ToolType.PICKAXE, {
     minTier: ToolTier.WOOD,
   }),
+  // 末地传送门：踩上去就传送，不挡人、自带亮光
+  cube(BlockId.END_PORTAL, 'end_portal', '末地传送门', same('end_portal'), -1, null, {
+    solid: false,
+    opaque: false,
+    light: 15,
+    noItem: true,
+    render: RenderType.TRANSLUCENT,
+    isBlastResistant: false,
+  }),
+  cube(
+    BlockId.END_PORTAL_FRAME,
+    'end_portal_frame',
+    '末地传送门框架',
+    topSide('end_portal_frame_top', 'end_portal_frame_side'),
+    -1,
+    null,
+    {
+      noItem: true,
+      isBlastResistant: false,
+      // meta 的第 3 位表示镶了末影之眼，顶面换一张
+      texturesForMeta: (meta: number) =>
+        topSide((meta & END_PORTAL_FRAME_EYE_BIT) !== 0 ? 'end_portal_frame_eye' : 'end_portal_frame_top', 'end_portal_frame_side'),
+    },
+  ),
+  cube(BlockId.DRAGON_EGG, 'dragon_egg', '龙蛋', same('dragon_egg'), 3, null, {
+    opaque: false,
+    light: 1,
+  }),
   cube(BlockId.SOUL_SAND, 'soul_sand', '灵魂沙', same('soul_sand'), 0.5, ToolType.SHOVEL, {
     soundGroup: SoundGroup.SAND,
   }),
@@ -698,6 +733,9 @@ export const BLOCK_DEFS: BlockDef[] = [
     xp: [2, 5],
   }),
   cube(BlockId.NETHER_BRICKS, 'nether_bricks', '下界砖块', same('nether_bricks'), 2, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+  }),
+  cube(BlockId.QUARTZ_BLOCK, 'quartz_block', '石英块', same('quartz_block'), 0.8, ToolType.PICKAXE, {
     minTier: ToolTier.WOOD,
   }),
   // 传送门：站进去会被传送，本身不挡人、自带微光

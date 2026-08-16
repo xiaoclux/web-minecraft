@@ -73,6 +73,14 @@ export function Hud({ game, state }: HudProps) {
     <div className="hud">
       <div className="crosshair" />
       {state.targetLabel && <div className="target-label">{state.targetLabel}</div>}
+      {state.boss && (
+        <div className="boss-bar">
+          <div className="boss-name">{state.boss.label}</div>
+          <div className="boss-bar-track">
+            <div className="boss-bar-fill" style={{ width: `${Math.round(state.boss.ratio * 100)}%` }} />
+          </div>
+        </div>
+      )}
       {state.effects.length > 0 && (
         <div className="effect-list">
           {state.effects.map((effect) => {

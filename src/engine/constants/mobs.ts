@@ -43,6 +43,29 @@ export const GHAST_HOVER_HEIGHT = 6;
 export const PIGMAN_ANGER_RADIUS = 16;
 export const PIGMAN_ANGER_TICKS = 400;
 
+/** 末影水晶：治疗范围与被打碎时的爆炸半径。 */
+export const ENDER_CRYSTAL_HEAL_RANGE = 64;
+export const ENDER_CRYSTAL_EXPLOSION_RADIUS = 4;
+/** 末影龙：血量、盘旋、俯冲与回血参数。 */
+export const DRAGON_MAX_HEALTH = 200;
+export const DRAGON_CIRCLE_RADIUS = 40;
+/** 盘旋角速度（弧度/秒）。 */
+export const DRAGON_CIRCLE_SPEED = 0.35;
+/** 巡航时相对玩家的高度。 */
+export const DRAGON_CRUISE_HEIGHT = 14;
+/** 俯冲速度（格/秒）、伤害、命中判定距离与冷却。 */
+export const DRAGON_CHARGE_SPEED = 18;
+export const DRAGON_CHARGE_DAMAGE = 10;
+export const DRAGON_HIT_RANGE = 4;
+export const DRAGON_CHARGE_COOLDOWN_TICKS = 120;
+/** 俯冲时撞碎方块的半径。 */
+export const DRAGON_WRECK_RADIUS = 2;
+/** 每颗水晶每次回多少血、多久回一次。 */
+export const DRAGON_HEAL_PER_CRYSTAL = 1;
+export const DRAGON_HEAL_INTERVAL_TICKS = 20;
+/** 击杀末影龙给的经验。 */
+export const DRAGON_KILL_XP = 12000;
+
 export const SPLASH_POTION_SPEED = 12;
 export const SPLASH_POTION_GRAVITY = 20;
 export const SPLASH_POTION_LIFETIME_TICKS = 200;

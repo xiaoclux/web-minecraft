@@ -400,6 +400,11 @@ export class AchievementSystem {
     }
   }
 
+  /** 击败末影龙。 */
+  onDragonKilled(): void {
+    this.unlock(AchievementId.THE_END2);
+  }
+
   onEnchanted(): void {
     this.addStat(StatId.ITEMS_ENCHANTED);
     this.unlock(AchievementId.ENCHANTMENTS);

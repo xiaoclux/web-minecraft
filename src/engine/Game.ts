@@ -72,6 +72,10 @@ import {
   SPLASH_POTION_MIN_FACTOR,
   SPLASH_POTION_RADIUS,
   SPLASH_POTION_SPEED,
+  DRAGON_CIRCLE_RADIUS,
+  DRAGON_CRUISE_HEIGHT,
+  DRAGON_KILL_XP,
+  ENDER_CRYSTAL_HEAL_RANGE,
 } from './constants/mobs';
 import { CHEST_SLOT_COUNT } from './constants/ui';
 import { rollLoot } from './world/structures/LootTables';
@@ -103,6 +107,11 @@ import { biomeHasSnowfall, biomeLabel } from './world/biomes';
 import { ArrowEntity } from './entities/ArrowEntity';
 import { ThrownPotionEntity } from './entities/ThrownPotionEntity';
 import { FireballEntity } from './entities/FireballEntity';
+import { EnderCrystalEntity } from './entities/EnderCrystalEntity';
+import { EnderDragonEntity } from './entities/EnderDragonEntity';
+import { EndGenerator, END_ISLAND_CENTER_X, END_ISLAND_CENTER_Z, END_ISLAND_SURFACE_Y } from './world/EndGenerator';
+import { TerrainGenerator } from './world/TerrainGenerator';
+import type { Stronghold } from './world/structures/StrongholdGenerator';
 import { Entity, allocateEntityId, resetEntityIds, type EntitySaveData } from './entities/Entity';
 import type { EntityContext } from './entities/EntityContext';
 import { ItemDropEntity } from './entities/ItemDropEntity';
@@ -232,6 +241,25 @@ const BOOKSHELF_RING_OFFSETS: readonly (readonly (readonly [number, number])[])[
   [[2, -1], [2, 0], [2, 1]],
   [[2, 2]],
 ];
+/** 打末影水晶时准星允许的偏差与额外触及距离。 */
+const CRYSTAL_HIT_TOLERANCE = 1.5;
+const CRYSTAL_EXTRA_REACH = 3;
+/** 末影水晶治疗末影龙的距离平方。 */
+const CRYSTAL_HEAL_RANGE_SQ = ENDER_CRYSTAL_HEAL_RANGE * ENDER_CRYSTAL_HEAL_RANGE;
+/** 末影之眼物品 id、框架 meta 里"已镶眼"的位、框架方环半径。 */
+const ENDER_EYE_ITEM = 'ender_eye';
+const PORTAL_FRAME_EYE_BIT = 4;
+const PORTAL_FRAME_RADIUS = 2;
+/** 方位判定：一个轴超过另一个轴这么多倍就算正方向。 */
+const COMPASS_DOMINANCE = 2;
+/** 一次掉落最多拆成多少颗经验球。 */
+const MAX_XP_ORBS_PER_DROP = 40;
+/** 末地传送门的触发时间（比下界的短）。 */
+const END_PORTAL_TRIGGER_TICKS = 20;
+/** 到末地时落在岛面上方这么高（免得卡进石头里）。 */
+const END_ARRIVAL_HEIGHT = 2;
+/** 返回传送门的半径（曼哈顿距离）。 */
+const EXIT_PORTAL_RADIUS = 2;
 /** 打火球时准星允许的偏差与额外触及距离。 */
 const FIREBALL_REFLECT_TOLERANCE = 1.2;
 const FIREBALL_REFLECT_EXTRA_REACH = 2;
@@ -257,6 +285,20 @@ const NIGHT_VISION_MIN_LIGHT = 0.9;
 /** 喷溅药水碎掉时的玻璃碎屑。 */
 const SPLASH_PARTICLE_TEXTURE = 'glass';
 const SPLASH_PARTICLE_COUNT = 10;
+
+/** 把方向向量说成"东南"这样的方位词。 */
+function compassLabel(dx: number, dz: number): string {
+  if (Math.abs(dz) > Math.abs(dx) * COMPASS_DOMINANCE) {
+    return dz > 0 ? '南' : '北';
+  }
+  if (Math.abs(dx) > Math.abs(dz) * COMPASS_DOMINANCE) {
+    return dx > 0 ? '东' : '西';
+  }
+  if (dx > 0) {
+    return dz > 0 ? '东南' : '东北';
+  }
+  return dz > 0 ? '西南' : '西北';
+}
 
 /** 游戏主循环与全部玩法逻辑的编排者。 */
 export class Game implements EntityContext, ContainerHost {
@@ -368,6 +410,8 @@ export class Game implements EntityContext, ContainerHost {
   readonly isTouch = isTouchDevice();
   private breakTarget: { x: number; y: number; z: number; id: number } | null = null;
   /** 脚步声：累计走过的水平距离与上一次采样点。 */
+  /** 末地 Boss 战是否已布置过（每次进末地只布置一次）。 */
+  private endFightStarted = false;
   /** 站在传送门里的累计 tick 与传送后的冷却。 */
   private portalTicks = 0;
   private portalCooldown = 0;
@@ -432,6 +476,7 @@ export class Game implements EntityContext, ContainerHost {
       targetLabel: '',
       toast: '',
       achievementVersion: 0,
+      boss: null,
       toastVersion: 0,
       debug: null,
       isLoading: true,
@@ -868,16 +913,22 @@ export class Game implements EntityContext, ContainerHost {
       return;
     }
     const p = this.player;
-    const inPortal = this.world.getBlock(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)) === BlockId.NETHER_PORTAL;
-    if (!inPortal) {
+    const standingIn = this.world.getBlock(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z));
+    if (standingIn !== BlockId.NETHER_PORTAL && standingIn !== BlockId.END_PORTAL) {
       this.portalTicks = 0;
       return;
     }
+    // 末地传送门比下界的快，但也要站一小会儿：返回传送门就开在玩家脚下，不能一出现就把人吸走
     this.portalTicks++;
-    if (this.portalTicks < PORTAL_TRIGGER_TICKS) {
+    const needed = standingIn === BlockId.END_PORTAL ? END_PORTAL_TRIGGER_TICKS : PORTAL_TRIGGER_TICKS;
+    if (this.portalTicks < needed) {
       return;
     }
     this.portalTicks = 0;
+    if (standingIn === BlockId.END_PORTAL) {
+      this.travelThroughEndPortal();
+      return;
+    }
     this.travelThroughPortal();
   }
 
@@ -890,6 +941,18 @@ export class Game implements EntityContext, ContainerHost {
     const z = mapCoordinate(Math.floor(this.player.z), from.def, target.def);
     const y = Math.floor(this.player.y);
     this.enterDimension(target, x, y, z, true);
+  }
+
+  /** 末地传送门：主世界 → 末地落在主岛上；末地 → 主世界回到重生点。 */
+  private travelThroughEndPortal(): void {
+    if (this.current.id === DimensionId.END) {
+      const target = this.dimensionOf(DimensionId.OVERWORLD);
+      this.enterDimension(target, Math.floor(this.player.spawnX), Math.floor(this.player.spawnY), Math.floor(this.player.spawnZ), false);
+      return;
+    }
+    const target = this.dimensionOf(DimensionId.END);
+    const spawn = target.generator.findSpawn();
+    this.enterDimension(target, Math.floor(spawn.x), Math.floor(spawn.y) + END_ARRIVAL_HEIGHT, Math.floor(spawn.z), false);
   }
 
   /**
@@ -915,8 +978,95 @@ export class Game implements EntityContext, ContainerHost {
     this.player.vz = 0;
     this.portalCooldown = PORTAL_COOLDOWN_TICKS;
     this.chunkManager.ensureLoaded(this.player.x, this.player.z, PORTAL_LOAD_RADIUS);
+    if (target.id === DimensionId.END) {
+      this.setupEndFight();
+    }
     this.achievements.onEnterDimension(target.id);
     this.showToast(`进入${target.def.label}`);
+  }
+
+  /**
+   * 进入末地时布置 Boss 战：每根黑曜石柱顶放一颗末影水晶，岛心上空放末影龙。
+   * 已经打过（龙不在且没水晶）就什么都不做。
+   */
+  private setupEndFight(): void {
+    const generator = this.generator;
+    if (!(generator instanceof EndGenerator) || this.endFightStarted) {
+      return;
+    }
+    this.endFightStarted = true;
+    for (const pillar of generator.pillars) {
+      const crystal = new EnderCrystalEntity();
+      crystal.setPosition(pillar.x + 0.5, pillar.topY + 1, pillar.z + 0.5);
+      this.entities.set(crystal.id, crystal);
+    }
+    const dragon = new EnderDragonEntity(END_ISLAND_CENTER_X, END_ISLAND_CENTER_Z);
+    dragon.setPosition(END_ISLAND_CENTER_X + DRAGON_CIRCLE_RADIUS, END_ISLAND_SURFACE_Y + DRAGON_CRUISE_HEIGHT, END_ISLAND_CENTER_Z);
+    this.entities.set(dragon.id, dragon);
+  }
+
+  /** Boss 血条内容（当前维度里活着的末影龙）。 */
+  private bossStatus(): { label: string; ratio: number } | null {
+    for (const e of this.entities.values()) {
+      if (e instanceof EnderDragonEntity && !e.isDead && e.health > 0) {
+        return { label: '末影龙', ratio: e.healthRatio };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 挥手打碎准星附近的末影水晶。
+   * @returns 是否打到了水晶
+   */
+  private tryBreakCrystal(): boolean {
+    const dir = this.lookDirection();
+    const p = this.player;
+    const origin = new THREE.Vector3(p.x, p.eyeY, p.z);
+    const ray = new THREE.Ray(origin, dir);
+    for (const e of this.entities.values()) {
+      if (!(e instanceof EnderCrystalEntity) || e.isDead) {
+        continue;
+      }
+      const center = new THREE.Vector3(e.x, e.y, e.z);
+      if (origin.distanceTo(center) > this.rules.reach + CRYSTAL_EXTRA_REACH) {
+        continue;
+      }
+      if (ray.distanceToPoint(center) > CRYSTAL_HIT_TOLERANCE) {
+        continue;
+      }
+      e.destroyByAttack(this, p.id);
+      this.attackCooldown = ATTACK_COOLDOWN_TICKS;
+      this.renderer.hand.swing();
+      return true;
+    }
+    return false;
+  }
+
+  /** 末影龙被打死：给经验、开返回传送门、放龙蛋、解成就。 */
+  private onDragonKilled(dragon: EnderDragonEntity): void {
+    this.dropXp(dragon.x, END_ISLAND_SURFACE_Y + 2, dragon.z, DRAGON_KILL_XP);
+    this.buildExitPortal();
+    this.achievements.onDragonKilled();
+    this.showToast('末影龙被击败了！');
+  }
+
+  /** 岛心开一个返回主世界的传送门，正中放一颗龙蛋。 */
+  private buildExitPortal(): void {
+    const cx = END_ISLAND_CENTER_X;
+    const cz = END_ISLAND_CENTER_Z;
+    const y = END_ISLAND_SURFACE_Y;
+    for (let dz = -EXIT_PORTAL_RADIUS; dz <= EXIT_PORTAL_RADIUS; dz++) {
+      for (let dx = -EXIT_PORTAL_RADIUS; dx <= EXIT_PORTAL_RADIUS; dx++) {
+        const inside = Math.abs(dx) + Math.abs(dz) <= EXIT_PORTAL_RADIUS;
+        if (!inside) {
+          continue;
+        }
+        this.world.setBlock(cx + dx, y, cz + dz, BlockId.OBSIDIAN);
+        this.world.setBlock(cx + dx, y + 1, cz + dz, BlockId.END_PORTAL);
+      }
+    }
+    this.world.setBlock(cx, y + 2, cz, BlockId.DRAGON_EGG);
   }
 
   /** 当前维度 id（存档与调试面板用）。 */
@@ -954,6 +1104,7 @@ export class Game implements EntityContext, ContainerHost {
       health: p.health,
       food: p.food,
       achievementVersion: this.achievements.version,
+      boss: this.bossStatus(),
       air: p.air,
       armor: p.armorPoints,
       effects: this.effectsForHud(),
@@ -1587,6 +1738,9 @@ export class Game implements EntityContext, ContainerHost {
     if (def.id === 'glass_bottle' && this.tryFillBottle()) {
       return;
     }
+    if (def.id === ENDER_EYE_ITEM && this.useEnderEye(hit)) {
+      return;
+    }
     if (def.id === 'shears' && this.tryShearMob()) {
       return;
     }
@@ -1688,6 +1842,99 @@ export class Game implements EntityContext, ContainerHost {
     this.replaceHeldItem(potionItemId(PotionBase.WATER));
     this.renderer.hand.swing();
     return true;
+  }
+
+  /**
+   * 末影之眼：对着末地传送门框架用就镶上去（12 块齐了就点亮传送门）；
+   * 对着别处用则报出最近要塞的方向与距离（代替原版"扔出去追着飞"的表现）。
+   * @returns 是否已处理
+   */
+  private useEnderEye(hit: RayHit | null): boolean {
+    if (hit && this.world.getBlock(hit.x, hit.y, hit.z) === BlockId.END_PORTAL_FRAME) {
+      return this.fillPortalFrame(hit);
+    }
+    const stronghold = this.nearestStronghold();
+    if (!stronghold) {
+      return false;
+    }
+    const dx = stronghold.centerX - this.player.x;
+    const dz = stronghold.centerZ - this.player.z;
+    const distance = Math.round(Math.hypot(dx, dz));
+    this.showToast(`要塞在${compassLabel(dx, dz)}方向约 ${distance} 格`);
+    this.renderer.hand.swing();
+    this.useCooldown = EAT_COOLDOWN_TICKS;
+    return true;
+  }
+
+  /** 离玩家最近的要塞。 */
+  private nearestStronghold(): Stronghold | null {
+    const generator = this.dimensionOf(DimensionId.OVERWORLD).generator;
+    if (!(generator instanceof TerrainGenerator)) {
+      return null;
+    }
+    return generator.strongholds?.nearest(this.player.x, this.player.z) ?? null;
+  }
+
+  /**
+   * 往框架里镶一颗末影之眼；12 块都镶好就把中间 3×3 点成末地传送门。
+   * @returns 是否镶上了
+   */
+  private fillPortalFrame(hit: RayHit): boolean {
+    const meta = this.world.getMeta(hit.x, hit.y, hit.z);
+    if ((meta & PORTAL_FRAME_EYE_BIT) !== 0) {
+      return false;
+    }
+    this.world.setMeta(hit.x, hit.y, hit.z, meta | PORTAL_FRAME_EYE_BIT);
+    this.sound.play('place');
+    this.renderer.hand.swing();
+    if (!this.rules.infiniteItems) {
+      this.player.inventory.consume(this.player.selectedSlot, 1);
+    }
+    this.tryActivateEndPortal(hit.x, hit.y, hit.z);
+    return true;
+  }
+
+  /** 框架围成的 3×3 里全是镶好眼的框架时，点亮末地传送门。 */
+  private tryActivateEndPortal(x: number, y: number, z: number): void {
+    // 从被点的框架往回推出中心：框架在半径 2 的方环上
+    for (let cz = z - PORTAL_FRAME_RADIUS; cz <= z + PORTAL_FRAME_RADIUS; cz++) {
+      for (let cx = x - PORTAL_FRAME_RADIUS; cx <= x + PORTAL_FRAME_RADIUS; cx++) {
+        if (this.isPortalFrameComplete(cx, y, cz)) {
+          this.lightEndPortal(cx, y, cz);
+          return;
+        }
+      }
+    }
+  }
+
+  /** 以 (cx, y, cz) 为中心的框架是否 12 块都镶好了眼。 */
+  private isPortalFrameComplete(cx: number, y: number, cz: number): boolean {
+    for (let dz = -PORTAL_FRAME_RADIUS; dz <= PORTAL_FRAME_RADIUS; dz++) {
+      for (let dx = -PORTAL_FRAME_RADIUS; dx <= PORTAL_FRAME_RADIUS; dx++) {
+        const onEdge = Math.abs(dx) === PORTAL_FRAME_RADIUS || Math.abs(dz) === PORTAL_FRAME_RADIUS;
+        const isCorner = Math.abs(dx) === PORTAL_FRAME_RADIUS && Math.abs(dz) === PORTAL_FRAME_RADIUS;
+        if (!onEdge || isCorner) {
+          continue;
+        }
+        if (this.world.getBlock(cx + dx, y, cz + dz) !== BlockId.END_PORTAL_FRAME) {
+          return false;
+        }
+        if ((this.world.getMeta(cx + dx, y, cz + dz) & PORTAL_FRAME_EYE_BIT) === 0) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  private lightEndPortal(cx: number, y: number, cz: number): void {
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        this.world.setBlock(cx + dx, y, cz + dz, BlockId.END_PORTAL);
+      }
+    }
+    this.sound.play('level');
+    this.showToast('末地传送门被激活了');
   }
 
   /** 打火石：在命中面外侧点一团火。 */
@@ -2162,7 +2409,7 @@ export class Game implements EntityContext, ContainerHost {
     if (this.attackCooldown > 0) {
       return;
     }
-    if (this.tryReflectFireball()) {
+    if (this.tryReflectFireball() || this.tryBreakCrystal()) {
       return;
     }
     const target = this.findEntityInCrosshair();
@@ -2854,6 +3101,16 @@ export class Game implements EntityContext, ContainerHost {
     this.entities.set(entity.id, entity);
   }
 
+  crystalsNear(x: number, y: number, z: number): EnderCrystalEntity[] {
+    const out: EnderCrystalEntity[] = [];
+    for (const e of this.entities.values()) {
+      if (e instanceof EnderCrystalEntity && !e.isDead && e.distanceSqToPoint(x, y, z) <= CRYSTAL_HEAL_RANGE_SQ) {
+        out.push(e);
+      }
+    }
+    return out;
+  }
+
   livingEntitiesNear(x: number, y: number, z: number, radius: number): LivingEntity[] {
     const radiusSq = radius * radius;
     const out: LivingEntity[] = [];
@@ -2975,6 +3232,10 @@ export class Game implements EntityContext, ContainerHost {
   }
 
   onEntityKilled(entity: Entity, byPlayer: boolean): void {
+    if (entity instanceof EnderDragonEntity) {
+      this.onDragonKilled(entity);
+      return;
+    }
     if (byPlayer && entity instanceof Mob) {
       this.achievements.onMobKilled(entity.def.hostile);
       this.dropXp(entity.x, entity.y + entity.height * 0.5, entity.z, entity.def.xp * XP_PER_MOB_KILL_MULTIPLIER);
@@ -2984,8 +3245,10 @@ export class Game implements EntityContext, ContainerHost {
   /** 在某处掉出若干经验球（总量超过一颗上限就拆成多颗）。 */
   dropXp(x: number, y: number, z: number, amount: number): void {
     let remaining = Math.floor(amount);
+    // 一次掉的量很大时（末影龙 12000）就加大每颗的面值，免得刷出上千个实体
+    const perOrb = Math.max(XP_ORB_MAX_AMOUNT, Math.ceil(remaining / MAX_XP_ORBS_PER_DROP));
     while (remaining > 0) {
-      const chunkAmount = Math.min(XP_ORB_MAX_AMOUNT, remaining);
+      const chunkAmount = Math.min(perOrb, remaining);
       remaining -= chunkAmount;
       const orb = new XpOrbEntity(chunkAmount);
       orb.setPosition(x, y, z);

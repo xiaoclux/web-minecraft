@@ -64,6 +64,8 @@ export interface GameUiState {
   toastVersion: number;
   /** 成就 / 统计每变化一次 +1（成就页据此刷新）。 */
   achievementVersion: number;
+  /** Boss 血条：没有 Boss 时为 null。 */
+  boss: { label: string; ratio: number } | null;
   debug: DebugInfo | null;
   isLoading: boolean;
   loadingText: string;

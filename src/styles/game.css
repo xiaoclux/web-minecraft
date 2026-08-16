@@ -632,6 +632,34 @@ button:disabled {
   text-shadow: 1px 1px 0 #000;
 }
 
+/* Boss 血条：屏幕顶部居中 */
+.boss-bar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, 70vw);
+  text-align: center;
+  pointer-events: none;
+}
+
+.boss-name {
+  color: #eee;
+  text-shadow: 1px 1px 0 #000;
+  margin-bottom: 2px;
+}
+
+.boss-bar-track {
+  height: 8px;
+  background: #3a1030;
+  border: 1px solid #000;
+}
+
+.boss-bar-fill {
+  height: 100%;
+  background: linear-gradient(#e05ce0, #a020a0);
+}
+
 /* 附魔物品：淡紫色的"闪光"底色，代替原版的动态光泽 */
 .item-icon.enchanted img {
   filter: drop-shadow(0 0 2px #c080ff) drop-shadow(0 0 1px #ffffff);
