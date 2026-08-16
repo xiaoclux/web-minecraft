@@ -632,6 +632,11 @@ button:disabled {
   text-shadow: 1px 1px 0 #000;
 }
 
+/* 附魔物品：淡紫色的"闪光"底色，代替原版的动态光泽 */
+.item-icon.enchanted img {
+  filter: drop-shadow(0 0 2px #c080ff) drop-shadow(0 0 1px #ffffff);
+}
+
 .item-durability {
   position: absolute;
   left: 2px;

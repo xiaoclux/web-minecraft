@@ -641,11 +641,40 @@ const BLOB_ROWS = ['..XXXX..', '.XXXXXX.', 'XXXXXXXX', 'XXXXXXXX', 'XXXXXXXX', '
 const NUGGET_ROWS = ['.XXX.', 'XXXXX', 'XXXXX', '.XXX.'];
 const ROD_ROWS = ['..X', '..X', '.X.', '.X.', 'X..', 'X..'];
 const WART_ROWS = ['.XX.', 'XXXX', 'XXXX', '.XX.'];
+const PAPER_ROWS = [
+  'XXXXXXXXX.',
+  'XXXXXXXXXD',
+  'XXXXXXXXXD',
+  'XXXXXXXXXD',
+  'XXXXXXXXXD',
+  'XXXXXXXXXD',
+  'XXXXXXXXXD',
+  'XXXXXXXXXD',
+  'XXXXXXXXXD',
+  'XXXXXXXXXD',
+  '.DDDDDDDDD',
+];
+const BOOK_ROWS = [
+  'XXXXXXXXX.',
+  'XPPPPPPPXD',
+  'XPPPPPPPXD',
+  'XPPPPPPPXD',
+  'XPPPPPPPXD',
+  'XPPPPPPPXD',
+  'XPPPPPPPXD',
+  'XPPPPPPPXD',
+  'XPPPPPPPXD',
+  'XXXXXXXXXD',
+  '.DDDDDDDDD',
+];
 const EYE_ROWS = ['.XXXX.', 'XXPPXX', 'XPPPPX', 'XXPPXX', '.XXXX.'];
 function brewingIngredientPainters(): Record<string, Painter> {
   const blob = (color: string): Painter => (c) => c.draw(BLOB_ROWS, { X: hex(color) }, 4, 5);
   return {
     gold_nugget: (c) => c.draw(NUGGET_ROWS, { X: hex('#f0c040') }, 6, 6),
+    paper: (c) => c.draw(PAPER_ROWS, { X: hex('#f4f4f4'), D: hex('#c8c8c8') }, 3, 2),
+    book: (c) => c.draw(BOOK_ROWS, { X: hex('#8a5a2b'), P: hex('#f4f4f4'), D: hex('#5b3a1b') }, 3, 2),
+    enchanted_book: (c) => c.draw(BOOK_ROWS, { X: hex('#a03060'), P: hex('#f4f4f4'), D: hex('#601838') }, 3, 2),
     glass_bottle: (c) => c.draw(BOTTLE_ROWS, { C: BOTTLE_CORK, G: BOTTLE_GLASS, L: [0, 0, 0, 0] }, 2, 2),
     nether_wart: (c) => {
       c.draw(WART_ROWS, { X: hex('#8c1c1c') }, 3, 5);

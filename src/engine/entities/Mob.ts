@@ -26,6 +26,7 @@ import {
   SKELETON_SHOOT_RANGE,
 } from '../constants/mobs';
 import { HOSTILE_SPAWN_LIGHT_MAX } from '../constants/mobs';
+import { EnchantmentId, enchantLevel } from '../items/enchantments';
 import { AABB } from '../physics/AABB';
 import { isBoxBlocked } from '../physics/collision';
 import { ArrowEntity } from './ArrowEntity';
@@ -464,6 +465,8 @@ export class Mob extends LivingEntity {
 
   protected override onDeath(ctx: EntityContext, byPlayer: boolean): void {
     this.trySplit(ctx);
+    // 抢夺：玩家击杀时每级最多多掉 1 个（1.8.9 同）
+    const looting = byPlayer ? enchantLevel(ctx.player.heldItem, EnchantmentId.LOOTING) : 0;
     for (const drop of this.def.drops) {
       if (drop.item === 'wool' && !this.hasWool) {
         continue;
@@ -471,7 +474,7 @@ export class Mob extends LivingEntity {
       if (drop.chance !== undefined && ctx.random() > drop.chance) {
         continue;
       }
-      const count = drop.min + Math.floor(ctx.random() * (drop.max - drop.min + 1));
+      const count = drop.min + Math.floor(ctx.random() * (drop.max - drop.min + 1 + looting));
       if (count > 0) {
         ctx.dropItem(this.x, this.y + this.height / 2, this.z, { id: drop.item, count }, 0.3);
       }

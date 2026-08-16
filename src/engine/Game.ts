@@ -107,6 +107,14 @@ import { createBrewingStand, tickBrewing, type BrewingState } from './items/Brew
 import { POTION_DEFS, PotionBase, potionItemId } from './items/potions';
 export type { SlotRef } from './items/ContainerController';
 import { getAttackDamage, getItem, ItemKind } from './items/ItemRegistry';
+import {
+  EnchantmentId,
+  FIRE_ASPECT_TICKS_PER_LEVEL,
+  KNOCKBACK_PER_LEVEL,
+  SHARPNESS_DAMAGE_PER_LEVEL,
+  enchantLevel,
+  unbreakingSkips,
+} from './items/enchantments';
 import type { ItemStack } from './items/ItemStack';
 import { getRules, type GameModeRules } from './modes/GameModes';
 import { AABB } from './physics/AABB';
@@ -1181,6 +1189,9 @@ export class Game implements EntityContext, ContainerHost {
     if (!durability) {
       return;
     }
+    if (unbreakingSkips(enchantLevel(held, EnchantmentId.UNBREAKING), false, this.rng)) {
+      return;
+    }
     const damage = (held.damage ?? 0) + amount;
     if (damage >= durability) {
       this.player.inventory.set(this.player.selectedSlot, null);
@@ -1790,15 +1801,26 @@ export class Game implements EntityContext, ContainerHost {
       return;
     }
     this.attackCooldown = ATTACK_COOLDOWN_TICKS;
-    // 力量 / 虚弱直接加减近战伤害（1.8.9 的算法）
+    // 力量 / 虚弱与锋利直接加减近战伤害（1.8.9 的算法）
+    const held = this.player.heldItem;
     const damage = Math.max(
       0,
-      getAttackDamage(this.player.heldItem?.id ?? null) + this.player.meleeDamageBonus,
+      getAttackDamage(held?.id ?? null) +
+        this.player.meleeDamageBonus +
+        enchantLevel(held, EnchantmentId.SHARPNESS) * SHARPNESS_DAMAGE_PER_LEVEL,
     );
+    target.lastDamageCause = 'mob';
     if (target.hurt(this, damage, this.player, true)) {
       this.sound.play('hit');
       this.player.onAttack();
-      const held = this.player.heldItem;
+      const knockback = enchantLevel(held, EnchantmentId.KNOCKBACK);
+      if (knockback > 0) {
+        target.applyKnockback(this.player.x, this.player.z, knockback * KNOCKBACK_PER_LEVEL);
+      }
+      const fireAspect = enchantLevel(held, EnchantmentId.FIRE_ASPECT);
+      if (fireAspect > 0) {
+        target.setOnFire(fireAspect * FIRE_ASPECT_TICKS_PER_LEVEL);
+      }
       if (held && getItem(held.id)?.tool) {
         this.damageHeldTool(getItem(held.id)?.tool?.type === ToolType.SWORD ? 1 : 2);
       }
@@ -2170,6 +2192,10 @@ export class Game implements EntityContext, ContainerHost {
         return '你被骷髅射死了';
       case 'explosion':
         return '你被炸死了';
+      case 'fire':
+        return '你被烧死了';
+      case 'lava':
+        return '你试图在岩浆里游泳';
       default:
         return '';
     }

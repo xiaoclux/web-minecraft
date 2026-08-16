@@ -1,5 +1,6 @@
 import { TICKS_PER_SECOND } from '../constants/game';
-import { getItem, type ToolProps } from '../items/ItemRegistry';
+import { EnchantmentId, efficiencyBonus, enchantLevel } from '../items/enchantments';
+import { getItem, ItemKind, type ToolProps } from '../items/ItemRegistry';
 import type { ItemStack } from '../items/ItemStack';
 import { blockVariant, type BlockDef, type BlockDrop } from './BlockRegistry';
 
@@ -29,7 +30,7 @@ export function breakTicks(def: BlockDef, held: ItemStack | null): number {
   const harvestable = canHarvest(def, held);
   let seconds = def.hardness * (harvestable ? HARVEST_MULTIPLIER : NO_HARVEST_MULTIPLIER);
   if (tool && def.tool === tool.type) {
-    seconds /= tool.speed;
+    seconds /= tool.speed + efficiencyBonus(enchantLevel(held, EnchantmentId.EFFICIENCY));
   }
   return Math.max(MIN_BREAK_TICKS, Math.ceil(seconds * TICKS_PER_SECOND));
 }
@@ -40,8 +41,26 @@ export function rollDrops(def: BlockDef, meta: number, held: ItemStack | null, r
     return [];
   }
   const variant = blockVariant(def, meta);
-  const table: BlockDrop[] = variant.drops ?? def.drops ?? [{ item: variant.name, min: 1, max: 1 }];
-  return rollDropTable(table, random);
+  const custom = variant.drops ?? def.drops;
+  // 精准采集：任何有对应物品的方块都掉自己（矿石掉矿石、石头掉石头）
+  if (enchantLevel(held, EnchantmentId.SILK_TOUCH) > 0 && getItem(variant.name)) {
+    return [{ id: variant.name, count: 1 }];
+  }
+  if (!custom) {
+    return rollDropTable([{ item: variant.name, min: 1, max: 1 }], random);
+  }
+  const drops = rollDropTable(custom, random);
+  // 时运：只对掉"非方块物品"的方块生效（矿物 / 种子 / 西瓜片），数量乘上 1~(level+1) 的随机倍数；
+  // 石头掉圆石这类"方块掉方块"不受影响（1.8.9 同）
+  const fortune = enchantLevel(held, EnchantmentId.FORTUNE);
+  if (fortune > 0) {
+    for (const drop of drops) {
+      if (getItem(drop.id)?.kind !== ItemKind.BLOCK) {
+        drop.count *= Math.max(1, Math.floor(random() * (fortune + 2)));
+      }
+    }
+  }
+  return drops;
 }
 
 /** 按掉落表逐项掷骰：先按概率决定出不出，再在 [min, max] 里取数量。方块掉落与战利品箱共用。 */

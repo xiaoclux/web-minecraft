@@ -31,6 +31,9 @@ const HAZARD_FIRE = 1 << 1;
 const HAZARD_LAVA = 1 << 2;
 const HAZARD_WATER = 1 << 3;
 
+/** 伤害原因。 */
+export type DamageCause = 'generic' | 'drown' | 'starve' | 'fall' | 'mob' | 'arrow' | 'explosion' | 'fire' | 'lava';
+
 /** 有生命值的实体。 */
 export abstract class LivingEntity extends Entity {
   health: number;
@@ -40,6 +43,8 @@ export abstract class LivingEntity extends Entity {
   invulnerableTicks = 0;
   /** 上一次伤害来源实体 id（击杀归属）。 */
   lastAttackerId: number | null = null;
+  /** 最近一次受伤的原因（死亡信息与保护类附魔用）；由造成伤害的代码在 hurt 之前设置。 */
+  lastDamageCause: DamageCause = 'generic';
   lastAttackedByPlayer = false;
   /** 身上的状态效果。 */
   readonly effects = new Map<EffectId, ActiveEffect>();
@@ -231,6 +236,7 @@ export abstract class LivingEntity extends Entity {
       this.lavaDamageTimer++;
       if (this.lavaDamageTimer >= LAVA_DAMAGE_INTERVAL_TICKS) {
         this.lavaDamageTimer = 0;
+        this.lastDamageCause = 'lava';
         this.hurt(ctx, LAVA_DAMAGE, null);
       }
     } else {
@@ -248,6 +254,7 @@ export abstract class LivingEntity extends Entity {
     this.fireDamageTimer++;
     if (this.fireDamageTimer >= FIRE_DAMAGE_INTERVAL_TICKS) {
       this.fireDamageTimer = 0;
+      this.lastDamageCause = 'fire';
       this.hurt(ctx, FIRE_DAMAGE, null);
     }
   }
@@ -298,6 +305,7 @@ export abstract class LivingEntity extends Entity {
   protected override onLand(ctx: EntityContext, fallDistance: number): void {
     const damage = Math.floor(fallDistance - FALL_DAMAGE_THRESHOLD);
     if (damage > 0 && !this.inWater) {
+      this.lastDamageCause = 'fall';
       this.hurt(ctx, damage, null);
     }
   }

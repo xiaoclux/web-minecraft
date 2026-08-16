@@ -31,7 +31,17 @@ import {
   type ActiveEffect,
 } from '../entities/effects';
 import { Inventory } from '../items/Inventory';
-import { getItem } from '../items/ItemRegistry';
+import {
+  EnchantmentId,
+  FEATHER_FALLING_POINTS_PER_LEVEL,
+  FIRE_PROTECTION_POINTS_PER_LEVEL,
+  PROTECTION_MAX_POINTS,
+  PROTECTION_POINTS_PER_LEVEL,
+  PROTECTION_REDUCTION_PER_POINT,
+  enchantLevel,
+  unbreakingSkips,
+} from '../items/enchantments';
+import { ArmorSlot, getItem } from '../items/ItemRegistry';
 import type { ItemStack } from '../items/ItemStack';
 import type { Entity } from '../entities/Entity';
 
@@ -77,7 +87,6 @@ export class Player extends LivingEntity {
   private drownTimer = 0;
   private lastPickupMessage: string | null = null;
   /** 最近一次伤害原因，用于死亡提示。 */
-  lastDamageCause: DamageCause = 'generic';
   private pickupListeners = new Set<(id: string, count: number) => void>();
 
   constructor() {
@@ -140,7 +149,11 @@ export class Player extends LivingEntity {
       return;
     }
     if (this.air > 0) {
-      this.air--;
+      // 水下呼吸附魔：每 (level+1) tick 才掉一格气
+      const respiration = enchantLevel(this.inventory.getArmor(ArmorSlot.HELMET), EnchantmentId.RESPIRATION);
+      if (respiration === 0 || ctx.tick % (respiration + 1) === 0) {
+        this.air--;
+      }
       return;
     }
     this.drownTimer++;
@@ -263,11 +276,6 @@ export class Player extends LivingEntity {
     this.isSprinting = false;
   }
 
-  protected override onLand(ctx: EntityContext, fallDistance: number): void {
-    this.lastDamageCause = 'fall';
-    super.onLand(ctx, fallDistance);
-  }
-
   /** 玩家受伤时也走 hurt；来源可能为空。 */
   hurtBy(ctx: EntityContext, amount: number, source: Entity | null): boolean {
     return this.hurt(ctx, amount, source);
@@ -283,7 +291,7 @@ export class Player extends LivingEntity {
     if (this.health <= 0 || amount <= 0 || this.invulnerableTicks > 0) {
       return false;
     }
-    return super.hurt(ctx, this.applyArmor(amount), source, byPlayer);
+    return super.hurt(ctx, this.applyArmor(amount, ctx.random), source, byPlayer);
   }
 
   /** 迅捷 / 缓慢带来的移动速度倍率。 */
@@ -318,23 +326,46 @@ export class Player extends LivingEntity {
    * 护甲减伤后的实际伤害；同时按 1.8.9 的规则消耗各件盔甲的耐久。
    * 摔落 / 溺水 / 饿死这类伤害在原版也会被护甲挡一部分，这里一并按同一公式处理。
    */
-  private applyArmor(amount: number): number {
+  private applyArmor(amount: number, random: () => number): number {
     const points = this.armorPoints;
     if (points <= 0) {
       return amount;
     }
-    this.damageArmor(amount);
-    return amount * (1 - points * ARMOR_DAMAGE_REDUCTION_PER_POINT);
+    this.damageArmor(amount, random);
+    const reduced = amount * (1 - points * ARMOR_DAMAGE_REDUCTION_PER_POINT);
+    return reduced * (1 - this.protectionPoints() * PROTECTION_REDUCTION_PER_POINT);
   }
 
-  /** 按受到的伤害消耗盔甲耐久，耐久耗尽则损毁。 */
-  private damageArmor(amount: number): void {
+  /** 保护类附魔的总减伤点数：按当前伤害原因把各件盔甲的保护 / 火焰保护 / 摔落保护加起来。 */
+  private protectionPoints(): number {
+    const cause = this.lastDamageCause;
+    let points = 0;
+    for (const piece of this.inventory.armor) {
+      if (!piece?.enchants) {
+        continue;
+      }
+      points += enchantLevel(piece, EnchantmentId.PROTECTION) * PROTECTION_POINTS_PER_LEVEL;
+      if (cause === 'fire' || cause === 'lava') {
+        points += enchantLevel(piece, EnchantmentId.FIRE_PROTECTION) * FIRE_PROTECTION_POINTS_PER_LEVEL;
+      }
+      if (cause === 'fall') {
+        points += enchantLevel(piece, EnchantmentId.FEATHER_FALLING) * FEATHER_FALLING_POINTS_PER_LEVEL;
+      }
+    }
+    return Math.min(PROTECTION_MAX_POINTS, points);
+  }
+
+  /** 按受到的伤害消耗盔甲耐久，耐久耗尽则损毁；耐久附魔有概率免损。 */
+  private damageArmor(amount: number, random: () => number): void {
     const wear = Math.max(1, Math.floor(amount / ARMOR_DURABILITY_DAMAGE_DIVISOR));
     let changed = false;
     for (let slot = 0; slot < this.inventory.armor.length; slot++) {
       const piece = this.inventory.armor[slot];
       const durability = piece && getItem(piece.id)?.armor?.durability;
       if (!piece || !durability) {
+        continue;
+      }
+      if (unbreakingSkips(enchantLevel(piece, EnchantmentId.UNBREAKING), true, random)) {
         continue;
       }
       const damage = (piece.damage ?? 0) + wear;
@@ -390,7 +421,7 @@ export class Player extends LivingEntity {
 }
 
 /** 伤害来源类型。 */
-export type DamageCause = 'generic' | 'drown' | 'starve' | 'fall' | 'mob' | 'arrow' | 'explosion';
+export type { DamageCause } from '../entities/LivingEntity';
 
 /** 玩家存档数据。 */
 export interface PlayerSaveData {

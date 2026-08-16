@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { describeEnchants, isEnchanted } from '../engine/items/enchantments';
 import { getItem } from '../engine/items/ItemRegistry';
 import type { ItemStack } from '../engine/items/ItemStack';
 import { getItemIcon } from '../engine/textures/IconRegistry';
@@ -20,6 +21,9 @@ export function ItemIcon({ stack, size = DEFAULT_ICON_SIZE, showCount = true }: 
   const durability = def?.tool?.durability;
   const damage = stack.damage ?? 0;
   const style: CSSProperties = { width: size, height: size };
+  const label = def?.label ?? stack.id;
+  const enchanted = isEnchanted(stack);
+  const title = enchanted ? `${label}（${describeEnchants(stack)}）` : label;
   const barStyle: CSSProperties | undefined =
     durability && damage > 0
       ? {
@@ -28,8 +32,8 @@ export function ItemIcon({ stack, size = DEFAULT_ICON_SIZE, showCount = true }: 
         }
       : undefined;
   return (
-    <div className="item-icon" style={style} title={def?.label ?? stack.id}>
-      <img src={getItemIcon(stack.id)} alt={def?.label ?? stack.id} draggable={false} />
+    <div className={`item-icon${enchanted ? ' enchanted' : ''}`} style={style} title={title}>
+      <img src={getItemIcon(stack.id)} alt={label} draggable={false} />
       {showCount && stack.count > 1 && <span className="item-count">{stack.count}</span>}
       {barStyle && (
         <div className="item-durability">
