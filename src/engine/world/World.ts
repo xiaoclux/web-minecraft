@@ -110,6 +110,12 @@ export class World {
   /** 加入 chunk（标脏由 ChunkManager 在点亮后统一处理）。 */
   addChunk(chunk: Chunk): void {
     this.chunks.set(chunk.key, chunk);
+    // 定位缓存可能还指着同坐标的旧 chunk（联机时服务端数据会替换掉本地的空占位）
+    if (this.lastChunk && this.lastChunk.cx === chunk.cx && this.lastChunk.cz === chunk.cz) {
+      this.lastChunk = chunk;
+    }
+    this.hitChunk = null;
+    this.hitSection = null;
     for (const listener of this.chunkLoadListeners) {
       listener(chunk);
     }

@@ -19,6 +19,8 @@ function GameLoading() {
 interface Session {
   meta: WorldMeta;
   save: WorldSave | null;
+  /** 联机：要连的服务端地址与玩家名；单机时不填。 */
+  server?: { url: string; playerName: string };
 }
 
 /** 应用根：启动页 → 主菜单 ↔ 游戏。 */
@@ -28,7 +30,11 @@ export function App() {
   const [booted, setBooted] = useState(false);
   const handleBooted = useCallback(() => setBooted(true), []);
   const handleExit = useCallback(() => setSession(null), []);
-  const handleStart = useCallback((meta: WorldMeta, save: WorldSave | null) => setSession({ meta, save }), []);
+  const handleStart = useCallback(
+    (meta: WorldMeta, save: WorldSave | null, server?: { url: string; playerName: string }) =>
+      setSession({ meta, save, server }),
+    [],
+  );
   let content = <BootScreen onReady={handleBooted} />;
   if (booted && session) {
     content = (
@@ -39,6 +45,7 @@ export function App() {
           save={session.save}
           saveManager={saveManager}
           onExit={handleExit}
+          server={session.server}
         />
       </Suspense>
     );

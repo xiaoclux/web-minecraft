@@ -14,6 +14,8 @@ import { useStore } from './useGameStore';
 import { settingsStore } from '../engine/settings/Settings';
 
 interface GameViewProps {
+  /** 联机：要连的服务端地址与玩家名；单机时不填。 */
+  server?: { url: string; playerName: string };
   meta: WorldMeta;
   save: WorldSave | null;
   saveManager: SaveManager;
@@ -24,7 +26,7 @@ interface GameViewProps {
 const START_DELAY_MS = 30;
 
 /** 游戏画面容器：创建 Game 实例并挂载 UI 覆盖层。 */
-export function GameView({ meta, save, saveManager, onExit }: GameViewProps) {
+export function GameView({ meta, save, saveManager, onExit, server }: GameViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [game, setGame] = useState<Game | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,7 @@ export function GameView({ meta, save, saveManager, onExit }: GameViewProps) {
         return;
       }
       try {
-        instance = new Game({ meta, save, canvas, saveManager, onExit });
+        instance = new Game({ meta, save, canvas, saveManager, onExit, server });
         instance.start();
         if (import.meta.env.DEV) {
           // 开发模式下暴露实例，便于在控制台/自动化脚本中调试
@@ -57,7 +59,7 @@ export function GameView({ meta, save, saveManager, onExit }: GameViewProps) {
       window.clearTimeout(timer);
       instance?.dispose();
     };
-  }, [meta, save, saveManager, onExit]);
+  }, [meta, save, saveManager, onExit, server]);
 
   return (
     <div className="game-root">

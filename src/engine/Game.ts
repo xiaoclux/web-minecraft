@@ -108,6 +108,9 @@ import { EnderDragonEntity } from './entities/EnderDragonEntity';
 import { WitherEntity } from './entities/WitherEntity';
 import { MinecartEntity } from './entities/MinecartEntity';
 import { COMMAND_DAY_LENGTH, FILL_LIMIT, runCommand, type CommandHost } from './systems/Commands';
+import { MOVE_REPORT_INTERVAL_TICKS, NetClient, connectToServer, type RemotePlayer } from '../net/NetClient';
+import { RemoteGenerator } from '../net/RemoteGenerator';
+import type { WelcomeMessage } from '../net/protocol';
 import { KEY_CHAT, KEY_COMMAND } from './constants/keys';
 import { getBlockByName } from './blocks/BlockRegistry';
 import { ENCHANTMENT_DEFS, canEnchant, isEnchantmentId } from './items/enchantments';
@@ -213,6 +216,8 @@ export interface GameOptions {
   canvas: HTMLCanvasElement;
   saveManager: SaveManager;
   onExit: () => void;
+  /** 联机：要连的服务端地址与玩家名；单机时不填。 */
+  server?: { url: string; playerName: string };
 }
 
 const INITIAL_TIME_TICK = 1000;
@@ -464,7 +469,11 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (existing) {
       return existing;
     }
-    const dimension = new Dimension(DIMENSION_DEFS[id], createDimensionGenerator(id, this.meta), this);
+    const generator =
+      this.serverOptions && id === DimensionId.OVERWORLD
+        ? new RemoteGenerator(this.meta.seed, (cx, cz) => this.requestChunkFromServer(cx, cz), this.player)
+        : createDimensionGenerator(id, this.meta);
+    const dimension = new Dimension(DIMENSION_DEFS[id], generator, this);
     dimension.world.onChunkLoad((chunk) => this.applyPendingBlockEntities(chunk));
     dimension.world.onBlockChange((x, y, z) => this.onRedstoneRelevantChange(x, y, z));
     dimension.world.onChunkUnload((chunk) => this.onChunkUnloaded(chunk));
@@ -499,6 +508,14 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   readonly isTouch = isTouchDevice();
   private breakTarget: { x: number; y: number; z: number; id: number } | null = null;
   /** 脚步声：累计走过的水平距离与上一次采样点。 */
+  /** 联机客户端（单机为 null）。 */
+  private net: NetClient | null = null;
+  /** 连接建立前攒下的 chunk 请求。 */
+  private readonly pendingChunkRequests: [number, number][] = [];
+  /** 正在应用服务端下发的方块变更（避免又把它当成本地意图发回去）。 */
+  private applyingRemoteChange = false;
+  /** 启动时传入的联机参数。 */
+  private readonly serverOptions: { url: string; playerName: string } | undefined;
   /** 聊天记录里的下一个 id 与打开聊天栏时的初始文本。 */
   private nextChatId = 1;
   private chatDraft = '';
@@ -552,6 +569,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.meta = options.meta;
     this.saveManager = options.saveManager;
     this.onExit = options.onExit;
+    this.serverOptions = options.server;
     this.rules = getRules(options.meta.mode);
     this.difficulty = this.rules.forcedDifficulty ?? options.meta.difficulty;
     this.rng = createRng(hashString(`${options.meta.seed}:${Date.now()}`));
@@ -623,6 +641,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
 
   /** 开始游戏循环。 */
   start(): void {
+    if (this.serverOptions) {
+      // 联机：地形与方块都以服务端为准，连上之后再开始要 chunk
+      void this.connectToServer(this.serverOptions.url, this.serverOptions.playerName);
+    }
     if (this.running) {
       return;
     }
@@ -876,6 +898,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.updateCamera();
     this.renderer.chunks.update(this.player.x, this.player.z);
     const minLight = this.minLight();
+    this.renderer.entities.updateRemotePlayers(this.remotePlayers);
     this.renderer.entities.update(
       this.entities.values(),
       this.renderer.sky.skyLevel,
@@ -962,6 +985,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.tickRedstone();
     this.tickHoppers();
     this.tickRiding();
+    this.tickNetwork();
     this.tickBeacons();
     this.tickPortal();
     this.tickFootsteps();
@@ -1219,6 +1243,112 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     return this.current.id;
   }
 
+  // ---------------------------------------------------------------- 联机
+
+  /** 是否处于联机模式。 */
+  get isMultiplayer(): boolean {
+    return this.net !== null;
+  }
+
+  /** 其他玩家（渲染用）。 */
+  get remotePlayers(): readonly RemotePlayer[] {
+    return this.net?.remotePlayers ?? [];
+  }
+
+  /** 连接服务端；失败会在聊天栏提示。 */
+  async connectToServer(url: string, playerName: string): Promise<void> {
+    try {
+      this.net = await connectToServer(url, playerName, {
+        onWelcome: (message) => this.onNetWelcome(message),
+        onChunkData: (cx, cz, blocks, meta) => this.onNetChunkData(cx, cz, blocks, meta),
+        onBlockChange: (x, y, z, blockId, meta) => this.onNetBlockChange(x, y, z, blockId, meta),
+        onChat: (text) => this.reply(text),
+        onTimeSync: (timeTick) => {
+          this.timeTick = timeTick;
+        },
+        onPlayersChanged: () => {
+          /* 渲染时直接读 remotePlayers，这里不用做别的 */
+        },
+        onDisconnect: () => {
+          this.net = null;
+          this.reply('与服务端的连接已断开');
+        },
+      });
+      this.reply(`已连接到 ${url}`);
+    } catch (error) {
+      this.reply(`连接失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * 向服务端要一个 chunk。连接还没建好时先记下来，握手完成后统一补发 ——
+   * 否则开局那批在连接建立前生成的空 chunk 会永远是空的。
+   */
+  private requestChunkFromServer(cx: number, cz: number): void {
+    if (this.net) {
+      this.net.requestChunk(cx, cz);
+      return;
+    }
+    this.pendingChunkRequests.push([cx, cz]);
+  }
+
+  /** 握手完成：按服务端给的出生点落地。 */
+  private onNetWelcome(message: WelcomeMessage): void {
+    this.timeTick = message.timeTick;
+    this.player.setPosition(message.x, message.y, message.z);
+    this.player.spawnX = message.x;
+    this.player.spawnY = message.y;
+    this.player.spawnZ = message.z;
+    // 补发连接建立前攒下的 chunk 请求
+    for (const [cx, cz] of this.pendingChunkRequests) {
+      this.net?.requestChunk(cx, cz);
+    }
+    this.pendingChunkRequests.length = 0;
+    this.reply(`已加入世界（种子 ${message.seed}）`);
+  }
+
+  /** 服务端下发 chunk：用真数据替换本地的空占位。 */
+  private onNetChunkData(cx: number, cz: number, blocks: Uint32Array, meta: Uint32Array): void {
+    const chunk = deserializeChunk({ cx, cz, blocks, meta }, this.world.hasSkyLight);
+    this.chunkManager.addLoadedChunk(chunk);
+  }
+
+  /** 服务端确认的方块变更（包括自己刚才那一下）。 */
+  private onNetBlockChange(x: number, y: number, z: number, blockId: number, meta: number): void {
+    this.applyingRemoteChange = true;
+    try {
+      this.world.setBlock(x, y, z, blockId, meta);
+    } finally {
+      this.applyingRemoteChange = false;
+    }
+  }
+
+  /** 每 tick 上报位置。 */
+  private tickNetwork(): void {
+    const net = this.net;
+    if (!net || this.tick % MOVE_REPORT_INTERVAL_TICKS !== 0) {
+      return;
+    }
+    const p = this.player;
+    net.reportMove(p.x, p.y, p.z, p.yaw, p.pitch);
+  }
+
+  /**
+   * 联机时把改方块的意图发给服务端，本地先不动手。
+   * @returns 是否已交给服务端（true 表示调用方不要再改本地世界）
+   */
+  private sendBlockIntent(x: number, y: number, z: number, blockId: number, meta: number): boolean {
+    if (!this.net || this.applyingRemoteChange) {
+      return false;
+    }
+    if (blockId === BlockId.AIR) {
+      this.net.requestBreak(x, y, z);
+    } else {
+      this.net.requestPlace(x, y, z, blockId, meta);
+    }
+    return true;
+  }
+
   // ---------------------------------------------------------------- 聊天与指令
 
   /** 打开聊天栏（带一个初始文本，如 "/"）。 */
@@ -1254,7 +1384,12 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       this.chatHistory.shift();
     }
     if (!trimmed.startsWith('/')) {
-      this.addChatMessage(`<玩家> ${trimmed}`);
+      // 联机时交给服务端广播（自己也会收到回声），单机才直接显示
+      if (this.net) {
+        this.net.sendChat(trimmed);
+      } else {
+        this.addChatMessage(`<玩家> ${trimmed}`);
+      }
       return;
     }
     const reply = runCommand(this, trimmed);
@@ -2590,6 +2725,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (id === BlockId.AIR) {
       return;
     }
+    // 联机时由服务端说了算：只发意图，等广播回来再改世界
+    if (this.sendBlockIntent(x, y, z, BlockId.AIR, 0)) {
+      return;
+    }
     const def = getBlock(id);
     this.achievements.addStat(StatId.BLOCKS_MINED);
     this.spawnBreakParticles(x, y, z, def);
@@ -3418,6 +3557,13 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
           }
         }
       }
+    }
+    if (this.sendBlockIntent(px, py, pz, blockId, meta)) {
+      this.playBlockSound(placeSound(soundGroupOf(def)), px, py, pz, 'place');
+      if (!this.rules.infiniteItems) {
+        this.player.inventory.consume(this.player.selectedSlot, 1);
+      }
+      return;
     }
     this.world.setBlock(px, py, pz, blockId, meta);
     this.playBlockSound(placeSound(soundGroupOf(def)), px, py, pz, 'place');

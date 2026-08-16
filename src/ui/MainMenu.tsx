@@ -7,7 +7,7 @@ import { SettingsPanel } from './SettingsPanel';
 
 interface MainMenuProps {
   saveManager: SaveManager;
-  onStart: (meta: WorldMeta, save: WorldSave | null) => void;
+  onStart: (meta: WorldMeta, save: WorldSave | null, server?: { url: string; playerName: string }) => void;
 }
 
 const MODE_DESCRIPTIONS: Record<GameMode, string> = {
@@ -25,6 +25,8 @@ const DIFFICULTY_OPTIONS: { value: Difficulty; label: string }[] = [
 ];
 
 const WORLD_TYPE_ORDER: WorldType[] = [WorldType.DEFAULT, WorldType.FLAT];
+/** 多人游戏默认填的地址（本机开服时最常用）。 */
+const DEFAULT_SERVER_URL = 'ws://localhost:8080';
 
 const MODE_ORDER: GameMode[] = [GameMode.SURVIVAL, GameMode.CREATIVE, GameMode.ADVENTURE, GameMode.HARDCORE];
 
@@ -44,6 +46,8 @@ export function MainMenu({ saveManager, onStart }: MainMenuProps) {
   const [mode, setMode] = useState<GameMode>(GameMode.SURVIVAL);
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.NORMAL);
   const [worldType, setWorldType] = useState<WorldType>(WorldType.DEFAULT);
+  const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER_URL);
+  const [playerName, setPlayerName] = useState('玩家');
   const [generateStructures, setGenerateStructures] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -78,6 +82,29 @@ export function MainMenu({ saveManager, onStart }: MainMenuProps) {
       generateStructures,
     };
     onStart(meta, null);
+  };
+
+  /** 加入局域网服务端：世界数据全部来自服务端，这里只造一份占位的元数据。 */
+  const handleJoin = (e: FormEvent): void => {
+    e.preventDefault();
+    const url = serverUrl.trim();
+    if (!url) {
+      setError('请填写服务器地址');
+      return;
+    }
+    const now = Date.now();
+    const meta: WorldMeta = {
+      id: createWorldId(),
+      name: `联机：${url}`,
+      seed: 'multiplayer',
+      mode: GameMode.SURVIVAL,
+      difficulty: Difficulty.NORMAL,
+      createdAt: now,
+      lastPlayed: now,
+      worldType: WorldType.DEFAULT,
+      generateStructures: true,
+    };
+    onStart(meta, null, { url, playerName: playerName.trim() || '玩家' });
   };
 
   const handleLoad = async (meta: WorldMeta): Promise<void> => {
@@ -185,6 +212,31 @@ export function MainMenu({ saveManager, onStart }: MainMenuProps) {
           </label>
           <button type="submit" className="menu-button primary" disabled={isBusy}>
             创建并进入世界
+          </button>
+        </form>
+        <form className="panel menu-panel" onSubmit={handleJoin}>
+          <h2>多人游戏</h2>
+          <p className="muted">在另一台机器上跑 npm run server，把它打印的地址填在这里。</p>
+          <label>
+            服务器地址
+            <input
+              type="text"
+              value={serverUrl}
+              onChange={(e) => setServerUrl(e.target.value)}
+              placeholder="ws://192.168.1.10:8080"
+            />
+          </label>
+          <label>
+            玩家名
+            <input
+              type="text"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              maxLength={16}
+            />
+          </label>
+          <button type="submit" className="menu-button primary" disabled={isBusy}>
+            加入服务器
           </button>
         </form>
         <div className="panel menu-panel">

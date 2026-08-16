@@ -53,10 +53,61 @@ interface RenderedEntity {
 export class EntityRenderer {
   readonly group = new THREE.Group();
   private readonly rendered = new Map<number, RenderedEntity>();
+  /** 其他玩家的模型（联机）。 */
+  private readonly remotePlayers = new Map<number, RenderedEntity>();
   private readonly textureCache = new Map<string, THREE.Texture>();
   private readonly geometryCache = new Map<string, THREE.BoxGeometry>();
 
   constructor(private world: World) {}
+
+  /**
+   * 更新其他玩家的模型（联机用）。用与僵尸同款的人形模型，只是配色不同。
+   */
+  updateRemotePlayers(players: readonly { id: number; x: number; y: number; z: number; yaw: number }[]): void {
+    const alive = new Set<number>();
+    for (const player of players) {
+      alive.add(player.id);
+      let rendered = this.remotePlayers.get(player.id);
+      if (!rendered) {
+        rendered = this.createRemotePlayer();
+        this.group.add(rendered.group);
+        this.remotePlayers.set(player.id, rendered);
+      }
+      rendered.group.position.set(player.x, player.y, player.z);
+      rendered.group.rotation.set(0, player.yaw, 0);
+    }
+    for (const [id, rendered] of this.remotePlayers) {
+      if (!alive.has(id)) {
+        this.group.remove(rendered.group);
+        for (const m of rendered.materials) {
+          m.dispose();
+        }
+        this.remotePlayers.delete(id);
+      }
+    }
+  }
+
+  /** 其他玩家的模型：头 + 身体 + 四肢的简化 Steve。 */
+  private createRemotePlayer(): RenderedEntity {
+    const group = new THREE.Group();
+    const skin = new THREE.MeshLambertMaterial({ color: 0xc98d63 });
+    const shirt = new THREE.MeshLambertMaterial({ color: 0x2e8b8b });
+    const pants = new THREE.MeshLambertMaterial({ color: 0x30407a });
+    const head = new THREE.Mesh(this.boxGeometry(0.5, 0.5, 0.5), skin);
+    head.position.y = 1.7;
+    const body = new THREE.Mesh(this.boxGeometry(0.5, 0.75, 0.25), shirt);
+    body.position.y = 1.15;
+    const armL = new THREE.Mesh(this.boxGeometry(0.25, 0.75, 0.25), shirt);
+    armL.position.set(0.375, 1.15, 0);
+    const armR = armL.clone();
+    armR.position.x = -0.375;
+    const legL = new THREE.Mesh(this.boxGeometry(0.25, 0.75, 0.25), pants);
+    legL.position.set(0.125, 0.375, 0);
+    const legR = legL.clone();
+    legR.position.x = -0.125;
+    group.add(head, body, armL, armR, legL, legR);
+    return { group, parts: [], materials: [skin, shirt, pants], kind: 'mob' };
+  }
 
   /** 换世界（切维度）：清掉当前维度的实体表现。 */
   setWorld(world: World): void {
