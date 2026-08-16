@@ -900,6 +900,27 @@ button:disabled {
   color: #ff5c5c;
 }
 
+.beacon-options {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 6px 0;
+}
+
+.beacon-option {
+  padding: 4px 10px;
+  border: 2px solid #555;
+  background: #6f6f6f;
+  color: #eee;
+  font: inherit;
+  cursor: pointer;
+}
+
+.beacon-option.active {
+  border-color: #7cff5c;
+  background: #4a6a3a;
+}
+
 .stats-panel {
   width: min(560px, 92vw);
   max-height: 85vh;

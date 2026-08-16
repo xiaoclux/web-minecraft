@@ -312,6 +312,7 @@ export const ITEM_DEFS: ItemDef[] = [
   material('glowstone_dust', '萤石粉'),
   material('quartz', '下界石英'),
   material('ender_eye', '末影之眼', { maxStack: 16 }),
+  material('nether_star', '下界之星', { maxStack: 1 }),
   ...potionItems(),
   ...DYE_ITEMS,
   material('flint_and_steel', '打火石', { maxStack: 1, durability: FLINT_AND_STEEL_DURABILITY }),

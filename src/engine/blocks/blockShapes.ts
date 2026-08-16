@@ -45,6 +45,8 @@ export const BlockShape = {
   ENCHANTING_TABLE: 'enchanting_table',
   /** 铁砧：底座 + 砧面，比整格窄一圈。 */
   ANVIL: 'anvil',
+  /** 头颅：半格高、四周各缩 1/4。 */
+  SKULL: 'skull',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -141,6 +143,11 @@ const ANVIL_BOXES: readonly BlockBox[] = [
   box(ANVIL_INSET, 0, ANVIL_INSET, 1 - ANVIL_INSET, ANVIL_BASE_HEIGHT, 1 - ANVIL_INSET),
   box(0.5 - ANVIL_INSET, ANVIL_BASE_HEIGHT, 0.5 - ANVIL_INSET, 0.5 + ANVIL_INSET, ANVIL_TOP_START, 0.5 + ANVIL_INSET),
   box(0, ANVIL_TOP_START, ANVIL_INSET, 1, 1, 1 - ANVIL_INSET),
+];
+const SKULL_INSET = 4 / 16;
+const SKULL_HEIGHT = 8 / 16;
+const SKULL_BOXES: readonly BlockBox[] = [
+  box(SKULL_INSET, 0, SKULL_INSET, 1 - SKULL_INSET, SKULL_HEIGHT, 1 - SKULL_INSET),
 ];
 const ENCHANTING_TABLE_BOXES: readonly BlockBox[] = [box(0, 0, 0, 1, ENCHANTING_TABLE_HEIGHT, 1)];
 /** 贴在格子某一侧面的薄板（厚度 t，方向 (dx,dz) 指向该侧面）。 */
@@ -290,6 +297,8 @@ export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readon
       return ENCHANTING_TABLE_BOXES;
     case BlockShape.ANVIL:
       return ANVIL_BOXES;
+    case BlockShape.SKULL:
+      return SKULL_BOXES;
     case BlockShape.LADDER:
       return LADDER_BOXES[meta & FACING_MASK];
     case BlockShape.DOOR:

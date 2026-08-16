@@ -224,6 +224,8 @@ export const BlockId = {
   END_PORTAL_FRAME: 120,
   DRAGON_EGG: 122,
   QUARTZ_BLOCK: 155,
+  WITHER_SKULL: 144,
+  BEACON: 138,
   SUGAR_CANE: 83,
   GLOWSTONE: 89,
   STONE_BRICKS: 98,
@@ -737,6 +739,23 @@ export const BLOCK_DEFS: BlockDef[] = [
   }),
   cube(BlockId.QUARTZ_BLOCK, 'quartz_block', '石英块', same('quartz_block'), 0.8, ToolType.PICKAXE, {
     minTier: ToolTier.WOOD,
+  }),
+  {
+    ...cube(
+      BlockId.WITHER_SKULL,
+      'wither_skeleton_skull',
+      '凋灵骷髅头',
+      topSide('wither_skull_top', 'wither_skull_side'),
+      1,
+      null,
+      { opaque: false },
+    ),
+    shape: BlockShape.SKULL,
+  },
+  cube(BlockId.BEACON, 'beacon', '信标', same('beacon'), 3, null, {
+    opaque: false,
+    interactive: true,
+    light: 15,
   }),
   // 传送门：站进去会被传送，本身不挡人、自带微光
   {

@@ -660,6 +660,24 @@ function netherWart(stage: number): Painter {
   };
 }
 
+/** 凋灵骷髅头：黑色骨质。 */
+const witherSkullTop: Painter = (c, rng) => {
+  c.noise(hex('#3a3a3a'), 0.1, rng);
+};
+const witherSkullSide: Painter = (c, rng) => {
+  c.noise(hex('#3a3a3a'), 0.1, rng);
+  c.rect(3, 5, 3, 3, hex('#101010'));
+  c.rect(10, 5, 3, 3, hex('#101010'));
+  c.rect(5, 10, 6, 2, hex('#101010'));
+};
+
+/** 信标：深色底 + 中央的亮蓝光核。 */
+const beacon: Painter = (c, rng) => {
+  c.noise(hex('#1b2b30'), 0.08, rng);
+  c.rect(3, 3, 10, 10, hex('#3ad0e0'));
+  c.rect(5, 5, 6, 6, hex('#c8fbff'));
+};
+
 /** 石英块：接近纯白，带一点点纹理。 */
 const quartzBlock: Painter = (c, rng) => {
   c.noise(hex('#ece7e0'), 0.05, rng);
@@ -961,6 +979,9 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   netherrack,
   end_stone: endStone,
   quartz_block: quartzBlock,
+  wither_skull_top: witherSkullTop,
+  wither_skull_side: witherSkullSide,
+  beacon,
   end_portal: endPortal,
   end_portal_frame_top: endPortalFrameTop,
   end_portal_frame_eye: endPortalFrameEye,

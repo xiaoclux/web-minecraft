@@ -15,6 +15,7 @@ import { BREW_TICKS } from '../engine/items/potions';
 import { ENCHANTMENT_DEFS, type EnchantmentId } from '../engine/items/enchantments';
 import { ENCHANT_ITEM_SLOT, ENCHANT_LAPIS_SLOT, LAPIS_PER_OPTION } from '../engine/items/EnchantingTable';
 import { ANVIL_LEFT_SLOT, ANVIL_MAX_COST, ANVIL_RIGHT_SLOT, MAX_ITEM_NAME_LENGTH } from '../engine/items/Anvil';
+import { BEACON_MAX_LEVEL } from '../engine/systems/BeaconSystem';
 import { SMELT_TICKS } from '../engine/items/Furnace';
 import { ITEM_DEFS, ItemKind } from '../engine/items/ItemRegistry';
 import type { ItemStack } from '../engine/items/ItemStack';
@@ -277,6 +278,35 @@ function AnvilArea({ game }: { game: Game }) {
   );
 }
 
+function BeaconArea({ game }: { game: Game }) {
+  const beacon = game.openBeacon;
+  if (!beacon) {
+    return null;
+  }
+  return (
+    <div className="beacon-area">
+      <div className="section-title">
+        信标（等级 {beacon.level}/{BEACON_MAX_LEVEL}）
+      </div>
+      {beacon.level === 0 ? (
+        <p className="muted">脚下需要用铁块 / 金块 / 钻石块搭一座金字塔，上方还要能看到天空。</p>
+      ) : (
+        <div className="beacon-options">
+          {beacon.options.map((option) => (
+            <button
+              key={option.effect}
+              className={`beacon-option${beacon.effect === option.effect ? ' active' : ''}`}
+              onClick={() => game.selectBeaconEffect(option.effect)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChestArea({ game }: { game: Game }) {
   const items = game.openChestItems;
   const indices = useMemo(() => (items ? Array.from({ length: items.length }, (_, i) => i) : []), [items]);
@@ -359,6 +389,7 @@ export function InventoryScreen({ game, state }: InventoryScreenProps) {
           {state.screen === Screen.BREWING && <BrewingArea game={game} />}
           {state.screen === Screen.ENCHANTING && <EnchantingArea game={game} />}
           {state.screen === Screen.ANVIL && <AnvilArea game={game} />}
+          {state.screen === Screen.BEACON && <BeaconArea game={game} />}
           {state.screen === Screen.CHEST && <ChestArea game={game} />}
           <div className="section-title">物品栏</div>
           <InventoryGrid game={game} />

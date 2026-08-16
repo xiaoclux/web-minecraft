@@ -66,6 +66,22 @@ export const DRAGON_HEAL_INTERVAL_TICKS = 20;
 /** 击杀末影龙给的经验。 */
 export const DRAGON_KILL_XP = 12000;
 
+/** 凋灵：血量、蓄力时长、移动与射击参数。 */
+export const WITHER_MAX_HEALTH = 300;
+export const WITHER_CHARGE_TICKS = 200;
+export const WITHER_SPEED = 4;
+export const WITHER_HOVER_HEIGHT = 4;
+export const WITHER_SHOOT_RANGE = 24;
+export const WITHER_SHOOT_COOLDOWN_TICKS = 30;
+/** 凋灵之首：速度、伤害、凋零时长、撞墙爆炸半径与存活时间。 */
+export const WITHER_SKULL_SPEED = 16;
+export const WITHER_SKULL_DAMAGE = 5;
+export const WITHER_SKULL_EFFECT_TICKS = 200;
+export const WITHER_SKULL_EXPLOSION_RADIUS = 2;
+export const WITHER_SKULL_LIFETIME_TICKS = 200;
+/** 击杀凋灵给的经验。 */
+export const WITHER_KILL_XP = 50;
+
 export const SPLASH_POTION_SPEED = 12;
 export const SPLASH_POTION_GRAVITY = 20;
 export const SPLASH_POTION_LIFETIME_TICKS = 200;

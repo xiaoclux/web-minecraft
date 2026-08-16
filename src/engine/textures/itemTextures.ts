@@ -674,6 +674,13 @@ function brewingIngredientPainters(): Record<string, Painter> {
     gold_nugget: (c) => c.draw(NUGGET_ROWS, { X: hex('#f0c040') }, 6, 6),
     quartz: (c) => c.draw(NUGGET_ROWS, { X: hex('#ece7e0') }, 6, 6),
     ender_eye: (c) => c.draw(EYE_ROWS, { X: hex('#0f7a5a'), P: hex('#c8f0d8') }, 5, 6),
+    nether_star: (c) =>
+      c.draw(
+        ['..X..', '.XXX.', 'XXXXX', '.XXX.', '..X..'],
+        { X: hex('#f4f4d0') },
+        5,
+        5,
+      ),
     paper: (c) => c.draw(PAPER_ROWS, { X: hex('#f4f4f4'), D: hex('#c8c8c8') }, 3, 2),
     book: (c) => c.draw(BOOK_ROWS, { X: hex('#8a5a2b'), P: hex('#f4f4f4'), D: hex('#5b3a1b') }, 3, 2),
     enchanted_book: (c) => c.draw(BOOK_ROWS, { X: hex('#a03060'), P: hex('#f4f4f4'), D: hex('#601838') }, 3, 2),

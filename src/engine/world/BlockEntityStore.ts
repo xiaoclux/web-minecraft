@@ -14,6 +14,7 @@ export const BlockEntityType = {
   CHEST: 'chest',
   SPAWNER: 'spawner',
   BREWING_STAND: 'brewing_stand',
+  BEACON: 'beacon',
 } as const;
 export type BlockEntityType = (typeof BlockEntityType)[keyof typeof BlockEntityType];
 
@@ -48,7 +49,18 @@ export interface BrewingStandBlockEntity {
   state: BrewingState;
 }
 
-export type BlockEntity = FurnaceBlockEntity | ChestBlockEntity | SpawnerBlockEntity | BrewingStandBlockEntity;
+/** 信标：选中的效果（没选时为空）。 */
+export interface BeaconBlockEntity {
+  type: typeof BlockEntityType.BEACON;
+  effect?: string;
+}
+
+export type BlockEntity =
+  | FurnaceBlockEntity
+  | ChestBlockEntity
+  | SpawnerBlockEntity
+  | BrewingStandBlockEntity
+  | BeaconBlockEntity;
 
 /** 存档中的一条方块实体记录。 */
 export interface BlockEntitySaveData {
@@ -85,6 +97,11 @@ export class BlockEntityStore {
     const created = create();
     this.byKey.set(key, created);
     return created;
+  }
+
+  /** 遍历 [坐标键, 实体]。 */
+  entries(): IterableIterator<[string, BlockEntity]> {
+    return this.byKey.entries();
   }
 
   /** 删除并返回被删除的实体。 */

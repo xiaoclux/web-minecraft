@@ -1,12 +1,5 @@
 import * as THREE from 'three';
-import {
-  BlockId,
-  ToolType,
-  blockVariant,
-  cropBlockForSeed,
-  getBlock,
-  type BlockDef,
-} from './blocks/BlockRegistry';
+import { BlockId, ToolType, blockVariant, cropBlockForSeed, getBlock, type BlockDef } from './blocks/BlockRegistry';
 import { breakTicks, rollDrops, rollXp } from './blocks/blockBreaking';
 import {
   BED_HEAD_BIT,
@@ -76,6 +69,7 @@ import {
   DRAGON_CRUISE_HEIGHT,
   DRAGON_KILL_XP,
   ENDER_CRYSTAL_HEAL_RANGE,
+  WITHER_KILL_XP,
 } from './constants/mobs';
 import { CHEST_SLOT_COUNT } from './constants/ui';
 import { rollLoot } from './world/structures/LootTables';
@@ -109,6 +103,15 @@ import { ThrownPotionEntity } from './entities/ThrownPotionEntity';
 import { FireballEntity } from './entities/FireballEntity';
 import { EnderCrystalEntity } from './entities/EnderCrystalEntity';
 import { EnderDragonEntity } from './entities/EnderDragonEntity';
+import { WitherEntity } from './entities/WitherEntity';
+import {
+  BEACON_EFFECT_TICKS,
+  beaconLevel,
+  beaconOptionsFor,
+  beaconRange,
+  hasSkyAccess,
+  type BeaconOption,
+} from './systems/BeaconSystem';
 import { EndGenerator, END_ISLAND_CENTER_X, END_ISLAND_CENTER_Z, END_ISLAND_SURFACE_Y } from './world/EndGenerator';
 import { TerrainGenerator } from './world/TerrainGenerator';
 import type { Stronghold } from './world/structures/StrongholdGenerator';
@@ -117,7 +120,7 @@ import type { EntityContext } from './entities/EntityContext';
 import { ItemDropEntity } from './entities/ItemDropEntity';
 import { XpOrbEntity } from './entities/XpOrbEntity';
 import { LivingEntity } from './entities/LivingEntity';
-import { EffectId, type ActiveEffect } from './entities/effects';
+import { EffectId, isEffectId, type ActiveEffect } from './entities/effects';
 import { Mob } from './entities/Mob';
 import { MobType, isMobType } from './entities/MobDefs';
 import { MobSpawner } from './entities/MobSpawner';
@@ -232,13 +235,29 @@ const EXPLOSION_PARTICLE_TEXTURE = 'stone';
  */
 const BOOKSHELF_RING_OFFSETS: readonly (readonly (readonly [number, number])[])[] = [
   [[-2, -2]],
-  [[-2, -1], [-2, 0], [-2, 1]],
+  [
+    [-2, -1],
+    [-2, 0],
+    [-2, 1],
+  ],
   [[-2, 2]],
-  [[-1, -2], [0, -2], [1, -2]],
+  [
+    [-1, -2],
+    [0, -2],
+    [1, -2],
+  ],
   [],
-  [[-1, 2], [0, 2], [1, 2]],
+  [
+    [-1, 2],
+    [0, 2],
+    [1, 2],
+  ],
   [[2, -2]],
-  [[2, -1], [2, 0], [2, 1]],
+  [
+    [2, -1],
+    [2, 0],
+    [2, 1],
+  ],
   [[2, 2]],
 ];
 /** 打末影水晶时准星允许的偏差与额外触及距离。 */
@@ -246,6 +265,13 @@ const CRYSTAL_HIT_TOLERANCE = 1.5;
 const CRYSTAL_EXTRA_REACH = 3;
 /** 末影水晶治疗末影龙的距离平方。 */
 const CRYSTAL_HEAL_RANGE_SQ = ENDER_CRYSTAL_HEAL_RANGE * ENDER_CRYSTAL_HEAL_RANGE;
+/** 凋灵召唤阵的两个可能轴向（沿 X 或沿 Z 摆）。 */
+const WITHER_SUMMON_AXES: readonly (readonly [number, number])[] = [
+  [1, 0],
+  [0, 1],
+];
+/** 信标多久给一次效果。 */
+const BEACON_REFRESH_TICKS = 20;
 /** 末影之眼物品 id、框架 meta 里"已镶眼"的位、框架方环半径。 */
 const ENDER_EYE_ITEM = 'ender_eye';
 const PORTAL_FRAME_EYE_BIT = 4;
@@ -765,9 +791,7 @@ export class Game implements EntityContext, ContainerHost {
     const hit = this.currentHit;
     this.renderer.outline.set(
       hit,
-      hit
-        ? this.outlineBoxAt(hit.x, hit.y, hit.z)
-        : FULL_BOX,
+      hit ? this.outlineBoxAt(hit.x, hit.y, hit.z) : FULL_BOX,
       this.breakNeededTicks > 0 ? this.breakProgressTicks / this.breakNeededTicks : 0,
     );
     const brightness = this.brightnessAtPlayer();
@@ -840,6 +864,7 @@ export class Game implements EntityContext, ContainerHost {
         /* toast 已提示 */
       });
     }
+    this.tickBeacons();
     this.tickPortal();
     this.tickFootsteps();
     this.tickDigSound();
@@ -853,7 +878,10 @@ export class Game implements EntityContext, ContainerHost {
     const p = this.player;
     const x = Math.floor(p.x);
     const z = Math.floor(p.z);
-    return p.y < this.world.getHeight(x, z) - UNDERGROUND_DEPTH && this.lightLevelAt(x, Math.floor(p.eyeY), z) < UNDERGROUND_MAX_LIGHT;
+    return (
+      p.y < this.world.getHeight(x, z) - UNDERGROUND_DEPTH &&
+      this.lightLevelAt(x, Math.floor(p.eyeY), z) < UNDERGROUND_MAX_LIGHT
+    );
   }
 
   /** 把设置里的三档音量同步给音频总线。 */
@@ -947,12 +975,24 @@ export class Game implements EntityContext, ContainerHost {
   private travelThroughEndPortal(): void {
     if (this.current.id === DimensionId.END) {
       const target = this.dimensionOf(DimensionId.OVERWORLD);
-      this.enterDimension(target, Math.floor(this.player.spawnX), Math.floor(this.player.spawnY), Math.floor(this.player.spawnZ), false);
+      this.enterDimension(
+        target,
+        Math.floor(this.player.spawnX),
+        Math.floor(this.player.spawnY),
+        Math.floor(this.player.spawnZ),
+        false,
+      );
       return;
     }
     const target = this.dimensionOf(DimensionId.END);
     const spawn = target.generator.findSpawn();
-    this.enterDimension(target, Math.floor(spawn.x), Math.floor(spawn.y) + END_ARRIVAL_HEIGHT, Math.floor(spawn.z), false);
+    this.enterDimension(
+      target,
+      Math.floor(spawn.x),
+      Math.floor(spawn.y) + END_ARRIVAL_HEIGHT,
+      Math.floor(spawn.z),
+      false,
+    );
   }
 
   /**
@@ -1001,7 +1041,11 @@ export class Game implements EntityContext, ContainerHost {
       this.entities.set(crystal.id, crystal);
     }
     const dragon = new EnderDragonEntity(END_ISLAND_CENTER_X, END_ISLAND_CENTER_Z);
-    dragon.setPosition(END_ISLAND_CENTER_X + DRAGON_CIRCLE_RADIUS, END_ISLAND_SURFACE_Y + DRAGON_CRUISE_HEIGHT, END_ISLAND_CENTER_Z);
+    dragon.setPosition(
+      END_ISLAND_CENTER_X + DRAGON_CIRCLE_RADIUS,
+      END_ISLAND_SURFACE_Y + DRAGON_CRUISE_HEIGHT,
+      END_ISLAND_CENTER_Z,
+    );
     this.entities.set(dragon.id, dragon);
   }
 
@@ -1010,6 +1054,9 @@ export class Game implements EntityContext, ContainerHost {
     for (const e of this.entities.values()) {
       if (e instanceof EnderDragonEntity && !e.isDead && e.health > 0) {
         return { label: '末影龙', ratio: e.healthRatio };
+      }
+      if (e instanceof WitherEntity && !e.isDead && e.health > 0) {
+        return { label: '凋灵', ratio: e.healthRatio };
       }
     }
     return null;
@@ -1072,6 +1119,111 @@ export class Game implements EntityContext, ContainerHost {
   /** 当前维度 id（存档与调试面板用）。 */
   get dimensionId(): DimensionId {
     return this.current.id;
+  }
+
+  // ---------------------------------------------------------------- 凋灵与信标
+
+  /**
+   * 检查刚放下的凋灵骷髅头是否凑成了召唤阵：灵魂沙摆成 T 字、上面三颗头。
+   * 凑齐就清掉这些方块并召唤凋灵。
+   */
+  private trySummonWither(x: number, y: number, z: number): void {
+    for (const [dx, dz] of WITHER_SUMMON_AXES) {
+      // 刚放的头可能是三颗里的任意一颗
+      for (let offset = -1; offset <= 1; offset++) {
+        const cx = x - dx * offset;
+        const cz = z - dz * offset;
+        if (this.isWitherAltar(cx, y, cz, dx, dz)) {
+          this.summonWither(cx, y, cz, dx, dz);
+          return;
+        }
+      }
+    }
+  }
+
+  /** 以 (cx, y, cz) 为中心（头颅层）的召唤阵是否完整。 */
+  private isWitherAltar(cx: number, y: number, cz: number, dx: number, dz: number): boolean {
+    for (let i = -1; i <= 1; i++) {
+      if (this.world.getBlock(cx + dx * i, y, cz + dz * i) !== BlockId.WITHER_SKULL) {
+        return false;
+      }
+      if (this.world.getBlock(cx + dx * i, y - 1, cz + dz * i) !== BlockId.SOUL_SAND) {
+        return false;
+      }
+    }
+    // T 字的竖：中心正下方再一格灵魂沙
+    return this.world.getBlock(cx, y - 2, cz) === BlockId.SOUL_SAND;
+  }
+
+  private summonWither(cx: number, y: number, cz: number, dx: number, dz: number): void {
+    this.world.batch(() => {
+      for (let i = -1; i <= 1; i++) {
+        this.world.setBlock(cx + dx * i, y, cz + dz * i, BlockId.AIR);
+        this.world.setBlock(cx + dx * i, y - 1, cz + dz * i, BlockId.AIR);
+      }
+      this.world.setBlock(cx, y - 2, cz, BlockId.AIR);
+    });
+    const wither = new WitherEntity();
+    wither.setPosition(cx + 0.5, y, cz + 0.5);
+    this.entities.set(wither.id, wither);
+    this.achievements.onWitherSummoned();
+    this.showToast('凋灵被召唤了！');
+  }
+
+  /** 凋灵被打死：掉下界之星与经验。 */
+  private onWitherKilled(wither: WitherEntity): void {
+    this.dropItem(wither.x, wither.y, wither.z, { id: 'nether_star', count: 1 }, 0.2);
+    this.dropXp(wither.x, wither.y, wither.z, WITHER_KILL_XP);
+    this.achievements.onWitherKilled();
+    this.showToast('凋灵被击败了！');
+  }
+
+  /** 信标每秒给范围内的玩家续一次效果。 */
+  private tickBeacons(): void {
+    if (this.tick % BEACON_REFRESH_TICKS !== 0) {
+      return;
+    }
+    for (const [key, entity] of this.blockEntities.entries()) {
+      if (entity.type !== BlockEntityType.BEACON || !entity.effect) {
+        continue;
+      }
+      const [x, y, z] = key.split(',').map(Number);
+      const level = beaconLevel(this.world, x, y, z);
+      if (level <= 0 || !hasSkyAccess(this.world, x, y, z)) {
+        continue;
+      }
+      const range = beaconRange(level);
+      if (this.player.distanceSqToPoint(x, y, z) > range * range) {
+        continue;
+      }
+      if (isEffectId(entity.effect)) {
+        this.player.addEffect(entity.effect, BEACON_EFFECT_TICKS, 0, this);
+      }
+    }
+  }
+
+  /** 当前打开的信标状态（UI 用）。 */
+  get openBeacon(): { level: number; effect: string | null; options: BeaconOption[] } | null {
+    const pos = this.store.get().openBlock;
+    if (!pos || this.store.get().screen !== Screen.BEACON) {
+      return null;
+    }
+    const level = beaconLevel(this.world, pos.x, pos.y, pos.z);
+    const entity = this.blockEntities.get(pos.x, pos.y, pos.z);
+    const effect = entity?.type === BlockEntityType.BEACON ? (entity.effect ?? null) : null;
+    return { level, effect, options: beaconOptionsFor(level) };
+  }
+
+  /** 选择信标的效果（需要金字塔等级足够）。 */
+  selectBeaconEffect(effect: string): void {
+    const pos = this.store.get().openBlock;
+    const beacon = this.openBeacon;
+    if (!pos || !beacon || !beacon.options.some((o) => o.effect === effect)) {
+      return;
+    }
+    this.blockEntities.set(pos.x, pos.y, pos.z, { type: BlockEntityType.BEACON, effect });
+    this.sound.play('level');
+    this.notifyChanged();
   }
 
   /** 准星指向的方块名（带变种，如"云杉木板"）。 */
@@ -1813,7 +1965,14 @@ export class Game implements EntityContext, ContainerHost {
       e.isDead = true;
       const { x, y, z } = e.impact;
       const potion = POTION_DEFS[getItem(e.stack.id)?.potion ?? ''];
-      this.renderer.particles.spawnBlockBreak(x - 0.5, y - 0.5, z - 0.5, SPLASH_PARTICLE_TEXTURE, SPLASH_PARTICLE_COUNT, 1);
+      this.renderer.particles.spawnBlockBreak(
+        x - 0.5,
+        y - 0.5,
+        z - 0.5,
+        SPLASH_PARTICLE_TEXTURE,
+        SPLASH_PARTICLE_COUNT,
+        1,
+      );
       this.sound.play('break', Math.hypot(x - this.player.x, y - this.player.y, z - this.player.z));
       if (!potion) {
         continue;
@@ -2210,6 +2369,9 @@ export class Game implements EntityContext, ContainerHost {
         this.anvilNameText = '';
         this.openScreen(Screen.ANVIL, { x: hit.x, y: hit.y, z: hit.z });
         return true;
+      case BlockId.BEACON:
+        this.openScreen(Screen.BEACON, { x: hit.x, y: hit.y, z: hit.z });
+        return true;
       case BlockId.BED:
         this.useBed(hit.x, hit.y, hit.z);
         return true;
@@ -2374,6 +2536,9 @@ export class Game implements EntityContext, ContainerHost {
     }
     this.world.setBlock(px, py, pz, blockId, meta);
     this.playBlockSound(placeSound(soundGroupOf(def)), px, py, pz, 'place');
+    if (blockId === BlockId.WITHER_SKULL) {
+      this.trySummonWither(px, py, pz);
+    }
     this.achievements.addStat(StatId.BLOCKS_PLACED);
     if (def.shape === BlockShape.BED) {
       const [fx, fz] = FACINGS[meta & FACING_MASK];
@@ -2612,7 +2777,10 @@ export class Game implements EntityContext, ContainerHost {
         if (dx === 0 && dz === 0) {
           continue;
         }
-        if (this.world.getBlock(x + dx, y, z + dz) !== BlockId.AIR || this.world.getBlock(x + dx, y + 1, z + dz) !== BlockId.AIR) {
+        if (
+          this.world.getBlock(x + dx, y, z + dz) !== BlockId.AIR ||
+          this.world.getBlock(x + dx, y + 1, z + dz) !== BlockId.AIR
+        ) {
           continue;
         }
         for (const [ox, oz] of BOOKSHELF_RING_OFFSETS[(dx + 1) * 3 + (dz + 1)]) {
@@ -2640,7 +2808,9 @@ export class Game implements EntityContext, ContainerHost {
     if (this.enchantOptionsCache?.key === key) {
       return this.enchantOptionsCache.options;
     }
-    const options = item ? rollOptions(item, this.enchantShelves, createRng(this.enchantSeed ^ hashString(item.id))) : null;
+    const options = item
+      ? rollOptions(item, this.enchantShelves, createRng(this.enchantSeed ^ hashString(item.id)))
+      : null;
     this.enchantOptionsCache = { key, options };
     return options;
   }
@@ -2872,7 +3042,8 @@ export class Game implements EntityContext, ContainerHost {
     if (!entity) {
       return;
     }
-    if (entity.type === BlockEntityType.SPAWNER) {
+    // 刷怪笼与信标里没有物品，直接走
+    if (entity.type === BlockEntityType.SPAWNER || entity.type === BlockEntityType.BEACON) {
       return;
     }
     const stacks: (ItemStack | null)[] =
@@ -3024,7 +3195,9 @@ export class Game implements EntityContext, ContainerHost {
    */
   private useBed(x: number, y: number, z: number): void {
     const foot =
-      (this.world.getMeta(x, y, z) & BED_HEAD_BIT) === 0 ? { x, y, z } : (this.multiBlockPartner(x, y, z) ?? { x, y, z });
+      (this.world.getMeta(x, y, z) & BED_HEAD_BIT) === 0
+        ? { x, y, z }
+        : (this.multiBlockPartner(x, y, z) ?? { x, y, z });
     this.player.spawnX = foot.x + 0.5;
     this.player.spawnY = foot.y;
     this.player.spawnZ = foot.z + 0.5;
@@ -3234,6 +3407,10 @@ export class Game implements EntityContext, ContainerHost {
   onEntityKilled(entity: Entity, byPlayer: boolean): void {
     if (entity instanceof EnderDragonEntity) {
       this.onDragonKilled(entity);
+      return;
+    }
+    if (entity instanceof WitherEntity) {
+      this.onWitherKilled(entity);
       return;
     }
     if (byPlayer && entity instanceof Mob) {

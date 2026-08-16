@@ -405,6 +405,16 @@ export class AchievementSystem {
     this.unlock(AchievementId.THE_END2);
   }
 
+  /** 召唤凋灵。 */
+  onWitherSummoned(): void {
+    this.unlock(AchievementId.SPAWN_WITHER);
+  }
+
+  /** 击败凋灵。 */
+  onWitherKilled(): void {
+    this.unlock(AchievementId.KILL_WITHER);
+  }
+
   onEnchanted(): void {
     this.addStat(StatId.ITEMS_ENCHANTED);
     this.unlock(AchievementId.ENCHANTMENTS);

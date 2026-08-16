@@ -9,6 +9,8 @@ import { ThrownPotionEntity } from '../entities/ThrownPotionEntity';
 import { FireballEntity } from '../entities/FireballEntity';
 import { EnderCrystalEntity } from '../entities/EnderCrystalEntity';
 import { EnderDragonEntity } from '../entities/EnderDragonEntity';
+import { WitherEntity } from '../entities/WitherEntity';
+import { WitherSkullEntity } from '../entities/WitherSkullEntity';
 import type { ItemStack } from '../items/ItemStack';
 import { Mob } from '../entities/Mob';
 import { getItem, ItemKind } from '../items/ItemRegistry';
@@ -43,7 +45,7 @@ interface RenderedEntity {
   group: THREE.Group;
   parts: { mesh: THREE.Mesh; spec: PartSpec }[];
   materials: THREE.MeshLambertMaterial[];
-  kind: 'mob' | 'item' | 'arrow' | 'xp' | 'fireball' | 'crystal' | 'dragon';
+  kind: 'mob' | 'item' | 'arrow' | 'xp' | 'fireball' | 'crystal' | 'dragon' | 'wither';
 }
 
 /** 负责实体的 three.js 表现：模型、动画、受伤闪烁、光照。 */
@@ -120,6 +122,12 @@ export class EntityRenderer {
     }
     if (entity instanceof EnderDragonEntity) {
       return this.createDragon();
+    }
+    if (entity instanceof WitherEntity) {
+      return this.createWither();
+    }
+    if (entity instanceof WitherSkullEntity) {
+      return this.createWitherSkull();
     }
     if (entity instanceof XpOrbEntity) {
       return this.createXpOrb();
@@ -294,6 +302,29 @@ export class EntityRenderer {
     return { group, parts: [], materials: [m], kind: 'dragon' };
   }
 
+  /** 凋灵：一根身体 + 三个头。 */
+  private createWither(): RenderedEntity {
+    const group = new THREE.Group();
+    const m = new THREE.MeshLambertMaterial({ color: 0x24242c });
+    const body = new THREE.Mesh(this.boxGeometry(0.6, 1.8, 0.6), m);
+    body.position.y = 1;
+    group.add(body);
+    for (const offset of [-0.8, 0, 0.8]) {
+      const head = new THREE.Mesh(this.boxGeometry(0.6, 0.6, 0.6), m);
+      head.position.set(offset, offset === 0 ? 2.4 : 2.1, 0);
+      group.add(head);
+    }
+    return { group, parts: [], materials: [m], kind: 'wither' };
+  }
+
+  /** 凋灵之首：黑色小方块。 */
+  private createWitherSkull(): RenderedEntity {
+    const group = new THREE.Group();
+    const m = new THREE.MeshLambertMaterial({ color: 0x1b1b22, emissive: 0x2a1030 });
+    group.add(new THREE.Mesh(this.boxGeometry(0.4, 0.4, 0.4), m));
+    return { group, parts: [], materials: [m], kind: 'fireball' };
+  }
+
   private createArrow(): RenderedEntity {
     const group = new THREE.Group();
     const m = new THREE.MeshLambertMaterial({ color: 0x8f6b3a });
@@ -372,6 +403,13 @@ export class EntityRenderer {
       // 水晶自转 + 上下浮动，且自发光不受环境亮度影响
       r.group.rotation.y = time;
       r.group.position.y = entity.y + Math.sin(time * 2) * 0.15;
+      return;
+    }
+    if (r.kind === 'wither') {
+      r.group.rotation.set(0, entity.yaw, 0);
+      for (const m of r.materials) {
+        m.color.setScalar(Math.max(brightness, DRAGON_MIN_BRIGHTNESS));
+      }
       return;
     }
     if (r.kind === 'dragon') {

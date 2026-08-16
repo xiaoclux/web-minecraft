@@ -330,6 +330,7 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     drops: [
       { item: 'coal', min: 0, max: 1 },
       { item: 'bone', min: 0, max: 2 },
+      { item: 'wither_skeleton_skull', min: 1, max: 1, chance: 0.025 },
     ],
     xp: 5,
     burnsInSunlight: false,

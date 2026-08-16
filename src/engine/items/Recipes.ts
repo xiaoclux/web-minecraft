@@ -193,6 +193,7 @@ export const RECIPES: Recipe[] = [
   shaped(['G G', ' G '], { G: 'glass' }, 'glass_bottle', 3),
   shapeless(['blaze_rod'], 'blaze_powder', 2),
   shapeless(['blaze_powder', 'ender_pearl'], 'ender_eye'),
+  shaped(['GGG', 'GSG', 'OOO'], { G: 'glass', S: 'nether_star', O: 'obsidian' }, 'beacon'),
   shaped(['QQ', 'QQ'], { Q: 'quartz' }, 'quartz_block'),
   shapeless(['blaze_powder', 'slimeball'], 'magma_cream'),
   // 1.8.9 还要一个棕色蘑菇；蘑菇没做之前先用蛛眼 + 糖
