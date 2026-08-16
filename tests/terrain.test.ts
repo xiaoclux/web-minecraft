@@ -132,3 +132,30 @@ describe('石头变种', () => {
     expect(rollDrops(stone, 2, pick, () => 0)[0].id).toBe('polished_granite');
   });
 });
+
+describe('按群系分木材的树', () => {
+  it('森林长白桦、雪原与山地长云杉', () => {
+    const world = generateArea(new TerrainGenerator('tree-woods'), -4, 4);
+    const logMetas = new Set<number>();
+    for (const chunk of world.chunks.values()) {
+      for (let y = 60; y < 130; y++) {
+        for (let lz = 0; lz < 16; lz++) {
+          for (let lx = 0; lx < 16; lx++) {
+            if (chunk.getLocal(lx, y, lz) === BlockId.LOG) {
+              logMetas.add(chunk.getLocalMeta(lx, y, lz));
+            }
+          }
+        }
+      }
+    }
+    // 至少出现两种木材（种子固定，森林/雪原/山地都在这片区域里）
+    expect(logMetas.size).toBeGreaterThan(1);
+  });
+
+  it('每种树叶掉自己那种树苗', () => {
+    const leaves = getBlockByName('leaves')!;
+    expect(rollDrops(leaves, 0, null, () => 0)[0].id).toBe('sapling');
+    expect(rollDrops(leaves, 1, null, () => 0)[0].id).toBe('spruce_sapling');
+    expect(rollDrops(leaves, 2, null, () => 0)[0].id).toBe('birch_sapling');
+  });
+});

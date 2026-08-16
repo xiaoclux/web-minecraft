@@ -439,15 +439,16 @@ export const BLOCK_DEFS: BlockDef[] = [
     hardness: 0.2,
     tool: null,
     light: 0,
-    drops: [
-      { item: 'sapling', min: 1, max: 1, chance: 0.05 },
-      { item: 'apple', min: 1, max: 1, chance: 0.02 },
-    ],
     flammable: true,
+    // 每种树叶掉自己那种树苗；只有橡木与深色橡木会掉苹果（与 1.8.9 一致）
     variants: WOOD_VARIANTS.map((w) => ({
       name: w.id === 'oak' ? 'leaves' : `${w.id}_leaves`,
       label: `${w.label}树叶`,
       textures: same(`leaves_${w.id}`),
+      drops: [
+        { item: w.id === 'oak' ? 'sapling' : `${w.id}_sapling`, min: 1, max: 1, chance: 0.05 },
+        ...(w.id === 'oak' || w.id === 'dark_oak' ? [{ item: 'apple', min: 1, max: 1, chance: 0.02 }] : []),
+      ],
     })),
   },
   {

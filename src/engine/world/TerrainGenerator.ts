@@ -85,6 +85,8 @@ const ORES: OreConfig[] = [
 ];
 
 const TREE_CHANCE: Record<Biome, number> = { plains: 0.003, forest: 0.05, desert: 0, mountains: 0.006, snowy: 0.012 };
+/** 各群系长哪种树（对应木材变种序号：0 橡木、1 云杉、2 白桦）。 */
+const TREE_WOOD: Record<Biome, number> = { plains: 0, forest: 2, desert: 0, mountains: 1, snowy: 1 };
 /** 树概率上限：随机数超过它的列不用再查群系。 */
 const MAX_TREE_CHANCE = Math.max(...Object.values(TREE_CHANCE));
 const GRASS_CHANCE: Record<Biome, number> = { plains: 0.08, forest: 0.06, desert: 0, mountains: 0.02, snowy: 0 };
@@ -360,7 +362,7 @@ export class TerrainGenerator implements ChunkGenerator {
         if (y + height + 2 >= WORLD_SIZE_Y) {
           continue;
         }
-        out.push({ x, y, z, height, cornerSeed });
+        out.push({ x, y, z, height, cornerSeed, wood: TREE_WOOD[biome] });
       }
     }
     return out;
@@ -368,11 +370,11 @@ export class TerrainGenerator implements ChunkGenerator {
 
   /** 把一棵树落在 chunk 内的部分写入（树干覆盖树叶，树叶只填空气）。 */
   placeTree(chunk: Chunk, tree: TreePlacement): void {
-    forEachTreeBlock(tree, (x, y, z, id) => {
+    forEachTreeBlock(tree, (x, y, z, id, meta) => {
       if (id === BlockId.LEAVES && chunk.getWorld(x, y, z) !== BlockId.AIR) {
         return;
       }
-      chunk.setWorld(x, y, z, id);
+      chunk.setWorld(x, y, z, id, meta);
     });
   }
 

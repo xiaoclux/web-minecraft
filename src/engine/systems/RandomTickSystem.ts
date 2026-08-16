@@ -297,14 +297,16 @@ export class RandomTickSystem {
       }
     }
     const height = TREE_MIN_HEIGHT + Math.floor(this.host.random() * TREE_HEIGHT_VARIANCE);
-    const tree = { x, y, z, height, cornerSeed: Math.floor(this.host.random() * MAX_TREE_SEED) };
+    // 树苗的 meta 决定长出哪种木材的树
+    const wood = world.getMeta(x, y, z);
+    const tree = { x, y, z, height, wood, cornerSeed: Math.floor(this.host.random() * MAX_TREE_SEED) };
     world.batch(() => {
       world.setBlock(x, y, z, BlockId.AIR);
-      forEachTreeBlock(tree, (bx, by, bz, id) => {
+      forEachTreeBlock(tree, (bx, by, bz, id, meta) => {
         if (id === BlockId.LEAVES && world.getBlock(bx, by, bz) !== BlockId.AIR) {
           return;
         }
-        world.setBlock(bx, by, bz, id);
+        world.setBlock(bx, by, bz, id, meta);
       });
     });
   }

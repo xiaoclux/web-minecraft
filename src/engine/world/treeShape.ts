@@ -10,6 +10,8 @@ export interface TreePlacement {
   height: number;
   /** 树冠四角是否缺失（按 [dy 层][角序号] 展开成一维，供裁剪时复现）。 */
   cornerSeed: number;
+  /** 木材种类（原木 / 树叶的 meta 变种序号）。 */
+  wood: number;
 }
 
 /** 树冠半径与顶部收窄的层数。 */
@@ -23,7 +25,7 @@ export const TREE_HEIGHT_VARIANCE = 3;
  */
 export function forEachTreeBlock(
   tree: TreePlacement,
-  emit: (x: number, y: number, z: number, id: number) => void,
+  emit: (x: number, y: number, z: number, id: number, meta: number) => void,
 ): void {
   const cornerRng = createRng(tree.cornerSeed);
   for (let dy = tree.height - 3; dy <= tree.height; dy++) {
@@ -36,11 +38,11 @@ export function forEachTreeBlock(
         if (cornerMissing) {
           continue;
         }
-        emit(tree.x + dx, tree.y + dy, tree.z + dz, BlockId.LEAVES);
+        emit(tree.x + dx, tree.y + dy, tree.z + dz, BlockId.LEAVES, tree.wood);
       }
     }
   }
   for (let i = 0; i < tree.height; i++) {
-    emit(tree.x, tree.y + i, tree.z, BlockId.LOG);
+    emit(tree.x, tree.y + i, tree.z, BlockId.LOG, tree.wood);
   }
 }
