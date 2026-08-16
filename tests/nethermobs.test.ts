@@ -26,7 +26,31 @@ function ctx(overrides: Partial<EntityContext> = {}): EntityContext {
   } as unknown as EntityContext;
 }
 
+/** 用固定的随机值杀掉一只猪人，返回掉了哪些物品 id。 */
+function killDrops(random: number): string[] {
+  const dropped: string[] = [];
+  const pigman = new Mob(MobType.ZOMBIE_PIGMAN);
+  pigman.hurt(
+    ctx({
+      random: () => random,
+      dropItem: (_x: number, _y: number, _z: number, stack: { id: string }) => dropped.push(stack.id),
+      onEntityKilled: () => {},
+    }),
+    999,
+    null,
+  );
+  return dropped;
+}
+
 describe('下界生物', () => {
+  it('僵尸猪人小概率掉落金剑', () => {
+    const sword = MOB_DEFS.zombie_pigman.drops.find((d) => d.item === 'golden_sword');
+    expect(sword).toBeDefined();
+    expect(sword?.chance).toBeLessThan(0.1);
+    expect(killDrops(0.5)).not.toContain('golden_sword');
+    expect(killDrops(0.01)).toContain('golden_sword');
+  });
+
   it('五种下界生物都免疫火、都只在下界生成、都有模型', () => {
     for (const type of NETHER_MOBS) {
       const def = MOB_DEFS[type];

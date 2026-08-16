@@ -23,6 +23,15 @@ describe('维度定义', () => {
     expect(isDimensionId('moon')).toBe(false);
   });
 
+  it('只有主世界能睡床、只有下界会蒸发水', () => {
+    expect(DIMENSION_DEFS.overworld.bedExplodes).toBe(false);
+    expect(DIMENSION_DEFS.nether.bedExplodes).toBe(true);
+    expect(DIMENSION_DEFS.end.bedExplodes).toBe(true);
+    expect(DIMENSION_DEFS.nether.waterEvaporates).toBe(true);
+    expect(DIMENSION_DEFS.overworld.waterEvaporates).toBe(false);
+    expect(DIMENSION_DEFS.end.waterEvaporates).toBe(false);
+  });
+
   it('无天空光的世界读到的天空光恒为 0', () => {
     const dark = new World(false);
     const bright = new World(true);

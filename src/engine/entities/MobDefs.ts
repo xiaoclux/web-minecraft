@@ -68,6 +68,9 @@ export interface MobDef {
   dimensions?: readonly string[];
 }
 
+/** 僵尸猪人掉落金剑的概率（1.8.9 为 8.5%）。 */
+const PIGMAN_SWORD_DROP_CHANCE = 0.085;
+
 export const MOB_DEFS: Record<MobType, MobDef> = {
   zombie: {
     type: 'zombie',
@@ -255,6 +258,8 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     drops: [
       { item: 'rotten_flesh', min: 0, max: 1 },
       { item: 'gold_nugget', min: 0, max: 1 },
+      // 原版猪人手持金剑，死时按 8.5% 掉出来
+      { item: 'golden_sword', min: 1, max: 1, chance: PIGMAN_SWORD_DROP_CHANCE },
     ],
     xp: 5,
     burnsInSunlight: false,

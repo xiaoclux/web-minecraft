@@ -237,6 +237,8 @@ const INITIAL_TIME_TICK = 1000;
 const MAX_FRAME_DT = 0.1;
 const TNT_FUSE_TICKS = 60;
 const TNT_EXPLOSION_RADIUS = 4;
+/** 在下界 / 末地睡床时的爆炸半径（1.8.9 床的威力 5，比 TNT 更狠）。 */
+const BED_EXPLOSION_RADIUS = 5;
 const EXPLOSION_DROP_CHANCE = 0.3;
 const EAT_COOLDOWN_TICKS = 16;
 const PLACE_COOLDOWN_TICKS = 4;
@@ -3383,6 +3385,13 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (!this.world.inBounds(px, py, pz) || !REPLACEABLE_BLOCKS.has(this.world.getBlock(px, py, pz))) {
       return false;
     }
+    if (fluid === BlockId.WATER && this.current.def.waterEvaporates) {
+      // 下界没有水：倒出来的一瞬间就蒸发，桶照样变空
+      this.replaceHeldItem('bucket');
+      this.sound.play('fizz');
+      this.renderer.hand.swing();
+      return true;
+    }
     this.world.setBlock(px, py, pz, fluid, WATER_SOURCE_META);
     this.replaceHeldItem('bucket');
     this.sound.play('place');
@@ -4466,6 +4475,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
    * （原版只在真正躺下时设置重生点，这里放宽为点一下就设，避免夜里被怪堵着白跑一趟。）
    */
   private useBed(x: number, y: number, z: number): void {
+    if (this.current.def.bedExplodes) {
+      this.explodeBed(x, y, z);
+      return;
+    }
     const foot =
       (this.world.getMeta(x, y, z) & BED_HEAD_BIT) === 0
         ? { x, y, z }
@@ -4484,6 +4497,16 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     }
     this.timeTick += DAY_LENGTH_TICKS - dayTick;
     this.showToast('重生点已设置，一觉到天亮');
+  }
+
+  /** 主世界以外躺床：床炸成一个坑，玩家自己也吃伤害。 */
+  private explodeBed(x: number, y: number, z: number): void {
+    const partner = this.multiBlockPartner(x, y, z);
+    this.world.setBlock(x, y, z, BlockId.AIR);
+    if (partner) {
+      this.world.setBlock(partner.x, partner.y, partner.z, BlockId.AIR);
+    }
+    this.explode(x + 0.5, y + 0.5, z + 0.5, BED_EXPLOSION_RADIUS, -1);
   }
 
   /** 床附近是否有敌对生物。 */

@@ -32,6 +32,8 @@ export interface DimensionDef {
   coordinateScale: number;
   /** 水会立刻蒸发（下界）。 */
   waterEvaporates: boolean;
+  /** 睡床会爆炸（主世界以外）。 */
+  bedExplodes: boolean;
   /**
    * 环境亮度下限（当作最低"光照等级比例"喂给光照曲线）：
    * 下界即使没有光源也能看清轮廓，末地更暗一些，主世界完全按光照走。
@@ -47,6 +49,7 @@ export const DIMENSION_DEFS: Readonly<Record<DimensionId, DimensionDef>> = {
     hasWeather: true,
     coordinateScale: 1,
     waterEvaporates: false,
+    bedExplodes: false,
     ambientLight: 0,
   },
   nether: {
@@ -56,6 +59,7 @@ export const DIMENSION_DEFS: Readonly<Record<DimensionId, DimensionDef>> = {
     hasWeather: false,
     coordinateScale: 8,
     waterEvaporates: true,
+    bedExplodes: true,
     ambientLight: 0.75,
   },
   end: {
@@ -65,6 +69,7 @@ export const DIMENSION_DEFS: Readonly<Record<DimensionId, DimensionDef>> = {
     hasWeather: false,
     coordinateScale: 1,
     waterEvaporates: false,
+    bedExplodes: true,
     ambientLight: 0.55,
   },
 };
