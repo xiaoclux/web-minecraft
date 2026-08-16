@@ -12,7 +12,6 @@ const BARK = hex('#6b5231');
 const LEAF = hex('#3d7a24');
 const WATER = hex('#3f60d6b4');
 const BEDROCK = hex('#555555');
-const WOOL = hex('#e9e9e9');
 const OBSIDIAN = hex('#14121f');
 const SNOW = hex('#f4fbfb');
 const GLOW = hex('#c9a054');
@@ -550,6 +549,40 @@ function saplingOf(color: Rgba): Painter {
 }
 const sapling: Painter = saplingOf(hex('#3d7a24'));
 
+const lapisOre: Painter = ore(hex('#2b4fbb'), 9);
+
+/** 16 种染料 / 羊毛颜色（取自 1.8.9 的调色板）。 */
+export const DYE_COLORS = [
+  { id: 'white', label: '白色', color: hex('#e9ecec') },
+  { id: 'orange', label: '橙色', color: hex('#f07613') },
+  { id: 'magenta', label: '品红色', color: hex('#bd44b3') },
+  { id: 'light_blue', label: '淡蓝色', color: hex('#3ab3da') },
+  { id: 'yellow', label: '黄色', color: hex('#fed83d') },
+  { id: 'lime', label: '黄绿色', color: hex('#80c71f') },
+  { id: 'pink', label: '粉红色', color: hex('#f38baa') },
+  { id: 'gray', label: '灰色', color: hex('#474f52') },
+  { id: 'light_gray', label: '淡灰色', color: hex('#9d9d97') },
+  { id: 'cyan', label: '青色', color: hex('#169c9c') },
+  { id: 'purple', label: '紫色', color: hex('#8932b8') },
+  { id: 'blue', label: '蓝色', color: hex('#3c44aa') },
+  { id: 'brown', label: '棕色', color: hex('#835432') },
+  { id: 'green', label: '绿色', color: hex('#5e7c16') },
+  { id: 'red', label: '红色', color: hex('#b02e26') },
+  { id: 'black', label: '黑色', color: hex('#1d1d21') },
+] as const;
+
+/** 16 色羊毛贴图。 */
+function woolTextures(): Record<string, Painter> {
+  const out: Record<string, Painter> = {};
+  for (const c of DYE_COLORS) {
+    out[`wool_${c.id}`] = (canvas, rng) => {
+      canvas.noise(c.color, 0.07, rng);
+      canvas.speckle(shade(c.color, 1.12), 18, rng);
+    };
+  }
+  return out;
+}
+
 /** 石头变种：底色 + 两种斑点色；磨制版斑点更少更规整。 */
 function speckledStone(base: Rgba, light: Rgba, dark: Rgba, polished: boolean): Painter {
   return (c, rng) => {
@@ -694,7 +727,6 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   sandstone_top: noiseBase(SAND, 0.05),
   sandstone_side: sandstoneSide,
   tall_grass: crossPlant(hex('#5d9c3a')),
-  wool: noiseBase(WOOL, 0.05),
   dandelion,
   poppy,
   bricks,
@@ -712,6 +744,8 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   furnace_side: furnaceSide,
   ...woodTextures(),
   ...stoneVariantTextures(),
+  ...woolTextures(),
+  lapis_ore: lapisOre,
   chest_top: chestTop,
   chest_front: chestFront,
   chest_side: chestSide,

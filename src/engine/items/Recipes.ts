@@ -1,4 +1,12 @@
-import { LOG_ITEM_IDS, PLANK_ITEM_IDS, TOOL_MATERIALS, requireItem } from './ItemRegistry';
+import { COLOR_VARIANTS } from '../blocks/BlockRegistry';
+import {
+  LOG_ITEM_IDS,
+  PLANK_ITEM_IDS,
+  TOOL_MATERIALS,
+  WOOL_ITEM_IDS,
+  dyeItemId,
+  requireItem,
+} from './ItemRegistry';
 import { createStack, type ItemStack } from './ItemStack';
 
 /**
@@ -11,6 +19,7 @@ const TAG_PREFIX = '#';
 const ITEM_TAGS: Record<string, readonly string[]> = {
   planks: PLANK_ITEM_IDS,
   log: LOG_ITEM_IDS,
+  wool: WOOL_ITEM_IDS,
 };
 
 /** 配方格与实际物品是否匹配（支持标签）。 */
@@ -53,6 +62,31 @@ const shapeless = (ingredients: string[], result: string, count = 1): ShapelessR
   ingredients,
   result: createStack(result, count),
 });
+
+/**
+ * 染料：花能捣成染料、骨头能磨成骨粉，其余按 1.8.9 的配色混合。
+ * 依赖墨囊 / 仙人掌绿 / 可可豆的那几种（黑 / 绿 / 棕 / 灰 / 青 / 黄绿）等对应内容做出来再补。
+ */
+function dyeRecipes(): Recipe[] {
+  const dye = (color: string): string => dyeItemId(color);
+  return [
+    shapeless(['bone'], 'bone_meal', 3),
+    shapeless(['poppy'], dye('red')),
+    shapeless(['dandelion'], dye('yellow')),
+    shapeless([dye('red'), dye('yellow')], dye('orange'), 2),
+    shapeless([dye('red'), dye('white')], dye('pink'), 2),
+    shapeless([dye('red'), dye('blue')], dye('purple'), 2),
+    shapeless([dye('purple'), dye('pink')], dye('magenta'), 2),
+    shapeless([dye('blue'), dye('white')], dye('light_blue'), 2),
+  ];
+}
+
+/** 任意羊毛 + 染料 → 对应颜色的羊毛。 */
+function woolDyeRecipes(): Recipe[] {
+  return COLOR_VARIANTS.map((c) =>
+    shapeless(['#wool', dyeItemId(c.id)], c.id === 'white' ? 'wool' : `${c.id}_wool`),
+  );
+}
 
 /** 三种石头变种各自能磨成磨制版（2×2 出 4 个）。 */
 function polishedStoneRecipes(): Recipe[] {
@@ -158,6 +192,8 @@ export const RECIPES: Recipe[] = [
   shaped(['MMM', 'MMM', 'MMM'], { M: 'melon_slice' }, 'melon'),
   ...woodRecipes(),
   ...polishedStoneRecipes(),
+  ...dyeRecipes(),
+  ...woolDyeRecipes(),
   ...toolRecipes(),
   ...slabAndStairsRecipes(),
   ...armorRecipes(),

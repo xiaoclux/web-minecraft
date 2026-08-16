@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { blockVariant, cropBlockForSeed, getBlockByName } from '../src/engine/blocks/BlockRegistry';
 import { breakTicks, canHarvest, rollDrops } from '../src/engine/blocks/blockBreaking';
 import { Inventory } from '../src/engine/items/Inventory';
-import { ITEM_DEFS, TOOL_MATERIALS, getItem } from '../src/engine/items/ItemRegistry';
+import { ITEM_DEFS, TOOL_MATERIALS, dyeItemId, getItem } from '../src/engine/items/ItemRegistry';
 import { matchRecipe, RECIPES } from '../src/engine/items/Recipes';
 import type { ItemStack } from '../src/engine/items/ItemStack';
 import { createFurnace, SMELT_TICKS, tickFurnace } from '../src/engine/items/Furnace';
@@ -223,5 +223,35 @@ describe('配方标签', () => {
   it('每种原木砍出对应的木板', () => {
     const grid: (ItemStack | null)[] = [s('birch_log'), null, null, null];
     expect(matchRecipe(grid, 2)).toEqual({ id: 'birch_planks', count: 4 });
+  });
+});
+
+describe('羊毛与染料', () => {
+  it('16 色羊毛都有物品，白色沿用旧 id', () => {
+    expect(getItem('wool')?.blockMeta).toBe(0);
+    for (const color of ['orange', 'magenta', 'cyan', 'black']) {
+      expect(getItem(`${color}_wool`), color).toBeDefined();
+    }
+    expect(getItem('black_wool')?.blockMeta).toBe(15);
+  });
+
+  it('白色染料是骨粉、蓝色染料是青金石', () => {
+    expect(dyeItemId('white')).toBe('bone_meal');
+    expect(dyeItemId('blue')).toBe('lapis_lazuli');
+    expect(dyeItemId('red')).toBe('red_dye');
+  });
+
+  it('任意颜色的羊毛加染料都能染成对应颜色', () => {
+    const grid = (ids: string[]): (ItemStack | null)[] => [...ids.map((id) => s(id)), null, null].slice(0, 4);
+    expect(matchRecipe(grid(['wool', 'red_dye']), 2)?.id).toBe('red_wool');
+    // 已经染过的羊毛可以再染
+    expect(matchRecipe(grid(['red_wool', 'lapis_lazuli']), 2)?.id).toBe('blue_wool');
+  });
+
+  it('花与骨头能做出染料，混色也能', () => {
+    const grid = (ids: string[]): (ItemStack | null)[] => [...ids.map((id) => s(id)), null, null].slice(0, 4);
+    expect(matchRecipe(grid(['poppy']), 2)?.id).toBe('red_dye');
+    expect(matchRecipe(grid(['bone']), 2)).toEqual({ id: 'bone_meal', count: 3 });
+    expect(matchRecipe(grid(['red_dye', 'yellow_dye']), 2)).toEqual({ id: 'orange_dye', count: 2 });
   });
 });

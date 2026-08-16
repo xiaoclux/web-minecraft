@@ -1,3 +1,4 @@
+import { DYE_COLORS } from './blockTextures';
 import { PixelCanvas, hex, shade, type Rgba } from './PixelCanvas';
 
 type Painter = (c: PixelCanvas) => void;
@@ -577,7 +578,22 @@ function armorPainters(): Record<string, Painter> {
 }
 
 /** 全部物品图标。 */
-export const ITEM_ICON_PAINTERS: Record<string, Painter> = { ...HAND_DRAWN_ICONS, ...armorPainters() };
+export const ITEM_ICON_PAINTERS: Record<string, Painter> = {
+  ...HAND_DRAWN_ICONS,
+  ...armorPainters(),
+  ...dyePainters(),
+};
+
+/** 染料 / 骨粉：一小撮彩色粉末。 */
+const DYE_ROWS = ['..XX..', '.XXXX.', 'XXXXXX', 'XXXXXX', '.XXXX.', '..XX..'];
+function dyePainters(): Record<string, Painter> {
+  const out: Record<string, Painter> = {};
+  for (const c of DYE_COLORS) {
+    const id = c.id === 'white' ? 'bone_meal' : c.id === 'blue' ? 'lapis_lazuli' : `${c.id}_dye`;
+    out[id] = (canvas) => canvas.draw(DYE_ROWS, { X: c.color }, 5, 5);
+  }
+  return out;
+}
 
 /** 桶：铁皮轮廓，装了东西就在桶身里填色。 */
 const BUCKET_METAL = hex('#b0b0b0');

@@ -1,4 +1,4 @@
-import { BLOCK_DEFS, BlockId, ToolTier, ToolType, type BlockDef } from '../blocks/BlockRegistry';
+import { BLOCK_DEFS, BlockId, COLOR_VARIANTS, ToolTier, ToolType, type BlockDef } from '../blocks/BlockRegistry';
 import { FLINT_AND_STEEL_DURABILITY, MAX_STACK } from '../constants/game';
 
 /** 物品种类。 */
@@ -152,6 +152,19 @@ function armorItems(): ItemDef[] {
   return out;
 }
 
+/**
+ * 染料：白色是骨粉、蓝色直接用青金石（与 1.8.9 一致），其余各有独立物品。
+ * 目前能做出来的有白 / 红 / 黄 / 蓝 与它们的混色，其余等墨囊、仙人掌绿、可可豆。
+ */
+const DYE_ITEM_IDS: Record<string, string> = Object.fromEntries(
+  COLOR_VARIANTS.map((c) => [c.id, c.id === 'white' ? 'bone_meal' : c.id === 'blue' ? 'lapis_lazuli' : `${c.id}_dye`]),
+);
+
+/** 某个颜色对应的染料物品 id。 */
+export function dyeItemId(colorId: string): string {
+  return DYE_ITEM_IDS[colorId];
+}
+
 const material = (id: string, label: string, extra: Partial<ItemDef> = {}): ItemDef => ({
   id,
   label,
@@ -204,6 +217,15 @@ function blockItems(def: BlockDef): ItemDef[] {
 
 const TOOL_TYPES: ToolType[] = [ToolType.SWORD, ToolType.PICKAXE, ToolType.AXE, ToolType.SHOVEL, ToolType.HOE];
 
+/** 除骨粉与青金石之外的 14 种染料物品。 */
+const DYE_ITEMS: ItemDef[] = COLOR_VARIANTS.filter((c) => c.id !== 'white' && c.id !== 'blue').map((c) => ({
+  id: DYE_ITEM_IDS[c.id],
+  label: `${c.label}染料`,
+  kind: ItemKind.MATERIAL,
+  maxStack: MAX_STACK,
+  icon: DYE_ITEM_IDS[c.id],
+}));
+
 /** 全部物品定义。 */
 export const ITEM_DEFS: ItemDef[] = [
   ...BLOCK_DEFS.filter((b) => b.name !== 'air' && b.name !== 'water' && !b.noItem).flatMap(blockItems),
@@ -221,12 +243,15 @@ export const ITEM_DEFS: ItemDef[] = [
   material('feather', '羽毛'),
   material('leather', '皮革'),
   material('bone', '骨头'),
+  material('bone_meal', '骨粉'),
   material('gunpowder', '火药'),
   material('arrow', '箭'),
   material('snowball', '雪球', { maxStack: 16 }),
   material('bow', '弓', { maxStack: 1 }),
   material('shears', '剪刀', { maxStack: 1, durability: SHEARS_DURABILITY }),
   material('flint', '燧石'),
+  material('lapis_lazuli', '青金石'),
+  ...DYE_ITEMS,
   material('flint_and_steel', '打火石', { maxStack: 1, durability: FLINT_AND_STEEL_DURABILITY }),
   material('bucket', '桶', { maxStack: 1 }),
   material('water_bucket', '水桶', { maxStack: 1 }),
@@ -261,6 +286,7 @@ function variantItemIds(blockId: number): string[] {
 /** 六种木板与六种原木的物品 id（配方里的 #planks / #log 标签用）。 */
 export const PLANK_ITEM_IDS: readonly string[] = variantItemIds(BlockId.PLANKS);
 export const LOG_ITEM_IDS: readonly string[] = variantItemIds(BlockId.LOG);
+export const WOOL_ITEM_IDS: readonly string[] = variantItemIds(BlockId.WOOL);
 
 /** 按 id 获取物品定义。 */
 export function getItem(id: string): ItemDef | undefined {

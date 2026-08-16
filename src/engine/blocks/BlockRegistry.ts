@@ -159,6 +159,7 @@ export const BlockId = {
   GOLD_ORE: 14,
   IRON_ORE: 15,
   COAL_ORE: 16,
+  LAPIS_ORE: 21,
   LOG: 17,
   LEAVES: 18,
   GLASS: 20,
@@ -203,6 +204,26 @@ export const BlockId = {
   SANDSTONE_STAIRS: 128,
 } as const;
 export type BlockId = (typeof BlockId)[keyof typeof BlockId];
+
+/** 16 种颜色的 id 与中文名（与 blockTextures.DYE_COLORS 顺序一致，即 1.8.9 的 meta 顺序）。 */
+export const COLOR_VARIANTS: readonly { id: string; label: string }[] = [
+  { id: 'white', label: '白色' },
+  { id: 'orange', label: '橙色' },
+  { id: 'magenta', label: '品红色' },
+  { id: 'light_blue', label: '淡蓝色' },
+  { id: 'yellow', label: '黄色' },
+  { id: 'lime', label: '黄绿色' },
+  { id: 'pink', label: '粉红色' },
+  { id: 'gray', label: '灰色' },
+  { id: 'light_gray', label: '淡灰色' },
+  { id: 'cyan', label: '青色' },
+  { id: 'purple', label: '紫色' },
+  { id: 'blue', label: '蓝色' },
+  { id: 'brown', label: '棕色' },
+  { id: 'green', label: '绿色' },
+  { id: 'red', label: '红色' },
+  { id: 'black', label: '黑色' },
+];
 
 /** 三种石头变种的 id 与中文名（贴图在 blockTextures 里按同样的 id 生成）。 */
 const STONE_VARIANTS: readonly { id: string; label: string }[] = [
@@ -389,6 +410,11 @@ export const BLOCK_DEFS: BlockDef[] = [
   }),
   cube(BlockId.GOLD_ORE, 'gold_ore', '金矿石', same('gold_ore'), 3, ToolType.PICKAXE, { minTier: ToolTier.IRON }),
   cube(BlockId.IRON_ORE, 'iron_ore', '铁矿石', same('iron_ore'), 3, ToolType.PICKAXE, { minTier: ToolTier.STONE }),
+  cube(BlockId.LAPIS_ORE, 'lapis_ore', '青金石矿石', same('lapis_ore'), 3, ToolType.PICKAXE, {
+    minTier: ToolTier.STONE,
+    drops: [{ item: 'lapis_lazuli', min: 4, max: 8 }],
+    xp: [2, 5],
+  }),
   cube(BlockId.COAL_ORE, 'coal_ore', '煤矿石', same('coal_ore'), 3, ToolType.PICKAXE, {
     minTier: ToolTier.WOOD,
     drops: [{ item: 'coal', min: 1, max: 1 }],
@@ -443,7 +469,14 @@ export const BLOCK_DEFS: BlockDef[] = [
   cross(BlockId.TALL_GRASS, 'tall_grass', '草丛', 'tall_grass', {
     drops: [{ item: 'wheat_seeds', min: 1, max: 1, chance: 0.125 }],
   }),
-  cube(BlockId.WOOL, 'wool', '羊毛', same('wool'), 0.8, null, { flammable: true }),
+  cube(BlockId.WOOL, 'wool', '白色羊毛', same('wool_white'), 0.8, null, {
+    flammable: true,
+    variants: COLOR_VARIANTS.map((c) => ({
+      name: c.id === 'white' ? 'wool' : `${c.id}_wool`,
+      label: `${c.label}羊毛`,
+      textures: same(`wool_${c.id}`),
+    })),
+  }),
   cross(BlockId.DANDELION, 'dandelion', '蒲公英', 'dandelion'),
   cross(BlockId.POPPY, 'poppy', '虞美人', 'poppy'),
   cube(BlockId.BRICKS, 'bricks', '砖块', same('bricks'), 2, ToolType.PICKAXE, { minTier: ToolTier.WOOD }),
