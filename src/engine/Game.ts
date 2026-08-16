@@ -105,6 +105,7 @@ import { EnderCrystalEntity } from './entities/EnderCrystalEntity';
 import { EnderDragonEntity } from './entities/EnderDragonEntity';
 import { WitherEntity } from './entities/WitherEntity';
 import { powerAt, repeaterInputPower, updateWires } from './systems/RedstoneSystem';
+import { extendPiston, pistonDirection, retractPiston } from './systems/PistonSystem';
 import {
   BUTTON_PRESS_TICKS,
   PRESSURE_PLATE_RANGE,
@@ -114,6 +115,8 @@ import {
   REPEATER_DELAY_SHIFT,
   REPEATER_FACING_MASK,
   TORCH_DELAY_TICKS,
+  PISTON_DELAY_TICKS,
+  PISTON_FACING_MASK,
 } from './constants/redstone';
 import {
   BEACON_EFFECT_TICKS,
@@ -1234,11 +1237,34 @@ export class Game implements EntityContext, ContainerHost {
       }
       return;
     }
+    if (redstone.piston) {
+      this.applyPistonState(x, y, z, redstone.sticky === true);
+      return;
+    }
     // 火把：脚下方块被充能就灭，否则亮
     const target = this.torchTargetId(x, y, z, redstone);
     if (target !== null && target !== id) {
       this.world.setBlock(x, y, z, target, this.world.getMeta(x, y, z));
     }
+  }
+
+  /** 活塞：按当前充能决定伸出还是缩回。 */
+  private applyPistonState(x: number, y: number, z: number, sticky: boolean): void {
+    const facing = this.world.getMeta(x, y, z) & PISTON_FACING_MASK;
+    const dir = pistonDirection(facing);
+    const extended = this.world.getBlock(x + dir[0], y + dir[1], z + dir[2]) === BlockId.PISTON_HEAD;
+    const powered = powerAt(this.world, x, y, z) > 0;
+    if (powered === extended) {
+      return;
+    }
+    if (powered) {
+      if (extendPiston(this.world, x, y, z, facing)) {
+        this.sound.play('door', Math.hypot(x - this.player.x, y - this.player.y, z - this.player.z));
+      }
+      return;
+    }
+    retractPiston(this.world, x, y, z, facing, sticky);
+    this.sound.play('door', Math.hypot(x - this.player.x, y - this.player.y, z - this.player.z));
   }
 
   /** 火把按脚下的充能情况该变成哪个 id；不是火把返回 null。 */
@@ -1355,6 +1381,8 @@ export class Game implements EntityContext, ContainerHost {
           }
           if (redstone.repeater) {
             this.scheduleRedstoneUpdate(nx, ny, nz, repeaterDelay(this.world.getMeta(nx, ny, nz)));
+          } else if (redstone.piston) {
+            this.scheduleRedstoneUpdate(nx, ny, nz, PISTON_DELAY_TICKS);
           } else if (redstone.invertedOffId !== undefined || redstone.invertedOnId !== undefined) {
             this.scheduleRedstoneUpdate(nx, ny, nz, TORCH_DELAY_TICKS);
           }

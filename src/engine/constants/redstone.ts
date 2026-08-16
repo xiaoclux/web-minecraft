@@ -18,5 +18,11 @@ export const REPEATER_DELAYS = [2, 4, 6, 8] as const;
 export const REPEATER_FACING_MASK = 3;
 export const REPEATER_DELAY_SHIFT = 2;
 export const REPEATER_DELAY_MASK = 3;
+/** 活塞一次最多推动多少方块（1.8.9 是 12）。 */
+export const PISTON_MAX_PUSH = 12;
+/** 活塞 meta 的朝向位（0~3 水平，4 上，5 下）。 */
+export const PISTON_FACING_MASK = 3;
+/** 活塞伸缩的延迟（tick）。 */
+export const PISTON_DELAY_TICKS = 2;
 /** 压力板的触发范围（以方块中心为准的水平半径）。 */
 export const PRESSURE_PLATE_RANGE = 0.7;

@@ -690,6 +690,21 @@ const redstoneTorchOff: Painter = (c) => {
   c.rect(6, 3, 4, 4, hex('#6a1a12'));
 };
 
+/** 活塞：木质本体 + 侧面的金属条；粘性活塞顶面带一层粘液。 */
+const pistonSide: Painter = (c, rng) => {
+  c.noise(hex('#9c8158'), 0.08, rng);
+  c.rect(0, 0, 16, 3, hex('#6f5a3c'));
+  c.rect(0, 13, 16, 3, hex('#6f5a3c'));
+};
+const pistonTop: Painter = (c, rng) => {
+  c.noise(hex('#b9a06f'), 0.06, rng);
+  c.rect(2, 2, 12, 12, hex('#8f7a52'));
+};
+const stickyPistonTop: Painter = (c, rng) => {
+  pistonTop(c, rng);
+  c.rect(4, 4, 8, 8, hex('#7ac47a'));
+};
+
 /** 中继器：石板 + 两个火把点（关 / 开两张）。 */
 function repeater(lit: boolean): Painter {
   return (c, rng) => {
@@ -1053,6 +1068,9 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   redstone_block: redstoneBlock,
   redstone_torch: redstoneTorch,
   redstone_torch_off: redstoneTorchOff,
+  piston_side: pistonSide,
+  piston_top: pistonTop,
+  sticky_piston_top: stickyPistonTop,
   repeater: repeater(false),
   repeater_on: repeater(true),
   lever,

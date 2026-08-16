@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
 import { REDSTONE_MAX_POWER, REDSTONE_POWERED_BIT } from '../src/engine/constants/redstone';
 import { powerAt, repeaterInputPower, sourcePower, updateWires, wirePower } from '../src/engine/systems/RedstoneSystem';
+import {
+  PISTON_DOWN,
+  PISTON_UP,
+  collectPushed,
+  extendPiston,
+  isPushable,
+  pistonDirection,
+  retractPiston,
+} from '../src/engine/systems/PistonSystem';
+import { PISTON_MAX_PUSH } from '../src/engine/constants/redstone';
 import { Chunk } from '../src/engine/world/Chunk';
 import { World } from '../src/engine/world/World';
 
@@ -130,5 +140,67 @@ describe('红石火把与中继器', () => {
     world.setBlock(1, 10, 0, BlockId.AIR);
     world.setBlock(2, 10, 1, BlockId.REDSTONE_BLOCK);
     expect(repeaterInputPower(world, 2, 10, 0)).toBe(0);
+  });
+});
+
+describe('活塞', () => {
+  it('推动一串方块，最远的先搬，活塞前留下活塞臂', () => {
+    const world = testWorld();
+    for (let i = 1; i <= 3; i++) {
+      world.setBlock(i, 10, 0, BlockId.STONE);
+    }
+    // 活塞在 0，朝 +X
+    world.setBlock(0, 10, 0, BlockId.PISTON, 0);
+    expect(extendPiston(world, 0, 10, 0, 0)).toBe(true);
+    expect(world.getBlock(1, 10, 0)).toBe(BlockId.PISTON_HEAD);
+    for (let i = 2; i <= 4; i++) {
+      expect(world.getBlock(i, 10, 0)).toBe(BlockId.STONE);
+    }
+    expect(world.getBlock(5, 10, 0)).toBe(BlockId.AIR);
+  });
+
+  it('推不动基岩与黑曜石', () => {
+    const world = testWorld();
+    world.setBlock(1, 10, 0, BlockId.OBSIDIAN);
+    expect(isPushable(world, 1, 10, 0)).toBe(false);
+    expect(extendPiston(world, 0, 10, 0, 0)).toBe(false);
+    world.setBlock(1, 10, 0, BlockId.BEDROCK);
+    expect(extendPiston(world, 0, 10, 0, 0)).toBe(false);
+  });
+
+  it('超过 12 个就推不动', () => {
+    const world = testWorld();
+    for (let i = 1; i <= PISTON_MAX_PUSH; i++) {
+      world.setBlock(i, 10, 0, BlockId.STONE);
+    }
+    expect(collectPushed(world, 0, 10, 0, [1, 0, 0])?.length).toBe(PISTON_MAX_PUSH);
+    world.setBlock(PISTON_MAX_PUSH + 1, 10, 0, BlockId.STONE);
+    expect(collectPushed(world, 0, 10, 0, [1, 0, 0])).toBeNull();
+  });
+
+  it('粘性活塞缩回时把前面那格拉回来，普通活塞不拉', () => {
+    const world = testWorld();
+    world.setBlock(1, 10, 0, BlockId.STONE);
+    world.setBlock(0, 10, 0, BlockId.STICKY_PISTON, 0);
+    extendPiston(world, 0, 10, 0, 0);
+    expect(world.getBlock(2, 10, 0)).toBe(BlockId.STONE);
+    retractPiston(world, 0, 10, 0, 0, true);
+    expect(world.getBlock(1, 10, 0)).toBe(BlockId.STONE);
+    expect(world.getBlock(2, 10, 0)).toBe(BlockId.AIR);
+
+    // 普通活塞：缩回后方块留在原地
+    const world2 = testWorld();
+    world2.setBlock(1, 10, 0, BlockId.STONE);
+    world2.setBlock(0, 10, 0, BlockId.PISTON, 0);
+    extendPiston(world2, 0, 10, 0, 0);
+    retractPiston(world2, 0, 10, 0, 0, false);
+    expect(world2.getBlock(1, 10, 0)).toBe(BlockId.AIR);
+    expect(world2.getBlock(2, 10, 0)).toBe(BlockId.STONE);
+  });
+
+  it('朝上 / 朝下的活塞方向正确', () => {
+    expect(pistonDirection(PISTON_UP)).toEqual([0, 1, 0]);
+    expect(pistonDirection(PISTON_DOWN)).toEqual([0, -1, 0]);
+    expect(pistonDirection(0)).toEqual([1, 0, 0]);
   });
 });

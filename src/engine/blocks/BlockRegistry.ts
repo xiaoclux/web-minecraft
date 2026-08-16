@@ -147,6 +147,10 @@ export interface BlockDef {
     invertedOnId?: number;
     /** 中继器：只吃背后的信号、延迟后向正面输出满强度。 */
     repeater?: boolean;
+    /** 活塞：通电伸出、断电缩回。 */
+    piston?: boolean;
+    /** 粘性活塞：缩回时把前面那格拉回来。 */
+    sticky?: boolean;
   };
   /**
    * 变种：同一个方块 id 下按 meta 区分的若干种（木材、羊毛颜色、石头变种等），与 1.8.9 一致。
@@ -253,6 +257,9 @@ export const BlockId = {
   REDSTONE_TORCH_OFF: 75,
   REPEATER: 93,
   REPEATER_ON: 94,
+  PISTON: 33,
+  STICKY_PISTON: 29,
+  PISTON_HEAD: 34,
   LEVER: 69,
   STONE_BUTTON: 77,
   STONE_PRESSURE_PLATE: 70,
@@ -888,6 +895,19 @@ export const BLOCK_DEFS: BlockDef[] = [
     noItem: true,
     drops: [{ item: 'redstone_lamp', min: 1, max: 1 }],
     redstone: { unlitBlockId: BlockId.REDSTONE_LAMP },
+  }),
+  cube(BlockId.PISTON, 'piston', '活塞', topSide('piston_top', 'piston_side'), 0.5, null, {
+    hasFacing: true,
+    redstone: { piston: true },
+  }),
+  cube(BlockId.STICKY_PISTON, 'sticky_piston', '粘性活塞', topSide('sticky_piston_top', 'piston_side'), 0.5, null, {
+    hasFacing: true,
+    redstone: { piston: true, sticky: true },
+  }),
+  cube(BlockId.PISTON_HEAD, 'piston_head', '活塞臂', same('piston_top'), -1, null, {
+    noItem: true,
+    opaque: false,
+    isBlastResistant: false,
   }),
   cube(BlockId.BEACON, 'beacon', '信标', same('beacon'), 3, null, {
     opaque: false,
