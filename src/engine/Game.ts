@@ -313,6 +313,9 @@ const CRYSTAL_HIT_TOLERANCE = 1.5;
 const CRYSTAL_EXTRA_REACH = 3;
 /** 末影水晶治疗末影龙的距离平方。 */
 const CRYSTAL_HEAL_RANGE_SQ = ENDER_CRYSTAL_HEAL_RANGE * ENDER_CRYSTAL_HEAL_RANGE;
+/** 掉线后最多自动重连几次、第 n 次等多久。 */
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_BASE_DELAY_MS = 2000;
 /** 作为主机时多久给客人同步一次时间与实体快照。 */
 const HOST_TIME_SYNC_TICKS = 100;
 const HOST_ENTITY_SYNC_TICKS = 4;
@@ -530,6 +533,8 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   private hostServer: ServerCore | null = null;
   /** 正在等待回应码的那次邀请。 */
   private pendingInvite: RtcInvite | null = null;
+  /** 已经尝试重连几次。 */
+  private reconnectAttempts = 0;
   /** 已经收到服务端真数据的 chunk（本地空占位不算）。 */
   private readonly receivedChunks = new Set<number>();
   /** 连接建立前攒下的 chunk 请求。 */
@@ -1293,6 +1298,13 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   async connectToServer(url: string, playerName: string): Promise<void> {
     try {
       this.net = await connectToServer(url, playerName, this.netHandlers());
+      // 连上了就把重连计数清零，下次掉线还能再自动拨几次
+      this.reconnectAttempts = 0;
+      // 重连后世界数据要重新要一遍（服务端不记得给过我们哪些 chunk）
+      this.receivedChunks.clear();
+      for (const chunk of this.world.chunks.values()) {
+        this.net.requestChunk(chunk.cx, chunk.cz);
+      }
       this.reply(`已连接到 ${url}`);
     } catch (error) {
       this.reply(`连接失败：${error instanceof Error ? error.message : String(error)}`);
@@ -1305,6 +1317,29 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   joinWithTransport(transport: ClientTransport, playerName: string): void {
     this.net = new NetClient(transport, this.netHandlers(), playerName);
     this.reply('已通过房间码加入');
+  }
+
+  /**
+   * 掉线后自动重连（只对"连服务器地址"的方式有效；房间码方式没有可重拨的地址）。
+   * 退避重试几次，都失败就放弃并提示玩家。
+   */
+  private scheduleReconnect(): void {
+    const options = this.serverOptions;
+    if (!options || this.isDisposed || this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      if (options && this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        this.reply('重连失败，请回主菜单重新加入');
+      }
+      return;
+    }
+    this.reconnectAttempts++;
+    const delay = RECONNECT_BASE_DELAY_MS * this.reconnectAttempts;
+    this.reply(`${delay / 1000} 秒后尝试第 ${this.reconnectAttempts} 次重连…`);
+    window.setTimeout(() => {
+      if (this.isDisposed || this.net) {
+        return;
+      }
+      void this.connectToServer(options.url, options.playerName);
+    }, delay);
   }
 
   /** 客户端事件的处理器（连 WebSocket 与连房间码共用）。 */
@@ -1326,6 +1361,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       onDisconnect: () => {
         this.net = null;
         this.reply('与服务端的连接已断开');
+        this.scheduleReconnect();
       },
     };
   }

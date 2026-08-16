@@ -13,6 +13,7 @@ import { ChunkManager } from '../src/engine/world/ChunkManager';
 import { LightEngine } from '../src/engine/world/LightEngine';
 import { World } from '../src/engine/world/World';
 import { ServerCore, TIME_SYNC_INTERVAL_MS, type Connection } from '../src/net/ServerCore';
+import { loadWorld, saveWorld } from './worldStorage';
 
 /** 默认端口。 */
 const DEFAULT_PORT = 8080;
@@ -21,8 +22,11 @@ const TICKS_PER_SECOND = 20;
 /** 开服时先生成出生点周围多少 chunk。 */
 const SPAWN_PRELOAD = 2;
 
+/** 自动存盘间隔（毫秒）。 */
+const AUTOSAVE_INTERVAL_MS = 30000;
+
 /** 解析命令行参数。 */
-function parseArgs(argv: string[]): { port: number; seed: string; worldType: string } {
+function parseArgs(argv: string[]): { port: number; seed: string; worldType: WorldType; savePath: string } {
   const args = new Map<string, string>();
   for (let i = 0; i < argv.length - 1; i++) {
     if (argv[i].startsWith('--')) {
@@ -30,10 +34,13 @@ function parseArgs(argv: string[]): { port: number; seed: string; worldType: str
     }
   }
   const port = Number.parseInt(args.get('port') ?? '', 10);
+  const seed = args.get('seed') ?? `server-${Date.now()}`;
   return {
     port: Number.isFinite(port) ? port : DEFAULT_PORT,
-    seed: args.get('seed') ?? `server-${Date.now()}`,
-    worldType: args.get('type') === 'flat' ? WorldType.FLAT : WorldType.NORMAL,
+    seed,
+    worldType: args.get('type') === 'flat' ? WorldType.FLAT : WorldType.DEFAULT,
+    // 存档按种子分目录，换种子不会互相覆盖
+    savePath: args.get('save') ?? `saves/${seed.replace(/[^\w-]/g, '_')}.mcws`,
   };
 }
 
@@ -62,7 +69,9 @@ const chunkManager = new ChunkManager(world, generator, light);
 const spawn = generator.findSpawn();
 chunkManager.ensureLoaded(spawn.x, spawn.z, SPAWN_PRELOAD);
 
-let timeTick = 0;
+// 读回上次的存档（玩家改过的方块与世界时间）
+const restored = loadWorld(options.savePath, chunkManager, true);
+let timeTick = restored?.timeTick ?? 0;
 const server = new ServerCore({
   world,
   chunkManager,
@@ -97,11 +106,32 @@ setInterval(() => {
   timeTick++;
 }, 1000 / TICKS_PER_SECOND);
 setInterval(() => server.syncTime(), TIME_SYNC_INTERVAL_MS);
+setInterval(() => {
+  const saved = saveWorld(options.savePath, world, timeTick);
+  process.stdout.write(`已存盘：${saved.chunkCount} 个 chunk → ${options.savePath}\n`);
+}, AUTOSAVE_INTERVAL_MS);
+
+// Ctrl+C 退出前存一次，别把刚建好的东西丢了
+let isShuttingDown = false;
+const shutdown = (): void => {
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
+  const saved = saveWorld(options.savePath, world, timeTick);
+  process.stdout.write(`\n已保存 ${saved.chunkCount} 个 chunk，服务端退出\n`);
+  server.dispose();
+  wss.close();
+  process.exit(0);
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 const addresses = localAddresses();
 process.stdout.write(
   [
     `世界已就绪：种子 ${options.seed}（${options.worldType}），出生点 ${Math.round(spawn.x)} ${Math.round(spawn.y)} ${Math.round(spawn.z)}`,
+    restored ? `已读取存档：${restored.chunkCount} 个 chunk（${options.savePath}）` : `新世界，存档将写入 ${options.savePath}`,
     `渲染距离建议不超过 ${DEFAULT_RENDER_DISTANCE}`,
     '在浏览器的「多人游戏」里填入以下地址之一：',
     ...addresses.map((address) => `  ws://${address}:${options.port}`),

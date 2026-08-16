@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .wrangler
 e2e/scratch
+
+# 专用服务端的世界存档
+saves/
