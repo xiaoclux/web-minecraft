@@ -10,6 +10,7 @@ export const Screen = {
   FURNACE: 'furnace',
   BREWING: 'brewing',
   ENCHANTING: 'enchanting',
+  ANVIL: 'anvil',
   CHEST: 'chest',
   PAUSE: 'pause',
   DEATH: 'death',
@@ -23,6 +24,7 @@ const CONTAINER_SCREENS: ReadonlySet<Screen> = new Set<Screen>([
   Screen.FURNACE,
   Screen.BREWING,
   Screen.ENCHANTING,
+  Screen.ANVIL,
   Screen.CHEST,
 ]);
 

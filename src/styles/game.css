@@ -846,6 +846,32 @@ button:disabled {
   letter-spacing: 2px;
 }
 
+.anvil-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.anvil-name {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 4px 6px;
+  border: 2px solid #555;
+  background: #2b2b2b;
+  color: #eee;
+  font: inherit;
+}
+
+.anvil-cost {
+  margin-top: 6px;
+  min-height: 1.2em;
+  color: #7cff5c;
+}
+
+.anvil-cost.unaffordable {
+  color: #ff5c5c;
+}
+
 .progress-arrow {
   width: 48px;
   height: 12px;

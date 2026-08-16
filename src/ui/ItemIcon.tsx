@@ -21,7 +21,7 @@ export function ItemIcon({ stack, size = DEFAULT_ICON_SIZE, showCount = true }: 
   const durability = def?.tool?.durability;
   const damage = stack.damage ?? 0;
   const style: CSSProperties = { width: size, height: size };
-  const label = def?.label ?? stack.id;
+  const label = stack.name ?? def?.label ?? stack.id;
   const enchanted = isEnchanted(stack);
   const title = enchanted ? `${label}（${describeEnchants(stack)}）` : label;
   const barStyle: CSSProperties | undefined =

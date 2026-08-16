@@ -194,6 +194,10 @@ export const BlockId = {
   CACTUS: 81,
   BREWING_STAND: 117,
   ENCHANTING_TABLE: 116,
+  GOLD_BLOCK: 41,
+  IRON_BLOCK: 42,
+  DIAMOND_BLOCK: 57,
+  ANVIL: 145,
   SUGAR_CANE: 83,
   GLOWSTONE: 89,
   STONE_BRICKS: 98,
@@ -631,6 +635,23 @@ export const BLOCK_DEFS: BlockDef[] = [
       { opaque: false, interactive: true, minTier: ToolTier.WOOD },
     ),
     shape: BlockShape.ENCHANTING_TABLE,
+  },
+  cube(BlockId.GOLD_BLOCK, 'gold_block', '金块', same('gold_block'), 3, ToolType.PICKAXE, {
+    minTier: ToolTier.IRON,
+  }),
+  cube(BlockId.IRON_BLOCK, 'iron_block', '铁块', same('iron_block'), 5, ToolType.PICKAXE, {
+    minTier: ToolTier.STONE,
+  }),
+  cube(BlockId.DIAMOND_BLOCK, 'diamond_block', '钻石块', same('diamond_block'), 5, ToolType.PICKAXE, {
+    minTier: ToolTier.IRON,
+  }),
+  {
+    ...cube(BlockId.ANVIL, 'anvil', '铁砧', topSide('anvil_top', 'anvil'), 5, ToolType.PICKAXE, {
+      opaque: false,
+      interactive: true,
+      minTier: ToolTier.WOOD,
+    }),
+    shape: BlockShape.ANVIL,
   },
   cross(BlockId.SUGAR_CANE, 'sugar_cane', '甘蔗', 'sugar_cane', {
     drops: [{ item: 'sugar_cane', min: 1, max: 1 }],

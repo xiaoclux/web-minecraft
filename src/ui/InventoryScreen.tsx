@@ -14,6 +14,7 @@ import { Screen, type GameUiState } from '../engine/events/GameState';
 import { BREW_TICKS } from '../engine/items/potions';
 import { ENCHANTMENT_DEFS, type EnchantmentId } from '../engine/items/enchantments';
 import { ENCHANT_ITEM_SLOT, ENCHANT_LAPIS_SLOT, LAPIS_PER_OPTION } from '../engine/items/EnchantingTable';
+import { ANVIL_LEFT_SLOT, ANVIL_MAX_COST, ANVIL_RIGHT_SLOT, MAX_ITEM_NAME_LENGTH } from '../engine/items/Anvil';
 import { SMELT_TICKS } from '../engine/items/Furnace';
 import { ITEM_DEFS, ItemKind } from '../engine/items/ItemRegistry';
 import type { ItemStack } from '../engine/items/ItemStack';
@@ -245,6 +246,37 @@ function EnchantingArea({ game }: { game: Game }) {
   );
 }
 
+function AnvilArea({ game }: { game: Game }) {
+  const preview = game.anvilPreview;
+  const affordable = preview ? game.canAffordAnvil(preview) : false;
+  const costLabel = !preview
+    ? ''
+    : preview.cost > ANVIL_MAX_COST
+      ? '太贵了！'
+      : `附魔花费：${preview.cost} 级`;
+  return (
+    <div className="anvil-area">
+      <div className="section-title">修复与命名</div>
+      <input
+        className="anvil-name"
+        type="text"
+        maxLength={MAX_ITEM_NAME_LENGTH}
+        placeholder="物品名称"
+        value={game.anvilName}
+        onChange={(e) => game.setAnvilName(e.target.value)}
+      />
+      <div className="anvil-row">
+        <Slot game={game} refer={{ kind: 'anvil', index: ANVIL_LEFT_SLOT }} stack={game.anvilSlots[ANVIL_LEFT_SLOT]} />
+        <span className="arrow">+</span>
+        <Slot game={game} refer={{ kind: 'anvil', index: ANVIL_RIGHT_SLOT }} stack={game.anvilSlots[ANVIL_RIGHT_SLOT]} />
+        <span className="arrow">→</span>
+        <Slot game={game} refer={{ kind: 'anvilResult', index: 0 }} stack={game.anvilOutput()} className="result" />
+      </div>
+      <div className={`anvil-cost${affordable ? '' : ' unaffordable'}`}>{costLabel}</div>
+    </div>
+  );
+}
+
 function ChestArea({ game }: { game: Game }) {
   const items = game.openChestItems;
   const indices = useMemo(() => (items ? Array.from({ length: items.length }, (_, i) => i) : []), [items]);
@@ -326,6 +358,7 @@ export function InventoryScreen({ game, state }: InventoryScreenProps) {
           {state.screen === Screen.FURNACE && <FurnaceArea game={game} />}
           {state.screen === Screen.BREWING && <BrewingArea game={game} />}
           {state.screen === Screen.ENCHANTING && <EnchantingArea game={game} />}
+          {state.screen === Screen.ANVIL && <AnvilArea game={game} />}
           {state.screen === Screen.CHEST && <ChestArea game={game} />}
           <div className="section-title">物品栏</div>
           <InventoryGrid game={game} />

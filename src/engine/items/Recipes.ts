@@ -1,5 +1,6 @@
 import { COLOR_VARIANTS } from '../blocks/BlockRegistry';
 import {
+  ARMOR_MATERIALS,
   LOG_ITEM_IDS,
   PLANK_ITEM_IDS,
   TOOL_MATERIALS,
@@ -127,12 +128,6 @@ const STAIRS_MATERIAL: Record<string, string> = {
 };
 
 /** 盔甲：四种材质各四件，图案与 1.8.9 一致。 */
-const ARMOR_MATERIAL: Record<string, string> = {
-  leather: 'leather',
-  iron: 'iron_ingot',
-  golden: 'gold_ingot',
-  diamond: 'diamond',
-};
 const ARMOR_PATTERNS: Record<string, string[]> = {
   helmet: ['MMM', 'M M'],
   chestplate: ['M M', 'MMM', 'MMM'],
@@ -142,9 +137,9 @@ const ARMOR_PATTERNS: Record<string, string[]> = {
 
 function armorRecipes(): ShapedRecipe[] {
   const out: ShapedRecipe[] = [];
-  for (const [tier, mat] of Object.entries(ARMOR_MATERIAL)) {
+  for (const [tier, spec] of Object.entries(ARMOR_MATERIALS)) {
     for (const [piece, pattern] of Object.entries(ARMOR_PATTERNS)) {
-      out.push(shaped(pattern, { M: mat }, `${tier}_${piece}`));
+      out.push(shaped(pattern, { M: spec.material }, `${tier}_${piece}`));
     }
   }
   return out;
@@ -163,7 +158,6 @@ function slabAndStairsRecipes(): ShapedRecipe[] {
 
 /** 全部配方。 */
 export const RECIPES: Recipe[] = [
-
   shaped(['P', 'P'], { P: '#planks' }, 'stick', 4),
   shaped(['PP', 'PP'], { P: '#planks' }, 'crafting_table'),
   shaped(['CCC', 'C C', 'CCC'], { C: 'cobblestone' }, 'furnace'),
@@ -204,6 +198,13 @@ export const RECIPES: Recipe[] = [
   shaped(['GG', 'GG'], { G: 'glowstone_dust' }, 'glowstone'),
   shaped([' B ', 'CCC'], { B: 'blaze_rod', C: 'cobblestone' }, 'brewing_stand'),
   shaped([' B ', 'DOD', 'OOO'], { B: 'book', D: 'diamond', O: 'obsidian' }, 'enchanting_table'),
+  shaped(['III', 'III', 'III'], { I: 'iron_ingot' }, 'iron_block'),
+  shaped(['GGG', 'GGG', 'GGG'], { G: 'gold_ingot' }, 'gold_block'),
+  shaped(['DDD', 'DDD', 'DDD'], { D: 'diamond' }, 'diamond_block'),
+  shapeless(['iron_block'], 'iron_ingot', 9),
+  shapeless(['gold_block'], 'gold_ingot', 9),
+  shapeless(['diamond_block'], 'diamond', 9),
+  shaped(['BBB', ' I ', 'III'], { B: 'iron_block', I: 'iron_ingot' }, 'anvil'),
   shapeless(['pumpkin'], 'wheat_seeds', 4),
   shapeless(['melon_slice'], 'wheat_seeds'),
   shaped(['MMM', 'MMM', 'MMM'], { M: 'melon_slice' }, 'melon'),

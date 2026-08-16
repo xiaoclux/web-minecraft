@@ -43,6 +43,8 @@ export const BlockShape = {
   BREWING_STAND: 'brewing_stand',
   /** 附魔台：3/4 高的方块。 */
   ENCHANTING_TABLE: 'enchanting_table',
+  /** 铁砧：底座 + 砧面，比整格窄一圈。 */
+  ANVIL: 'anvil',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -132,6 +134,14 @@ const BREWING_STAND_BOXES: readonly BlockBox[] = [
   box(0.5 - BREWING_ROD_HALF, 0, 0.5 - BREWING_ROD_HALF, 0.5 + BREWING_ROD_HALF, BREWING_ROD_HEIGHT, 0.5 + BREWING_ROD_HALF),
 ];
 const ENCHANTING_TABLE_HEIGHT = 0.75;
+const ANVIL_INSET = 2 / 16;
+const ANVIL_BASE_HEIGHT = 4 / 16;
+const ANVIL_TOP_START = 10 / 16;
+const ANVIL_BOXES: readonly BlockBox[] = [
+  box(ANVIL_INSET, 0, ANVIL_INSET, 1 - ANVIL_INSET, ANVIL_BASE_HEIGHT, 1 - ANVIL_INSET),
+  box(0.5 - ANVIL_INSET, ANVIL_BASE_HEIGHT, 0.5 - ANVIL_INSET, 0.5 + ANVIL_INSET, ANVIL_TOP_START, 0.5 + ANVIL_INSET),
+  box(0, ANVIL_TOP_START, ANVIL_INSET, 1, 1, 1 - ANVIL_INSET),
+];
 const ENCHANTING_TABLE_BOXES: readonly BlockBox[] = [box(0, 0, 0, 1, ENCHANTING_TABLE_HEIGHT, 1)];
 /** 贴在格子某一侧面的薄板（厚度 t，方向 (dx,dz) 指向该侧面）。 */
 function panelBox(dx: number, dz: number, t: number): BlockBox {
@@ -278,6 +288,8 @@ export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readon
       return BREWING_STAND_BOXES;
     case BlockShape.ENCHANTING_TABLE:
       return ENCHANTING_TABLE_BOXES;
+    case BlockShape.ANVIL:
+      return ANVIL_BOXES;
     case BlockShape.LADDER:
       return LADDER_BOXES[meta & FACING_MASK];
     case BlockShape.DOOR:

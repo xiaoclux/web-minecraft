@@ -127,12 +127,15 @@ const tool = (type: ToolType, mat: ToolMaterialSpec): ItemDef => ({
   },
 });
 
-/** 盔甲材质：护甲点数与耐久都取自 1.8.9（顺序为头/胸/腿/脚）。 */
-const ARMOR_MATERIALS: Record<string, { label: string; defense: number[]; durability: number[] }> = {
-  leather: { label: '皮革', defense: [1, 3, 2, 1], durability: [55, 80, 75, 65] },
-  iron: { label: '铁', defense: [2, 6, 5, 2], durability: [165, 240, 225, 195] },
-  golden: { label: '金', defense: [2, 5, 3, 1], durability: [77, 112, 105, 91] },
-  diamond: { label: '钻石', defense: [3, 8, 6, 3], durability: [363, 528, 495, 429] },
+/** 盔甲材质：护甲点数与耐久都取自 1.8.9（顺序为头/胸/腿/脚）；material 为合成 / 修复用的材料。 */
+export const ARMOR_MATERIALS: Record<
+  string,
+  { label: string; defense: number[]; durability: number[]; material: string }
+> = {
+  leather: { label: '皮革', defense: [1, 3, 2, 1], durability: [55, 80, 75, 65], material: 'leather' },
+  iron: { label: '铁', defense: [2, 6, 5, 2], durability: [165, 240, 225, 195], material: 'iron_ingot' },
+  golden: { label: '金', defense: [2, 5, 3, 1], durability: [77, 112, 105, 91], material: 'gold_ingot' },
+  diamond: { label: '钻石', defense: [3, 8, 6, 3], durability: [363, 528, 495, 429], material: 'diamond' },
 };
 const ARMOR_PIECES = ['helmet', 'chestplate', 'leggings', 'boots'] as const;
 const ARMOR_PIECE_LABEL: Record<(typeof ARMOR_PIECES)[number], string> = {

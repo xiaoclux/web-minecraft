@@ -105,6 +105,7 @@ import { ContainerController, type ContainerHost, type SlotRef } from './items/C
 import { createFurnace, tickFurnace, type FurnaceState } from './items/Furnace';
 import { createBrewingStand, tickBrewing, type BrewingState } from './items/Brewing';
 import { POTION_DEFS, PotionBase, potionItemId } from './items/potions';
+import { ANVIL_MAX_COST, ANVIL_SLOT_COUNT, anvilResult, type AnvilResult } from './items/Anvil';
 import {
   ENCHANTING_SLOT_COUNT,
   ENCHANT_ITEM_SLOT,
@@ -234,6 +235,9 @@ export class Game implements EntityContext, ContainerHost {
   readonly craftingGrid: (ItemStack | null)[] = new Array<ItemStack | null>(CRAFT_GRID_SIZE).fill(null);
   craftGridSize = 2;
   readonly enchantingSlots: (ItemStack | null)[] = new Array<ItemStack | null>(ENCHANTING_SLOT_COUNT).fill(null);
+  readonly anvilSlots: (ItemStack | null)[] = new Array<ItemStack | null>(ANVIL_SLOT_COUNT).fill(null);
+  /** 铁砧界面里输入框的新名字（空串 = 不改名）。 */
+  private anvilNameText = '';
   /** 附魔台：本次打开的随机种子（附魔一次后重掷）与选项缓存。 */
   private enchantSeed = 0;
   private enchantOptionsCache: { key: string; options: EnchantOption[] | null } | null = null;
@@ -1635,6 +1639,10 @@ export class Game implements EntityContext, ContainerHost {
         this.rerollEnchantSeed();
         this.openScreen(Screen.ENCHANTING, { x: hit.x, y: hit.y, z: hit.z });
         return true;
+      case BlockId.ANVIL:
+        this.anvilNameText = '';
+        this.openScreen(Screen.ANVIL, { x: hit.x, y: hit.y, z: hit.z });
+        return true;
       case BlockId.BED:
         this.useBed(hit.x, hit.y, hit.z);
         return true;
@@ -2070,6 +2078,55 @@ export class Game implements EntityContext, ContainerHost {
     this.rerollEnchantSeed();
     this.sound.play('level');
     this.notifyChanged();
+  }
+
+  // ---------------------------------------------------------------- 铁砧
+
+  /** 铁砧输入框的名字。 */
+  get anvilName(): string {
+    return this.anvilNameText;
+  }
+
+  /** 玩家在铁砧里改名字。 */
+  setAnvilName(name: string): void {
+    this.anvilNameText = name;
+    this.notifyChanged();
+  }
+
+  /** 铁砧的完整计算结果（含消耗），UI 显示用；无产物为 null。 */
+  get anvilPreview(): AnvilResult | null {
+    return anvilResult(this.anvilSlots[0], this.anvilSlots[1], this.anvilNameText);
+  }
+
+  /** 这次铁砧操作玩家付不付得起：等级够且不超过上限（创造模式免费）。 */
+  canAffordAnvil(result: AnvilResult): boolean {
+    if (this.rules.infiniteItems) {
+      return true;
+    }
+    return result.cost <= ANVIL_MAX_COST && this.player.xpLevel >= result.cost;
+  }
+
+  anvilOutput(): ItemStack | null {
+    const result = this.anvilPreview;
+    return result && this.canAffordAnvil(result) ? result.output : null;
+  }
+
+  consumeAnvilInputs(): void {
+    const result = this.anvilPreview;
+    if (!result) {
+      return;
+    }
+    this.anvilSlots[0] = null;
+    const right = this.anvilSlots[1];
+    if (right && result.rightConsumed > 0) {
+      const left = right.count - result.rightConsumed;
+      this.anvilSlots[1] = left > 0 ? { ...right, count: left } : null;
+    }
+    if (!this.rules.infiniteItems) {
+      this.player.removeXpLevels(result.cost);
+    }
+    this.anvilNameText = '';
+    this.sound.play('place');
   }
 
   /** 当前打开的酿造台状态。 */

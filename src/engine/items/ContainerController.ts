@@ -22,6 +22,8 @@ export interface SlotRef {
     | 'brewIngredient'
     | 'brewBottle'
     | 'enchanting'
+    | 'anvil'
+    | 'anvilResult'
     | 'chest'
     | 'armor'
     | 'creative';
@@ -37,6 +39,12 @@ export interface ContainerHost {
   readonly craftGridSize: number;
   /** 附魔台的两个格子：[待附魔物品, 青金石]。与合成格一样归玩家临时持有，关界面时收回。 */
   readonly enchantingSlots: (ItemStack | null)[];
+  /** 铁砧的两个输入格：[左, 右]，同样临时持有。 */
+  readonly anvilSlots: (ItemStack | null)[];
+  /** 铁砧当前可取走的产物（不合法 / 等级不够时为 null）。 */
+  anvilOutput(): ItemStack | null;
+  /** 玩家取走铁砧产物：扣输入与等级。 */
+  consumeAnvilInputs(): void;
   readonly openFurnace: FurnaceState | null;
   /** 打开中的酿造台（未打开时为 null）。 */
   readonly openBrewingStand: BrewingState | null;
@@ -100,6 +108,10 @@ export class ContainerController {
         return this.host.openBrewingStand?.bottles[ref.index] ?? null;
       case 'enchanting':
         return this.host.enchantingSlots[ref.index] ?? null;
+      case 'anvil':
+        return this.host.anvilSlots[ref.index] ?? null;
+      case 'anvilResult':
+        return this.host.anvilOutput();
       case 'chest':
         return this.host.openChestItems?.[ref.index] ?? null;
       case 'armor':
@@ -158,6 +170,9 @@ export class ContainerController {
       case 'enchanting':
         this.host.enchantingSlots[ref.index] = value;
         break;
+      case 'anvil':
+        this.host.anvilSlots[ref.index] = value;
+        break;
       case 'chest': {
         const items = this.host.openChestItems;
         if (items) {
@@ -196,7 +211,7 @@ export class ContainerController {
       this.handleCreativeClick(ref, shift);
       return;
     }
-    if (ref.kind === 'craftResult' || ref.kind === 'furnaceOutput') {
+    if (ref.kind === 'craftResult' || ref.kind === 'furnaceOutput' || ref.kind === 'anvilResult') {
       this.takeOutput(ref, shift);
       return;
     }
@@ -311,7 +326,7 @@ export class ContainerController {
           break;
         }
         this.consumeOutput(ref);
-        if (ref.kind === 'furnaceOutput') {
+        if (ref.kind !== 'craftResult') {
           break;
         }
       }
@@ -345,6 +360,10 @@ export class ContainerController {
       if (f) {
         f.output = null;
       }
+      return;
+    }
+    if (ref.kind === 'anvilResult') {
+      this.host.consumeAnvilInputs();
     }
   }
 
@@ -478,7 +497,11 @@ export class ContainerController {
    * @returns 放不下的总数量，0 表示已全部收回
    */
   returnCraftingItems(): number {
-    return this.returnSlots(this.host.craftingGrid) + this.returnSlots(this.host.enchantingSlots);
+    return (
+      this.returnSlots(this.host.craftingGrid) +
+      this.returnSlots(this.host.enchantingSlots) +
+      this.returnSlots(this.host.anvilSlots)
+    );
   }
 
   /** 把一组临时格子里的物品收回背包，返回放不下的数量。 */
@@ -506,7 +529,7 @@ export class ContainerController {
       stacks.push(this.cursorStack);
       this.cursorStack = null;
     }
-    for (const slots of [this.host.craftingGrid, this.host.enchantingSlots]) {
+    for (const slots of [this.host.craftingGrid, this.host.enchantingSlots, this.host.anvilSlots]) {
       for (let i = 0; i < slots.length; i++) {
         const s = slots[i];
         if (s) {

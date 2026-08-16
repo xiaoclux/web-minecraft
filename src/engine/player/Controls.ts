@@ -16,6 +16,11 @@ export interface InputState {
 const PITCH_LIMIT = Math.PI / 2 - 0.001;
 
 /** 处理键鼠与触屏输入、指针锁定。 */
+/** 事件目标是不是文本输入框（打字时游戏按键要让路）。 */
+function isTextInput(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+}
+
 export class Controls {
   private keys = new Set<string>();
   private mouseButtons = new Set<number>();
@@ -54,6 +59,10 @@ export class Controls {
       this.handlers.push({ type, target, fn: listener });
     };
     on(document, 'keydown', (e) => {
+      // 铁砧改名等文本框里打字时不当作游戏按键
+      if (isTextInput(e.target)) {
+        return;
+      }
       if (e.code === 'F3' || e.code === 'Tab') {
         e.preventDefault();
       }

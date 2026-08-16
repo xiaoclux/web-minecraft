@@ -623,6 +623,27 @@ const enchantingTableSide: Painter = (c, rng) => {
   c.rect(6, 7, 4, 4, hex('#4be3d6'));
 };
 
+/** 矿物块：底色 + 边框内嵌的方形高光。 */
+function mineralBlock(color: string): Painter {
+  const base = hex(color);
+  return (c, rng) => {
+    c.noise(base, 0.05, rng);
+    c.rect(0, 0, 16, 1, shade(base, 1.2));
+    c.rect(0, 0, 1, 16, shade(base, 1.2));
+    c.rect(15, 0, 1, 16, shade(base, 0.7));
+    c.rect(0, 15, 16, 1, shade(base, 0.7));
+    c.rect(3, 3, 10, 10, shade(base, 0.9));
+  };
+}
+/** 铁砧：深灰铁面。 */
+const anvil: Painter = (c, rng) => {
+  c.noise(hex('#494949'), 0.08, rng);
+};
+const anvilTop: Painter = (c, rng) => {
+  c.noise(hex('#494949'), 0.08, rng);
+  c.rect(2, 3, 12, 10, hex('#3a3a3a'));
+};
+
 /** 甘蔗：细长的浅绿叶片。 */
 const sugarCane: Painter = (c) => {
   c.fill(TRANSPARENT);
@@ -833,6 +854,11 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   cactus_top: cactusTop,
   brewing_stand: brewingStand,
   enchanting_table_top: enchantingTableTop,
+  gold_block: mineralBlock('#f0c040'),
+  iron_block: mineralBlock('#dcdcdc'),
+  diamond_block: mineralBlock('#4be3d6'),
+  anvil,
+  anvil_top: anvilTop,
   enchanting_table_side: enchantingTableSide,
   sugar_cane: sugarCane,
   chest_top: chestTop,

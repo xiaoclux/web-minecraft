@@ -6,6 +6,8 @@ export interface ItemStack {
   count: number;
   damage?: number;
   enchants?: Record<string, number>;
+  /** 铁砧改过的名字。 */
+  name?: string;
 }
 
 /** 创建物品堆。 */
@@ -15,7 +17,7 @@ export function createStack(id: string, count = 1, damage = 0): ItemStack {
 
 /** 两个堆是否可合并（同 id、无耐久损耗、无附魔）。 */
 export function canMerge(a: ItemStack, b: ItemStack): boolean {
-  return a.id === b.id && !a.damage && !b.damage && !a.enchants && !b.enchants;
+  return a.id === b.id && !a.damage && !b.damage && !a.enchants && !b.enchants && a.name === b.name;
 }
 
 /** 物品最大堆叠数。 */
