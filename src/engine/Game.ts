@@ -89,6 +89,7 @@ import type { EntityContext } from './entities/EntityContext';
 import { ItemDropEntity } from './entities/ItemDropEntity';
 import { XpOrbEntity } from './entities/XpOrbEntity';
 import { LivingEntity } from './entities/LivingEntity';
+import { EffectId } from './entities/effects';
 import { Mob } from './entities/Mob';
 import { MobType, isMobType } from './entities/MobDefs';
 import { MobSpawner } from './entities/MobSpawner';
@@ -255,6 +256,7 @@ export class Game implements EntityContext, ContainerHost {
       food: this.player.food,
       air: this.player.air,
       armor: this.player.armorPoints,
+      effects: [],
       maxAir: this.player.air,
       xpLevel: 0,
       xpProgress: 0,
@@ -576,6 +578,7 @@ export class Game implements EntityContext, ContainerHost {
       food: p.food,
       air: p.air,
       armor: p.armorPoints,
+      effects: p.serializeEffects(),
       xpLevel: p.xpLevel,
       xpProgress: p.xpProgress,
       selectedSlot: p.selectedSlot,
@@ -834,7 +837,7 @@ export class Game implements EntityContext, ContainerHost {
       this.updateFlying(dt, dirX, dirZ, input.jump, input.sneak);
       return;
     }
-    let speed = PLAYER_WALK_SPEED;
+    let speed = PLAYER_WALK_SPEED * p.speedMultiplier;
     if (p.isSprinting) {
       speed *= PLAYER_SPRINT_MULTIPLIER;
     }
@@ -850,7 +853,7 @@ export class Game implements EntityContext, ContainerHost {
     if (input.jump) {
       if (p.onGround) {
         // 站在地上（含浅水底）就正常起跳；疾跑起跳只在刚按下时加一次前冲
-        p.vy = PLAYER_JUMP_VELOCITY;
+        p.vy = PLAYER_JUMP_VELOCITY * p.jumpMultiplier;
         p.onJump();
         if (p.isSprinting && !this.jumpWasDown) {
           p.vx += forwardX * 1.5;
@@ -985,6 +988,9 @@ export class Game implements EntityContext, ContainerHost {
 
   private brightnessAtPlayer(): number {
     const p = this.player;
+    if (p.hasEffect(EffectId.NIGHT_VISION)) {
+      return 1;
+    }
     const level = this.lightLevelAt(Math.floor(p.x), Math.floor(p.eyeY), Math.floor(p.z)) / MAX_LIGHT;
     return 0.15 + 0.85 * (level / (4 - 3 * level));
   }
@@ -1187,6 +1193,8 @@ export class Game implements EntityContext, ContainerHost {
       return;
     }
     if (def.id === 'milk_bucket') {
+      // 原版行为：喝牛奶清掉身上所有状态效果
+      this.player.clearEffects();
       this.replaceHeldItem('bucket');
       this.sound.play('eat');
       this.renderer.hand.swing();
@@ -1658,7 +1666,11 @@ export class Game implements EntityContext, ContainerHost {
       return;
     }
     this.attackCooldown = ATTACK_COOLDOWN_TICKS;
-    const damage = getAttackDamage(this.player.heldItem?.id ?? null);
+    // 力量 / 虚弱直接加减近战伤害（1.8.9 的算法）
+    const damage = Math.max(
+      0,
+      getAttackDamage(this.player.heldItem?.id ?? null) + this.player.meleeDamageBonus,
+    );
     if (target.hurt(this, damage, this.player, true)) {
       this.sound.play('hit');
       this.player.onAttack();

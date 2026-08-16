@@ -20,6 +20,16 @@ import {
 import type { EntityContext } from '../entities/EntityContext';
 import { LivingEntity } from '../entities/LivingEntity';
 import { BlockId } from '../blocks/BlockRegistry';
+import {
+  EffectId,
+  JUMP_BOOST_PER_LEVEL,
+  MIN_SPEED_MULTIPLIER,
+  SLOWNESS_PER_LEVEL,
+  SPEED_PER_LEVEL,
+  STRENGTH_PER_LEVEL,
+  WEAKNESS_PER_LEVEL,
+  type ActiveEffect,
+} from '../entities/effects';
 import { Inventory } from '../items/Inventory';
 import { getItem } from '../items/ItemRegistry';
 import type { ItemStack } from '../items/ItemStack';
@@ -121,7 +131,7 @@ export class Player extends LivingEntity {
 
   private tickAir(ctx: EntityContext, rules: PlayerRules): void {
     const headInWater = ctx.world.getBlock(Math.floor(this.x), Math.floor(this.eyeY), Math.floor(this.z)) === BlockId.WATER;
-    if (!headInWater) {
+    if (!headInWater || this.hasEffect(EffectId.WATER_BREATHING)) {
       this.air = Math.min(AIR_TICKS_MAX, this.air + 4);
       this.drownTimer = 0;
       return;
@@ -276,6 +286,23 @@ export class Player extends LivingEntity {
     return super.hurt(ctx, this.applyArmor(amount), source, byPlayer);
   }
 
+  /** 迅捷 / 缓慢带来的移动速度倍率。 */
+  get speedMultiplier(): number {
+    const speed = this.effectLevel(EffectId.SPEED) * SPEED_PER_LEVEL;
+    const slow = this.effectLevel(EffectId.SLOWNESS) * SLOWNESS_PER_LEVEL;
+    return Math.max(MIN_SPEED_MULTIPLIER, 1 + speed - slow);
+  }
+
+  /** 跳跃提升带来的起跳速度倍率。 */
+  get jumpMultiplier(): number {
+    return 1 + this.effectLevel(EffectId.JUMP_BOOST) * JUMP_BOOST_PER_LEVEL;
+  }
+
+  /** 力量 / 虚弱对近战伤害的加减。 */
+  get meleeDamageBonus(): number {
+    return this.effectLevel(EffectId.STRENGTH) * STRENGTH_PER_LEVEL - this.effectLevel(EffectId.WEAKNESS) * WEAKNESS_PER_LEVEL;
+  }
+
   /** 当前护甲点数（装备栏各件之和）。 */
   get armorPoints(): number {
     let points = 0;
@@ -338,6 +365,7 @@ export class Player extends LivingEntity {
       spawn: [this.spawnX, this.spawnY, this.spawnZ],
       inventory: this.inventory.toJSON(),
       armor: this.inventory.armorToJSON(),
+      effects: this.serializeEffects(),
     };
   }
 
@@ -357,6 +385,7 @@ export class Player extends LivingEntity {
     [this.spawnX, this.spawnY, this.spawnZ] = data.spawn;
     this.inventory.load(data.inventory);
     this.inventory.loadArmor(data.armor);
+    this.loadEffects(data.effects);
   }
 }
 
@@ -382,4 +411,6 @@ export interface PlayerSaveData {
   inventory: (ItemStack | null)[];
   /** 装备栏（旧存档没有该字段）。 */
   armor?: (ItemStack | null)[];
+  /** 身上的状态效果（旧存档没有该字段）。 */
+  effects?: ActiveEffect[];
 }

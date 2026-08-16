@@ -1,4 +1,5 @@
 import type { GameMode } from '../constants/game';
+import type { ActiveEffect } from '../entities/effects';
 import type { ItemStack } from '../items/ItemStack';
 
 /** UI 屏幕。 */
@@ -36,6 +37,8 @@ export interface GameUiState {
   maxAir: number;
   /** 护甲点数 0~20。 */
   armor: number;
+  /** 身上的状态效果（HUD 用）。 */
+  effects: ActiveEffect[];
   xpLevel: number;
   xpProgress: number;
   selectedSlot: number;

@@ -265,7 +265,6 @@ export const ITEM_DEFS: ItemDef[] = [
   material('bucket', '桶', { maxStack: 1 }),
   material('water_bucket', '水桶', { maxStack: 1 }),
   material('lava_bucket', '岩浆桶', { maxStack: 1 }),
-  // 原版喝牛奶是清除状态效果，状态效果还没做，先只当作喝完变空桶
   material('milk_bucket', '牛奶桶', { maxStack: 1 }),
   food('apple', '苹果', 4, 2.4),
   food('bread', '面包', 5, 6),

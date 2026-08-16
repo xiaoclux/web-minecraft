@@ -450,6 +450,44 @@ button:disabled {
   gap: 2px;
 }
 
+/* 状态效果列表（右上角） */
+.effect-list {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.effect {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.45);
+  border-left: 3px solid #7fd67f;
+  color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.effect.bad {
+  border-left-color: #e06060;
+}
+
+.effect-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.effect-time {
+  opacity: 0.75;
+}
+
 .stat-row {
   display: flex;
   gap: 1px;

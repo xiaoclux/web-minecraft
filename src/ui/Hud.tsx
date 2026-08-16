@@ -1,6 +1,7 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { Game } from '../engine/Game';
-import { GameMode, HOTBAR_SIZE, PLAYER_MAX_FOOD, PLAYER_MAX_HEALTH } from '../engine/constants/game';
+import { GameMode, HOTBAR_SIZE, PLAYER_MAX_FOOD, PLAYER_MAX_HEALTH, TICKS_PER_SECOND } from '../engine/constants/game';
+import { EFFECT_DEFS } from '../engine/entities/effects';
 import type { GameUiState } from '../engine/events/GameState';
 import { ItemIcon } from './ItemIcon';
 
@@ -15,6 +16,14 @@ const BUBBLE_COUNT = 10;
 const ARMOR_COUNT = 10;
 const ARMOR_MAX = 20;
 const HOTBAR_INDICES = Array.from({ length: HOTBAR_SIZE }, (_, i) => i);
+/** 效果等级的罗马数字（下标即 amplifier）。 */
+const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
+
+/** 剩余时间显示成 m:ss。 */
+function formatEffectTime(ticks: number): string {
+  const seconds = Math.ceil(ticks / TICKS_PER_SECOND);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
 const BUBBLE_INDICES = Array.from({ length: BUBBLE_COUNT }, (_, i) => i);
 
 function StatRow({
@@ -64,6 +73,23 @@ export function Hud({ game, state }: HudProps) {
     <div className="hud">
       <div className="crosshair" />
       {state.targetLabel && <div className="target-label">{state.targetLabel}</div>}
+      {state.effects.length > 0 && (
+        <div className="effect-list">
+          {state.effects.map((effect) => {
+            const def = EFFECT_DEFS[effect.id];
+            return (
+              <div key={effect.id} className={`effect${def.isBad ? ' bad' : ''}`} title={def.label}>
+                <span className="effect-dot" style={{ background: def.color }} />
+                <span className="effect-name">
+                  {def.label}
+                  {effect.amplifier > 0 ? ` ${ROMAN[Math.min(ROMAN.length - 1, effect.amplifier)]}` : ''}
+                </span>
+                <span className="effect-time">{formatEffectTime(effect.ticks)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {state.toast && (
         <div className="toast" key={state.toastVersion}>
           {state.toast}
