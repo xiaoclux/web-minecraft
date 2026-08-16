@@ -1,4 +1,11 @@
-import { BlockId, RenderType, getBlock, type BlockDef, type BlockFaceTextures } from '../blocks/BlockRegistry';
+import {
+  BlockId,
+  RenderType,
+  blockVariant,
+  getBlock,
+  type BlockDef,
+  type BlockFaceTextures,
+} from '../blocks/BlockRegistry';
 import {
   FACINGS,
   FACING_MASK,
@@ -372,9 +379,12 @@ function textureKeyFor(def: BlockDef, face: FaceSpec, meta: number): keyof Block
   return nx === -fz && nz === fx ? 'east' : 'west';
 }
 
-/** 取该方块在给定 meta 下的六面贴图（床头/床尾、作物生长阶段等按 meta 换图）。 */
+/** 取该方块在给定 meta 下的六面贴图（变种、床头/床尾、作物生长阶段都按 meta 换图）。 */
 function texturesFor(def: BlockDef, meta: number): BlockFaceTextures {
-  return def.texturesForMeta ? def.texturesForMeta(meta) : def.textures;
+  if (def.texturesForMeta) {
+    return def.texturesForMeta(meta);
+  }
+  return blockVariant(def, meta).textures;
 }
 
 /** 子盒的某个面是否正好贴在格子边界上（贴边的面才参与邻居剔除）。 */
@@ -467,7 +477,7 @@ export class ChunkMesher {
   }
 
   private cube(builder: BufferBuilder, def: BlockDef, x: number, y: number, z: number): void {
-    const meta = def.hasFacing || def.texturesForMeta ? this.snap.meta[this.snap.at(x, y, z)] : 0;
+    const meta = def.hasFacing || def.texturesForMeta || def.variants ? this.snap.meta[this.snap.at(x, y, z)] : 0;
     const textures = texturesFor(def, meta);
     for (const face of FACES) {
       const nx = x + face.normal[0];

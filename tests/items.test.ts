@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { cropBlockForSeed, getBlockByName } from '../src/engine/blocks/BlockRegistry';
-import { breakTicks, canHarvest } from '../src/engine/blocks/blockBreaking';
+import { blockVariant, cropBlockForSeed, getBlockByName } from '../src/engine/blocks/BlockRegistry';
+import { breakTicks, canHarvest, rollDrops } from '../src/engine/blocks/blockBreaking';
 import { Inventory } from '../src/engine/items/Inventory';
 import { ITEM_DEFS, TOOL_MATERIALS, getItem } from '../src/engine/items/ItemRegistry';
 import { matchRecipe, RECIPES } from '../src/engine/items/Recipes';
@@ -173,5 +173,55 @@ describe('作物', () => {
 
   it('土豆能烧成烤土豆', () => {
     expect(getItem('potato')?.smeltsInto).toBe('baked_potato');
+  });
+});
+
+describe('方块变种', () => {
+  it('六种木材各有木板 / 原木 / 树叶 / 树苗物品', () => {
+    for (const wood of ['spruce', 'birch', 'jungle', 'acacia', 'dark_oak']) {
+      for (const kind of ['planks', 'log', 'leaves', 'sapling']) {
+        expect(getItem(`${wood}_${kind}`), `${wood}_${kind}`).toBeDefined();
+      }
+    }
+    // 橡木沿用不带前缀的旧 id，老存档里的物品不会失效
+    expect(getItem('planks')?.blockMeta).toBe(0);
+  });
+
+  it('变种物品带 blockMeta，放置时写进方块 meta', () => {
+    expect(getItem('spruce_planks')?.blockId).toBe(getBlockByName('planks')?.id);
+    expect(getItem('spruce_planks')?.blockMeta).toBe(1);
+    expect(getItem('dark_oak_log')?.blockMeta).toBe(5);
+  });
+
+  it('按 meta 取到对应变种的名字、标签与贴图', () => {
+    const planks = getBlockByName('planks')!;
+    expect(blockVariant(planks, 0).name).toBe('planks');
+    expect(blockVariant(planks, 2).label).toBe('白桦木板');
+    expect(blockVariant(planks, 2).textures.north).toBe('planks_birch');
+    // 超出变种数量的 meta 退回最后一个，不会崩
+    expect(blockVariant(planks, 15).name).toBe('dark_oak_planks');
+  });
+
+  it('破坏时掉的是对应变种', () => {
+    const planks = getBlockByName('planks')!;
+    expect(rollDrops(planks, 3, null, () => 0)[0]).toEqual({ id: 'jungle_planks', count: 1 });
+  });
+});
+
+describe('配方标签', () => {
+  it('任意木板都能做工作台与木镐', () => {
+    const grid = (ids: (string | null)[]): (ItemStack | null)[] => ids.map((id) => (id ? s(id) : null));
+    expect(matchRecipe(grid(['spruce_planks', 'spruce_planks', 'spruce_planks', 'spruce_planks']), 2)?.id).toBe(
+      'crafting_table',
+    );
+    // 混着用也行（和原版一样）
+    expect(matchRecipe(grid(['planks', 'birch_planks', 'acacia_planks', 'jungle_planks']), 2)?.id).toBe(
+      'crafting_table',
+    );
+  });
+
+  it('每种原木砍出对应的木板', () => {
+    const grid: (ItemStack | null)[] = [s('birch_log'), null, null, null];
+    expect(matchRecipe(grid, 2)).toEqual({ id: 'birch_planks', count: 4 });
   });
 });

@@ -35,7 +35,7 @@ const NEIGHBORS: readonly (readonly [number, number, number])[] = [
 ];
 
 /** 被流体冲走的方块回调（用于掉落植物等）。 */
-export type WashedListener = (x: number, y: number, z: number, blockId: number) => void;
+export type WashedListener = (x: number, y: number, z: number, blockId: number, meta: number) => void;
 
 /** 各流体的行为参数（按方块 id 查）。 */
 export const FLUID_SPECS: Record<number, FluidSpec> = {
@@ -274,8 +274,9 @@ export class FluidSimulator {
   private flowInto(x: number, y: number, z: number, meta: number, spec: FluidSpec): void {
     const old = this.world.getBlock(x, y, z);
     if (old !== BlockId.AIR) {
+      const oldMeta = this.world.getMeta(x, y, z);
       for (const listener of this.washedListeners) {
-        listener(x, y, z, old);
+        listener(x, y, z, old, oldMeta);
       }
     }
     this.world.setBlock(x, y, z, spec.block, meta);

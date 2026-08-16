@@ -1,7 +1,7 @@
 import { TICKS_PER_SECOND } from '../constants/game';
 import { getItem, type ToolProps } from '../items/ItemRegistry';
 import type { ItemStack } from '../items/ItemStack';
-import { type BlockDef, type BlockDrop } from './BlockRegistry';
+import { blockVariant, type BlockDef, type BlockDrop } from './BlockRegistry';
 
 const HARVEST_MULTIPLIER = 1.5;
 const NO_HARVEST_MULTIPLIER = 5;
@@ -34,12 +34,12 @@ export function breakTicks(def: BlockDef, held: ItemStack | null): number {
   return Math.max(MIN_BREAK_TICKS, Math.ceil(seconds * TICKS_PER_SECOND));
 }
 
-/** 计算掉落物。 */
-export function rollDrops(def: BlockDef, held: ItemStack | null, random: () => number): ItemStack[] {
+/** 计算掉落物；meta 用来决定"掉自己"时掉的是哪个变种。 */
+export function rollDrops(def: BlockDef, meta: number, held: ItemStack | null, random: () => number): ItemStack[] {
   if (!canHarvest(def, held)) {
     return [];
   }
-  const table: BlockDrop[] = def.drops ?? [{ item: def.name, min: 1, max: 1 }];
+  const table: BlockDrop[] = def.drops ?? [{ item: blockVariant(def, meta).name, min: 1, max: 1 }];
   const out: ItemStack[] = [];
   for (const drop of table) {
     if (drop.chance !== undefined && random() > drop.chance) {

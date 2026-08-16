@@ -59,6 +59,17 @@ export interface BlockDrop {
   chance?: number;
 }
 
+/** 方块的一个变种（同一个 id 下按 meta 区分）。 */
+export interface BlockVariant {
+  /** 物品 id / 英文名。 */
+  name: string;
+  label: string;
+  textures: BlockFaceTextures;
+}
+
+/** 变种序号的默认掩码（meta 低 4 位）。 */
+export const DEFAULT_VARIANT_MASK = 0xf;
+
 /** 方块定义。 */
 export interface BlockDef {
   id: number;
@@ -112,6 +123,13 @@ export interface BlockDef {
   connectGroup?: string;
   /** 可燃：会被相邻的火点着并烧掉。 */
   flammable?: boolean;
+  /**
+   * 变种：同一个方块 id 下按 meta 区分的若干种（木材、羊毛颜色、石头变种等），与 1.8.9 一致。
+   * 有变种时，方块的物品、标签与贴图都按 meta 取对应变种。
+   */
+  variants?: BlockVariant[];
+  /** meta 中用来存变种序号的位（默认 0xF）；半砖这类还要用高位存别的信息时缩小它。 */
+  variantMask?: number;
   /** 作物：种子物品、成熟产物与额外掉落的种子数。 */
   crop?: {
     /** 用来播种的物品 id（也是未成熟时的掉落）。 */
@@ -183,6 +201,16 @@ export const BlockId = {
   SANDSTONE_STAIRS: 128,
 } as const;
 export type BlockId = (typeof BlockId)[keyof typeof BlockId];
+
+/** 六种木材的 id 与中文名（贴图在 blockTextures.WOOD_TYPES 里按同样的 id 生成）。 */
+const WOOD_VARIANTS: readonly { id: string; label: string }[] = [
+  { id: 'oak', label: '橡木' },
+  { id: 'spruce', label: '云杉' },
+  { id: 'birch', label: '白桦' },
+  { id: 'jungle', label: '丛林木' },
+  { id: 'acacia', label: '金合欢' },
+  { id: 'dark_oak', label: '深色橡木' },
+];
 
 /** meta 的取值个数（4 位）：收集按 meta 变化的贴图时全部枚举一遍。 */
 const META_VARIANT_COUNT = 16;
@@ -290,8 +318,21 @@ export const BLOCK_DEFS: BlockDef[] = [
   cube(BlockId.COBBLESTONE, 'cobblestone', '圆石', same('cobblestone'), 2, ToolType.PICKAXE, {
     minTier: ToolTier.WOOD,
   }),
-  cube(BlockId.PLANKS, 'planks', '橡木木板', same('planks'), 2, ToolType.AXE, { flammable: true }),
-  cross(BlockId.SAPLING, 'sapling', '橡树树苗', 'sapling'),
+  cube(BlockId.PLANKS, 'planks', '橡木木板', same('planks'), 2, ToolType.AXE, {
+    flammable: true,
+    variants: WOOD_VARIANTS.map((w) => ({
+      name: w.id === 'oak' ? 'planks' : `${w.id}_planks`,
+      label: `${w.label}木板`,
+      textures: same(`planks_${w.id}`),
+    })),
+  }),
+  cross(BlockId.SAPLING, 'sapling', '橡树树苗', 'sapling', {
+    variants: WOOD_VARIANTS.map((w) => ({
+      name: w.id === 'oak' ? 'sapling' : `${w.id}_sapling`,
+      label: `${w.label}树苗`,
+      textures: same(`sapling_${w.id}`),
+    })),
+  }),
   cube(BlockId.BEDROCK, 'bedrock', '基岩', same('bedrock'), -1, null, { isBlastResistant: true }),
   {
     id: BlockId.WATER,
@@ -337,7 +378,14 @@ export const BLOCK_DEFS: BlockDef[] = [
     drops: [{ item: 'coal', min: 1, max: 1 }],
     xp: [0, 2],
   }),
-  cube(BlockId.LOG, 'log', '橡木原木', topSide('log_top', 'log_side'), 2, ToolType.AXE, { flammable: true }),
+  cube(BlockId.LOG, 'log', '橡木原木', topSide('log_top', 'log_side'), 2, ToolType.AXE, {
+    flammable: true,
+    variants: WOOD_VARIANTS.map((w) => ({
+      name: w.id === 'oak' ? 'log' : `${w.id}_log`,
+      label: `${w.label}原木`,
+      textures: topSide(`log_top_${w.id}`, `log_side_${w.id}`),
+    })),
+  }),
   {
     id: BlockId.LEAVES,
     name: 'leaves',
@@ -354,6 +402,11 @@ export const BLOCK_DEFS: BlockDef[] = [
       { item: 'apple', min: 1, max: 1, chance: 0.02 },
     ],
     flammable: true,
+    variants: WOOD_VARIANTS.map((w) => ({
+      name: w.id === 'oak' ? 'leaves' : `${w.id}_leaves`,
+      label: `${w.label}树叶`,
+      textures: same(`leaves_${w.id}`),
+    })),
   },
   {
     id: BlockId.GLASS,
@@ -649,6 +702,32 @@ for (const def of BLOCK_DEFS) {
   }
 }
 
+/** 取某方块在给定 meta 下的变种序号。 */
+export function variantIndex(def: BlockDef, meta: number): number {
+  if (!def.variants) {
+    return 0;
+  }
+  return Math.min(def.variants.length - 1, meta & (def.variantMask ?? DEFAULT_VARIANT_MASK));
+}
+
+/** 取某方块在给定 meta 下的变种信息；没有变种时用方块自身的名字 / 标签 / 贴图。 */
+export function blockVariant(def: BlockDef, meta: number): BlockVariant {
+  return def.variants ? def.variants[variantIndex(def, meta)] : def;
+}
+
+/** 变种物品 id → { 方块 id, meta }。 */
+const VARIANT_BY_NAME = new Map<string, { block: number; meta: number }>();
+for (const def of BLOCK_DEFS) {
+  def.variants?.forEach((variant, index) => {
+    VARIANT_BY_NAME.set(variant.name, { block: def.id, meta: index });
+  });
+}
+
+/** 按变种物品 id 查它对应的方块与 meta。 */
+export function blockForVariantName(name: string): { block: number; meta: number } | undefined {
+  return VARIANT_BY_NAME.get(name);
+}
+
 /** 该物品能种出哪种作物；不能播种返回 null。 */
 export function cropBlockForSeed(itemId: string): number | null {
   return CROP_BY_SEED.get(itemId) ?? null;
@@ -687,6 +766,9 @@ export function collectBlockTextureKeys(): string[] {
   };
   for (const def of BLOCK_DEFS) {
     add(def.textures);
+    for (const variant of def.variants ?? []) {
+      add(variant.textures);
+    }
     // 按 meta 换图的方块要把所有变体都收进图集
     for (let meta = 0; def.texturesForMeta && meta < META_VARIANT_COUNT; meta++) {
       add(def.texturesForMeta(meta));

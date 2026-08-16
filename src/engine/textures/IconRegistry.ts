@@ -1,4 +1,4 @@
-import { getBlock, RenderType } from '../blocks/BlockRegistry';
+import { blockVariant, getBlock, RenderType } from '../blocks/BlockRegistry';
 import { getItem, ItemKind } from '../items/ItemRegistry';
 import { TEXTURE_SIZE, type PixelCanvas } from './PixelCanvas';
 import { paintBlockTexture } from './blockTextures';
@@ -94,10 +94,11 @@ export function getItemIcon(itemId: string): string {
   let url: string;
   if (def?.kind === ItemKind.BLOCK && def.blockId !== undefined) {
     const block = getBlock(def.blockId);
+    const textures = blockVariant(block, def.blockMeta ?? 0).textures;
     if (block.render === RenderType.CROSS) {
-      url = drawFlatIcon(texturePixels(block.textures.north));
+      url = drawFlatIcon(texturePixels(textures.north));
     } else {
-      url = drawCubeIcon(block.textures.top, block.textures.north, block.textures.east);
+      url = drawCubeIcon(textures.top, textures.north, textures.east);
     }
   } else {
     url = drawFlatIcon(paintItemIcon(def?.icon ?? itemId));

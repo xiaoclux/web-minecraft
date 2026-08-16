@@ -1,5 +1,12 @@
 import * as THREE from 'three';
-import { BlockId, ToolType, cropBlockForSeed, getBlock, type BlockDef } from './blocks/BlockRegistry';
+import {
+  BlockId,
+  ToolType,
+  blockVariant,
+  cropBlockForSeed,
+  getBlock,
+  type BlockDef,
+} from './blocks/BlockRegistry';
 import { breakTicks, rollDrops, rollXp } from './blocks/blockBreaking';
 import {
   BED_HEAD_BIT,
@@ -256,7 +263,7 @@ export class Game implements EntityContext, ContainerHost {
     } else {
       this.createNewWorld();
     }
-    this.fluids.onWashed((x, y, z, id) => this.onBlockWashed(x, y, z, id));
+    this.fluids.onWashed((x, y, z, id, meta) => this.onBlockWashed(x, y, z, id, meta));
     this.world.onChunkUnload((chunk) => this.onChunkUnloaded(chunk));
     this.player.inventory.subscribe(() =>
       this.store.patch({ inventoryVersion: this.store.get().inventoryVersion + 1 }),
@@ -530,6 +537,11 @@ export class Game implements EntityContext, ContainerHost {
     this.syncStore();
   }
 
+  /** 准星指向的方块名（带变种，如"云杉木板"）。 */
+  private blockLabelAt(x: number, y: number, z: number): string {
+    return blockVariant(getBlock(this.world.getBlock(x, y, z)), this.world.getMeta(x, y, z)).label;
+  }
+
   private syncStore(): void {
     const p = this.player;
     this.store.patch({
@@ -543,9 +555,7 @@ export class Game implements EntityContext, ContainerHost {
       isFlying: p.isFlying,
       isUnderwater: this.isPlayerUnderwater(),
       breakProgress: this.breakNeededTicks > 0 ? this.breakProgressTicks / this.breakNeededTicks : 0,
-      targetLabel: this.currentHit
-        ? getBlock(this.world.getBlock(this.currentHit.x, this.currentHit.y, this.currentHit.z)).label
-        : '',
+      targetLabel: this.currentHit ? this.blockLabelAt(this.currentHit.x, this.currentHit.y, this.currentHit.z) : '',
       timeOfDay: (this.timeTick % DAY_LENGTH_TICKS) / DAY_LENGTH_TICKS,
       debug: this.debugEnabled ? this.buildDebugInfo() : null,
       cursorStack: this.containers.cursor,
@@ -1022,7 +1032,7 @@ export class Game implements EntityContext, ContainerHost {
       this.player.onBlockBroken();
     } else if (withDrops && !this.rules.infiniteItems) {
       const held = this.player.heldItem;
-      for (const drop of rollDrops(def, held, this.rng)) {
+      for (const drop of rollDrops(def, this.world.getMeta(x, y, z), held, this.rng)) {
         this.dropItem(x + 0.5, y + 0.5, z + 0.5, drop, 0.2);
       }
       this.dropXp(x + 0.5, y + 0.5, z + 0.5, rollXp(def, held, this.rng));
@@ -1038,8 +1048,9 @@ export class Game implements EntityContext, ContainerHost {
     const aboveId = this.world.getBlock(x, y + 1, z);
     const above = getBlock(aboveId);
     if (above.needsSupport) {
+      const aboveMeta = this.world.getMeta(x, y + 1, z);
       this.world.setBlock(x, y + 1, z, BlockId.AIR);
-      this.dropBlockLoot(x, y + 1, z, above);
+      this.dropBlockLoot(x, y + 1, z, above, aboveMeta);
     }
     if (above.hasGravity) {
       this.pendingGravity.push({ x, y: y + 1, z });
@@ -1047,16 +1058,16 @@ export class Game implements EntityContext, ContainerHost {
   }
 
   /** 植物等被水冲走时掉落物品。 */
-  private onBlockWashed(x: number, y: number, z: number, id: number): void {
-    this.dropBlockLoot(x, y, z, getBlock(id));
+  private onBlockWashed(x: number, y: number, z: number, id: number, meta: number): void {
+    this.dropBlockLoot(x, y, z, getBlock(id), meta);
   }
 
   /** 在方块中心掉落其战利品（创造模式不掉落）。 */
-  private dropBlockLoot(x: number, y: number, z: number, def: BlockDef): void {
+  private dropBlockLoot(x: number, y: number, z: number, def: BlockDef, meta = 0): void {
     if (this.rules.infiniteItems) {
       return;
     }
-    for (const drop of rollDrops(def, null, this.rng)) {
+    for (const drop of rollDrops(def, meta, null, this.rng)) {
       this.dropItem(x + 0.5, y + 0.5, z + 0.5, drop, 0.2);
     }
   }
@@ -1167,7 +1178,7 @@ export class Game implements EntityContext, ContainerHost {
       return;
     }
     if (def.kind === ItemKind.BLOCK && def.blockId !== undefined && hit) {
-      this.tryPlaceBlock(def.blockId, hit);
+      this.tryPlaceBlock(def.blockId, hit, def.blockMeta ?? 0);
     }
   }
 
@@ -1529,7 +1540,7 @@ export class Game implements EntityContext, ContainerHost {
     return true;
   }
 
-  private tryPlaceBlock(blockId: number, hit: RayHit): void {
+  private tryPlaceBlock(blockId: number, hit: RayHit, variantMeta = 0): void {
     if (!this.rules.canModifyBlocks) {
       return;
     }
@@ -1556,7 +1567,7 @@ export class Game implements EntityContext, ContainerHost {
     if (def.needsSupport && !this.world.isSolidAt(px, py - 1, pz)) {
       return;
     }
-    const meta = this.placementMeta(def, hit);
+    const meta = this.placementMeta(def, hit) | variantMeta;
     if (def.shape === BlockShape.BED && !this.canPlaceBed(px, py, pz, meta)) {
       return;
     }
@@ -1602,9 +1613,9 @@ export class Game implements EntityContext, ContainerHost {
     if (!this.rules.infiniteItems || !this.currentHit) {
       return;
     }
-    const id = this.world.getBlock(this.currentHit.x, this.currentHit.y, this.currentHit.z);
-    const def = getBlock(id);
-    const item = getItem(def.name);
+    const { x, y, z } = this.currentHit;
+    const def = getBlock(this.world.getBlock(x, y, z));
+    const item = getItem(blockVariant(def, this.world.getMeta(x, y, z)).name);
     if (!item) {
       return;
     }
@@ -2038,9 +2049,10 @@ export class Game implements EntityContext, ContainerHost {
             this.world.setBlock(bx, by, bz, BlockId.TNT);
             continue;
           }
+          const meta = this.world.getMeta(bx, by, bz);
           this.world.setBlock(bx, by, bz, BlockId.AIR);
           if (this.rng() < EXPLOSION_DROP_CHANCE) {
-            for (const drop of rollDrops(def, null, this.rng)) {
+            for (const drop of rollDrops(def, meta, null, this.rng)) {
               this.dropItem(bx + 0.5, by + 0.5, bz + 0.5, drop, 0.3);
             }
           }

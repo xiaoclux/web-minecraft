@@ -63,17 +63,20 @@ function cobble(base: Rgba, mossy = false): Painter {
   };
 }
 
-const planks: Painter = (c, rng) => {
-  c.noise(WOOD, 0.06, rng);
-  const line = shade(WOOD, 0.55);
-  for (const y of [3, 7, 11, 15]) {
-    c.rect(0, y, 16, 1, line);
-  }
-  c.rect(4, 0, 1, 3, line);
-  c.rect(12, 4, 1, 3, line);
-  c.rect(7, 8, 1, 3, line);
-  c.rect(2, 12, 1, 3, line);
-};
+function planksOf(color: Rgba): Painter {
+  return (c, rng) => {
+    c.noise(color, 0.06, rng);
+    const line = shade(color, 0.55);
+    for (const y of [3, 7, 11, 15]) {
+      c.rect(0, y, 16, 1, line);
+    }
+    c.rect(4, 0, 1, 3, line);
+    c.rect(12, 4, 1, 3, line);
+    c.rect(7, 8, 1, 3, line);
+    c.rect(2, 12, 1, 3, line);
+  };
+}
+const planks: Painter = planksOf(WOOD);
 
 const grassTop: Painter = (c, rng) => {
   c.noise(GRASS, 0.12, rng);
@@ -89,40 +92,49 @@ const grassSide: Painter = (c, rng) => {
   }
 };
 
-const logSide: Painter = (c, rng) => {
-  c.noise(BARK, 0.1, rng);
-  const dark = shade(BARK, 0.6);
-  for (let x = 1; x < 16; x += 4) {
+function logSideOf(bark: Rgba): Painter {
+  return (c, rng) => {
+    c.noise(bark, 0.1, rng);
+    const dark = shade(bark, 0.6);
+    for (let x = 1; x < 16; x += 4) {
+      for (let y = 0; y < 16; y++) {
+        if (rng() > 0.3) {
+          c.set(x, y, dark);
+        }
+      }
+    }
+  };
+}
+const logSide: Painter = logSideOf(BARK);
+
+function logTopOf(bark: Rgba, wood: Rgba): Painter {
+  return (c, rng) => {
+    c.noise(bark, 0.08, rng);
+    const inner = shade(wood, 1.05);
+    c.rect(2, 2, 12, 12, inner);
+    const ring = shade(wood, 0.75);
+    c.rect(4, 4, 8, 8, ring);
+    c.rect(5, 5, 6, 6, inner);
+    c.rect(7, 7, 2, 2, ring);
+  };
+}
+const logTop: Painter = logTopOf(BARK, WOOD);
+
+function leavesOf(color: Rgba): Painter {
+  return (c, rng) => {
     for (let y = 0; y < 16; y++) {
-      if (rng() > 0.3) {
-        c.set(x, y, dark);
+      for (let x = 0; x < 16; x++) {
+        const r = rng();
+        if (r < 0.18) {
+          c.set(x, y, TRANSPARENT);
+        } else {
+          c.set(x, y, shade(color, 0.7 + r * 0.6));
+        }
       }
     }
-  }
-};
-
-const logTop: Painter = (c, rng) => {
-  c.noise(BARK, 0.08, rng);
-  const inner = shade(WOOD, 1.05);
-  c.rect(2, 2, 12, 12, inner);
-  const ring = shade(WOOD, 0.75);
-  c.rect(4, 4, 8, 8, ring);
-  c.rect(5, 5, 6, 6, inner);
-  c.rect(7, 7, 2, 2, ring);
-};
-
-const leaves: Painter = (c, rng) => {
-  for (let y = 0; y < 16; y++) {
-    for (let x = 0; x < 16; x++) {
-      const r = rng();
-      if (r < 0.18) {
-        c.set(x, y, TRANSPARENT);
-      } else {
-        c.set(x, y, shade(LEAF, 0.7 + r * 0.6));
-      }
-    }
-  }
-};
+  };
+}
+const leaves: Painter = leavesOf(LEAF);
 
 const glass: Painter = (c) => {
   c.fill(TRANSPARENT);
@@ -527,13 +539,42 @@ const poppy: Painter = (c) => {
   c.set(4, 12, hex('#3f7a22'));
 };
 
-const sapling: Painter = (c) => {
-  c.fill(TRANSPARENT);
-  c.rect(7, 9, 2, 7, hex('#6b4a2a'));
-  c.rect(4, 3, 8, 6, hex('#3d7a24'));
-  c.rect(5, 2, 6, 1, hex('#3d7a24'));
-  c.rect(6, 1, 4, 1, hex('#4c9430'));
-};
+function saplingOf(color: Rgba): Painter {
+  return (c) => {
+    c.fill(TRANSPARENT);
+    c.rect(7, 9, 2, 7, hex('#6b4a2a'));
+    c.rect(4, 3, 8, 6, color);
+    c.rect(5, 2, 6, 1, color);
+    c.rect(6, 1, 4, 1, shade(color, 1.2));
+  };
+}
+const sapling: Painter = saplingOf(hex('#3d7a24'));
+
+/**
+ * 六种木材（与 1.8.9 一致）的配色，据此批量生成木板 / 原木 / 树叶 / 树苗贴图。
+ * 贴图 key 形如 `planks_spruce`、`log_side_birch`。
+ */
+export const WOOD_TYPES = [
+  { id: 'oak', label: '橡木', wood: WOOD, bark: BARK, leaf: LEAF },
+  { id: 'spruce', label: '云杉', wood: hex('#7a5730'), bark: hex('#3b2a17'), leaf: hex('#2f5a2a') },
+  { id: 'birch', label: '白桦', wood: hex('#d7cb8d'), bark: hex('#d8d8d0'), leaf: hex('#78a34a') },
+  { id: 'jungle', label: '丛林木', wood: hex('#a67a52'), bark: hex('#57452c'), leaf: hex('#39931f') },
+  { id: 'acacia', label: '金合欢', wood: hex('#ba6337'), bark: hex('#6b5433'), leaf: hex('#5f9b32') },
+  { id: 'dark_oak', label: '深色橡木', wood: hex('#4f3218'), bark: hex('#3a2a19'), leaf: hex('#2f6b22') },
+] as const;
+
+/** 六种木材的全部贴图。 */
+function woodTextures(): Record<string, Painter> {
+  const out: Record<string, Painter> = {};
+  for (const t of WOOD_TYPES) {
+    out[`planks_${t.id}`] = planksOf(t.wood);
+    out[`log_side_${t.id}`] = logSideOf(t.bark);
+    out[`log_top_${t.id}`] = logTopOf(t.bark, t.wood);
+    out[`leaves_${t.id}`] = leavesOf(t.leaf);
+    out[`sapling_${t.id}`] = saplingOf(shade(t.leaf, 1.1));
+  }
+  return out;
+}
 
 /** 破坏裂纹阶段数（destroy_stage_0..9）。 */
 export const DESTROY_STAGE_COUNT = 10;
@@ -639,6 +680,7 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   furnace_top: furnaceTop,
   furnace_front: furnaceFront,
   furnace_side: furnaceSide,
+  ...woodTextures(),
   chest_top: chestTop,
   chest_front: chestFront,
   chest_side: chestSide,

@@ -1,5 +1,28 @@
-import { TOOL_MATERIALS, requireItem } from './ItemRegistry';
+import { LOG_ITEM_IDS, PLANK_ITEM_IDS, TOOL_MATERIALS, requireItem } from './ItemRegistry';
 import { createStack, type ItemStack } from './ItemStack';
+
+/**
+ * 物品标签：配方里写 `#planks` 表示"任意木板"，与 1.8.9 里木板不分种类的行为一致。
+ * 标签内容在 ItemRegistry 加载后按变种展开。
+ */
+const TAG_PREFIX = '#';
+
+/** 标签 → 可用物品 id 集合。 */
+const ITEM_TAGS: Record<string, readonly string[]> = {
+  planks: PLANK_ITEM_IDS,
+  log: LOG_ITEM_IDS,
+};
+
+/** 配方格与实际物品是否匹配（支持标签）。 */
+function ingredientMatches(ingredient: string | null, itemId: string | null): boolean {
+  if (ingredient === null || itemId === null) {
+    return ingredient === itemId;
+  }
+  if (!ingredient.startsWith(TAG_PREFIX)) {
+    return ingredient === itemId;
+  }
+  return ITEM_TAGS[ingredient.slice(TAG_PREFIX.length)]?.includes(itemId) === true;
+}
 
 /** 有序配方。 */
 export interface ShapedRecipe {
@@ -31,10 +54,15 @@ const shapeless = (ingredients: string[], result: string, count = 1): ShapelessR
   result: createStack(result, count),
 });
 
+/** 每种原木都能砍成同种木板。 */
+function woodRecipes(): Recipe[] {
+  return LOG_ITEM_IDS.map((logId, index) => shapeless([logId], PLANK_ITEM_IDS[index], 4));
+}
+
 function toolRecipes(): ShapedRecipe[] {
   const out: ShapedRecipe[] = [];
   for (const mat of TOOL_MATERIALS) {
-    const key = { M: mat.material, S: 'stick' };
+    const key = { M: mat.material === 'planks' ? '#planks' : mat.material, S: 'stick' };
     out.push(shaped(['MMM', ' S ', ' S '], key, `${mat.id}_pickaxe`));
     out.push(shaped(['MM', 'MS', ' S'], key, `${mat.id}_axe`));
     out.push(shaped(['M', 'S', 'S'], key, `${mat.id}_shovel`));
@@ -94,23 +122,23 @@ function slabAndStairsRecipes(): ShapedRecipe[] {
 
 /** 全部配方。 */
 export const RECIPES: Recipe[] = [
-  shapeless(['log'], 'planks', 4),
-  shaped(['P', 'P'], { P: 'planks' }, 'stick', 4),
-  shaped(['PP', 'PP'], { P: 'planks' }, 'crafting_table'),
+
+  shaped(['P', 'P'], { P: '#planks' }, 'stick', 4),
+  shaped(['PP', 'PP'], { P: '#planks' }, 'crafting_table'),
   shaped(['CCC', 'C C', 'CCC'], { C: 'cobblestone' }, 'furnace'),
-  shaped(['PPP', 'P P', 'PPP'], { P: 'planks' }, 'chest'),
-  shaped(['WWW', 'PPP'], { W: 'wool', P: 'planks' }, 'bed'),
+  shaped(['PPP', 'P P', 'PPP'], { P: '#planks' }, 'chest'),
+  shaped(['WWW', 'PPP'], { W: 'wool', P: '#planks' }, 'bed'),
   shaped(['S S', 'SSS', 'S S'], { S: 'stick' }, 'ladder', 3),
-  shaped(['PP', 'PP', 'PP'], { P: 'planks' }, 'wooden_door'),
-  shaped(['PSP', 'PSP'], { P: 'planks', S: 'stick' }, 'fence', 2),
-  shaped(['SPS', 'SPS'], { P: 'planks', S: 'stick' }, 'fence_gate'),
+  shaped(['PP', 'PP', 'PP'], { P: '#planks' }, 'wooden_door'),
+  shaped(['PSP', 'PSP'], { P: '#planks', S: 'stick' }, 'fence', 2),
+  shaped(['SPS', 'SPS'], { P: '#planks', S: 'stick' }, 'fence_gate'),
   shaped(['C', 'S'], { C: 'coal', S: 'stick' }, 'torch', 4),
   shaped(['C', 'S'], { C: 'charcoal', S: 'stick' }, 'torch', 4),
   shaped(['SS', 'SS'], { S: 'sand' }, 'sandstone'),
   shaped(['SS', 'SS'], { S: 'stone' }, 'stone_bricks', 4),
   shaped(['SS', 'SS'], { S: 'snowball' }, 'snow'),
   shaped(['SSS', 'SSS', 'SSS'], { S: 'string' }, 'wool'),
-  shaped(['PPP', 'BBB', 'PPP'], { P: 'planks', B: 'wheat_seeds' }, 'bookshelf'),
+  shaped(['PPP', 'BBB', 'PPP'], { P: '#planks', B: 'wheat_seeds' }, 'bookshelf'),
   shaped(['GGG', 'GGG', 'GGG'], { G: 'glowstone' }, 'glowstone'),
   shaped(['GSG', 'SGS', 'GSG'], { G: 'gunpowder', S: 'sand' }, 'tnt'),
   shaped([' SF', 'S F', ' SF'], { S: 'stick', F: 'string' }, 'bow'),
@@ -123,17 +151,30 @@ export const RECIPES: Recipe[] = [
   shapeless(['pumpkin'], 'wheat_seeds', 4),
   shapeless(['melon_slice'], 'wheat_seeds'),
   shaped(['MMM', 'MMM', 'MMM'], { M: 'melon_slice' }, 'melon'),
+  ...woodRecipes(),
   ...toolRecipes(),
   ...slabAndStairsRecipes(),
   ...armorRecipes(),
 ];
 
+/** 校验配方引用的物品都存在（标签只校验标签本身有定义）。 */
+function checkIngredient(ingredient: string): void {
+  if (ingredient.startsWith(TAG_PREFIX)) {
+    const tag = ingredient.slice(TAG_PREFIX.length);
+    if (!ITEM_TAGS[tag]?.length) {
+      throw new Error(`Unknown item tag: ${ingredient}`);
+    }
+    return;
+  }
+  requireItem(ingredient);
+}
+
 for (const recipe of RECIPES) {
   requireItem(recipe.result.id);
   if (recipe.type === 'shaped') {
-    Object.values(recipe.key).forEach(requireItem);
+    Object.values(recipe.key).forEach(checkIngredient);
   } else {
-    recipe.ingredients.forEach(requireItem);
+    recipe.ingredients.forEach(checkIngredient);
   }
 }
 
@@ -197,7 +238,7 @@ function matchesShaped(recipe: ShapedRecipe, trimmed: Trimmed): boolean {
     }
     let ok = true;
     for (let i = 0; i < pat.cells.length; i++) {
-      if (pat.cells[i] !== trimmed.cells[i]) {
+      if (!ingredientMatches(pat.cells[i], trimmed.cells[i])) {
         ok = false;
         break;
       }
@@ -216,7 +257,7 @@ function matchesShapeless(recipe: ShapelessRecipe, grid: CraftingGrid): boolean 
   }
   const pool = [...recipe.ingredients];
   for (const id of present) {
-    const idx = pool.indexOf(id);
+    const idx = pool.findIndex((ingredient) => ingredientMatches(ingredient, id));
     if (idx < 0) {
       return false;
     }

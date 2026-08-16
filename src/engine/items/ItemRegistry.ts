@@ -1,4 +1,4 @@
-import { BLOCK_DEFS, ToolTier, ToolType, type BlockDef } from '../blocks/BlockRegistry';
+import { BLOCK_DEFS, BlockId, ToolTier, ToolType, type BlockDef } from '../blocks/BlockRegistry';
 import { FLINT_AND_STEEL_DURABILITY, MAX_STACK } from '../constants/game';
 
 /** 物品种类。 */
@@ -58,6 +58,8 @@ export interface ItemDef {
   maxStack: number;
   /** 对应方块 id（仅方块物品）。 */
   blockId?: number;
+  /** 放置时写入的 meta（方块变种，如木材种类 / 羊毛颜色）。 */
+  blockMeta?: number;
   tool?: ToolProps;
   food?: FoodProps;
   armor?: ArmorProps;
@@ -186,22 +188,25 @@ const BLOCK_ITEM_EXTRAS: Record<string, Partial<ItemDef>> = {
   gold_ore: { smeltsInto: 'gold_ingot' },
 };
 
-function blockItem(def: BlockDef): ItemDef {
-  return {
-    id: def.name,
-    label: def.label,
+/** 一个方块（含其所有变种）对应的物品。 */
+function blockItems(def: BlockDef): ItemDef[] {
+  const variants = def.variants ?? [def];
+  return variants.map((variant, index) => ({
+    id: variant.name,
+    label: variant.label,
     kind: ItemKind.BLOCK,
     maxStack: MAX_STACK,
     blockId: def.id,
-    ...BLOCK_ITEM_EXTRAS[def.name],
-  };
+    blockMeta: def.variants ? index : undefined,
+    ...BLOCK_ITEM_EXTRAS[variant.name],
+  }));
 }
 
 const TOOL_TYPES: ToolType[] = [ToolType.SWORD, ToolType.PICKAXE, ToolType.AXE, ToolType.SHOVEL, ToolType.HOE];
 
 /** 全部物品定义。 */
 export const ITEM_DEFS: ItemDef[] = [
-  ...BLOCK_DEFS.filter((b) => b.name !== 'air' && b.name !== 'water' && !b.noItem).map(blockItem),
+  ...BLOCK_DEFS.filter((b) => b.name !== 'air' && b.name !== 'water' && !b.noItem).flatMap(blockItems),
   ...TOOL_MATERIALS.flatMap((mat) => TOOL_TYPES.map((type) => tool(type, mat))),
   ...armorItems(),
   material('stick', '木棍', { burnTicks: STICK_BURN_TICKS }),
@@ -247,6 +252,15 @@ export const ITEM_DEFS: ItemDef[] = [
 ];
 
 const ITEMS_BY_ID = new Map<string, ItemDef>(ITEM_DEFS.map((d) => [d.id, d]));
+
+/** 某个方块 id 的全部变种物品 id（按 meta 顺序）。 */
+function variantItemIds(blockId: number): string[] {
+  return ITEM_DEFS.filter((d) => d.blockId === blockId).map((d) => d.id);
+}
+
+/** 六种木板与六种原木的物品 id（配方里的 #planks / #log 标签用）。 */
+export const PLANK_ITEM_IDS: readonly string[] = variantItemIds(BlockId.PLANKS);
+export const LOG_ITEM_IDS: readonly string[] = variantItemIds(BlockId.LOG);
 
 /** 按 id 获取物品定义。 */
 export function getItem(id: string): ItemDef | undefined {
