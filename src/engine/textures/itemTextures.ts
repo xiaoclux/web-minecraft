@@ -331,6 +331,11 @@ const HAND_DRAWN_ICONS: Record<string, Painter> = {
     c.draw(['..XXX.', '.X...X', 'X.....', 'X.....', '.X...X', '..XXX.'], { X: hex('#c8c8c8') }, 3, 4);
     c.draw(['XXX', 'XXX'], { X: hex('#4a4a52') }, 9, 9);
   },
+  sugar: (c) => {
+    c.fill([0, 0, 0, 0]);
+    c.rect(4, 8, 8, 5, hex('#eeeeee'));
+    c.rect(5, 6, 6, 2, hex('#ffffff'));
+  },
   bucket: bucketPainter(null),
   water_bucket: bucketPainter(hex('#3f60d6')),
   lava_bucket: bucketPainter(hex('#d45a12')),

@@ -36,6 +36,9 @@ const DIRS: readonly (readonly [number, number, number])[] = [
   [0, 0, 1],
   [0, 0, -1],
 ];
+/** 仙人掌 / 甘蔗最高 3 格，每次随机 tick 有一定概率长一节。 */
+const COLUMN_PLANT_MAX_HEIGHT = 3;
+const COLUMN_PLANT_GROW_CHANCE = 0.12;
 /** 作物生长所需的最低光照。 */
 const CROP_MIN_LIGHT = 9;
 /** 每次随机 tick 的生长概率：湿耕地上更快。 */
@@ -141,6 +144,10 @@ export class RandomTickSystem {
         break;
       case BlockId.FIRE:
         this.tickFire(x, y, z);
+        break;
+      case BlockId.CACTUS:
+      case BlockId.SUGAR_CANE:
+        this.tickColumnPlant(x, y, z, id);
         break;
       default:
         break;
@@ -266,6 +273,24 @@ export class RandomTickSystem {
     if (belowDef.flammable && age >= FIRE_CONSUME_MIN_AGE && this.host.random() < FIRE_CONSUME_CHANCE) {
       world.setBlock(x, y - 1, z, BlockId.AIR);
     }
+  }
+
+  /**
+   * 仙人掌 / 甘蔗：只有最顶上那一节会长高，且总高度不超过 3 格（与 1.8.9 一致）。
+   */
+  private tickColumnPlant(x: number, y: number, z: number, id: number): void {
+    const world = this.host.world;
+    if (world.getBlock(x, y + 1, z) !== BlockId.AIR) {
+      return;
+    }
+    let height = 1;
+    while (height < COLUMN_PLANT_MAX_HEIGHT && world.getBlock(x, y - height, z) === id) {
+      height++;
+    }
+    if (height >= COLUMN_PLANT_MAX_HEIGHT || this.host.random() >= COLUMN_PLANT_GROW_CHANCE) {
+      return;
+    }
+    world.setBlock(x, y + 1, z, id);
   }
 
   /** 六邻中是否有可燃方块。 */

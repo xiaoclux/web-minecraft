@@ -1,5 +1,7 @@
 import { BlockId } from '../blocks/BlockRegistry';
 import {
+  CACTUS_DAMAGE,
+  CACTUS_DAMAGE_INTERVAL_TICKS,
   FALL_DAMAGE_THRESHOLD,
   FIRE_DAMAGE,
   FIRE_DAMAGE_INTERVAL_TICKS,
@@ -27,6 +29,7 @@ export abstract class LivingEntity extends Entity {
   fireTicks = 0;
   private fireDamageTimer = 0;
   private lavaDamageTimer = 0;
+  private cactusDamageTimer = 0;
 
   constructor(maxHealth: number, id?: number) {
     super(id);
@@ -68,10 +71,20 @@ export abstract class LivingEntity extends Entity {
   }
 
   /**
-   * 泡在岩浆里持续掉血并被点燃；离开后火还会烧一会儿，进水立刻熄灭。
+   * 环境伤害：岩浆 / 火会点燃并掉血，仙人掌扎人。
+   * 离开岩浆后火还会烧一会儿，进水立刻熄灭。
    */
   protected tickFire(ctx: EntityContext): void {
     const box = this.box();
+    if (isBoxTouchingBlock(ctx.world, box, BlockId.CACTUS)) {
+      this.cactusDamageTimer++;
+      if (this.cactusDamageTimer >= CACTUS_DAMAGE_INTERVAL_TICKS) {
+        this.cactusDamageTimer = 0;
+        this.hurt(ctx, CACTUS_DAMAGE, null);
+      }
+    } else {
+      this.cactusDamageTimer = 0;
+    }
     if (isBoxTouchingBlock(ctx.world, box, BlockId.FIRE)) {
       this.setOnFire(FIRE_TOUCH_BURN_TICKS);
     }

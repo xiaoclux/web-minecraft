@@ -551,6 +551,32 @@ const sapling: Painter = saplingOf(hex('#3d7a24'));
 
 const lapisOre: Painter = ore(hex('#2b4fbb'), 9);
 
+/** 仙人掌：绿色底 + 竖刺；顶面是切面。 */
+const CACTUS_GREEN = hex('#5b8f3a');
+const cactusSide: Painter = (c, rng) => {
+  c.noise(CACTUS_GREEN, 0.07, rng);
+  const dark = shade(CACTUS_GREEN, 0.7);
+  c.rect(0, 0, 1, 16, dark);
+  c.rect(15, 0, 1, 16, dark);
+  for (let y = 1; y < 16; y += 4) {
+    c.rect(4, y, 1, 2, shade(CACTUS_GREEN, 1.3));
+    c.rect(11, y + 2, 1, 2, shade(CACTUS_GREEN, 1.3));
+  }
+};
+const cactusTop: Painter = (c, rng) => {
+  c.noise(shade(CACTUS_GREEN, 1.15), 0.06, rng);
+  c.rect(2, 2, 12, 12, shade(CACTUS_GREEN, 0.85));
+};
+
+/** 甘蔗：细长的浅绿叶片。 */
+const sugarCane: Painter = (c) => {
+  c.fill(TRANSPARENT);
+  const green = hex('#8fc26a');
+  c.rect(5, 0, 2, 16, green);
+  c.rect(9, 0, 2, 16, shade(green, 0.85));
+  c.rect(7, 3, 2, 10, shade(green, 1.1));
+};
+
 /** 16 种染料 / 羊毛颜色（取自 1.8.9 的调色板）。 */
 export const DYE_COLORS = [
   { id: 'white', label: '白色', color: hex('#e9ecec') },
@@ -746,6 +772,9 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   ...stoneVariantTextures(),
   ...woolTextures(),
   lapis_ore: lapisOre,
+  cactus_side: cactusSide,
+  cactus_top: cactusTop,
+  sugar_cane: sugarCane,
   chest_top: chestTop,
   chest_front: chestFront,
   chest_side: chestSide,

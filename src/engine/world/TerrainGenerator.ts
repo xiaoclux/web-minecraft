@@ -11,18 +11,10 @@ import {
   forEachTreeBlock,
   type TreePlacement,
 } from './treeShape';
+import { BIOME_DEFS, Biome, biomeFor } from './biomes';
 
 export type { TreePlacement };
-
-/** 群系。 */
-export const Biome = {
-  PLAINS: 'plains',
-  FOREST: 'forest',
-  DESERT: 'desert',
-  MOUNTAINS: 'mountains',
-  SNOWY: 'snowy',
-} as const;
-export type Biome = (typeof Biome)[keyof typeof Biome];
+export { Biome } from './biomes';
 
 const BASE_HEIGHT = SEA_LEVEL + 2;
 const CONTINENT_SCALE = 1 / 180;
@@ -46,7 +38,6 @@ const SAND_DEPTH = 4;
 const BEDROCK_JITTER_CHANCE = 0.4;
 /** 山地积雪的最低高度。 */
 const SNOW_HEIGHT = SEA_LEVEL + 18;
-const MOUNTAIN_STONE_SURFACE_CHANCE = 0.35;
 const UNDERWATER_SAND_CHANCE = 0.6;
 const MIN_TERRAIN_HEIGHT = 2;
 const MAX_TERRAIN_HEIGHT = WORLD_SIZE_Y - 3;
@@ -57,7 +48,24 @@ const Salt = {
   ORES: 2,
   TREES: 3,
   PLANTS: 4,
+  SAND_PLANTS: 5,
 } as const;
+
+/** 四邻的水平偏移。 */
+const NEIGHBOR_OFFSETS: readonly (readonly [number, number])[] = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+];
+/** 仙人掌 / 甘蔗最多再长几格，以及需要的净空。 */
+const PLANT_MAX_EXTRA_HEIGHT = 3;
+const PLANT_CLEARANCE = 5;
+
+/** 把局部坐标夹在 chunk 内（邻域判断只看本 chunk，边界处退化为看自己那一列）。 */
+function clampLocal(v: number): number {
+  return Math.max(0, Math.min(CHUNK_SIZE - 1, v));
+}
 
 /** 矿脉配置。 */
 interface OreConfig {
@@ -84,13 +92,8 @@ const ORES: OreConfig[] = [
   { block: BlockId.GRAVEL, minY: 4, maxY: 60, attempts: 8, size: 12 },
 ];
 
-const TREE_CHANCE: Record<Biome, number> = { plains: 0.003, forest: 0.05, desert: 0, mountains: 0.006, snowy: 0.012 };
-/** 各群系长哪种树（对应木材变种序号：0 橡木、1 云杉、2 白桦）。 */
-const TREE_WOOD: Record<Biome, number> = { plains: 0, forest: 2, desert: 0, mountains: 1, snowy: 1 };
 /** 树概率上限：随机数超过它的列不用再查群系。 */
-const MAX_TREE_CHANCE = Math.max(...Object.values(TREE_CHANCE));
-const GRASS_CHANCE: Record<Biome, number> = { plains: 0.08, forest: 0.06, desert: 0, mountains: 0.02, snowy: 0 };
-const FLOWER_CHANCE: Record<Biome, number> = { plains: 0.012, forest: 0.008, desert: 0, mountains: 0.003, snowy: 0 };
+const MAX_TREE_CHANCE = Math.max(...Object.values(BIOME_DEFS).map((b) => b.treeChance));
 const PUMPKIN_CHANCE = 0.0006;
 /** 出生点搜索半径与步长。 */
 const SPAWN_SEARCH_RADIUS = 256;
@@ -198,15 +201,15 @@ export class TerrainGenerator implements ChunkGenerator {
     const t = this.temperature(x * BIOME_SCALE, z * BIOME_SCALE);
     const hum = this.humidity(x * BIOME_SCALE + 100, z * BIOME_SCALE + 100);
     let biome: Biome;
-    if (c > MOUNTAIN_THRESHOLD) {
+    if (height < SEA_LEVEL - 1) {
+      biome = Biome.OCEAN;
+    } else if (c > MOUNTAIN_THRESHOLD) {
       biome = t < -0.2 ? Biome.SNOWY : Biome.MOUNTAINS;
-    } else if (t > 0.45 && hum < 0) {
-      biome = Biome.DESERT;
-    } else if (t < -0.5) {
-      biome = Biome.SNOWY;
     } else {
-      biome = hum > 0.1 ? Biome.FOREST : Biome.PLAINS;
+      biome = biomeFor(t, hum);
     }
+    // 群系的高度偏移只做微调，不会把陆地压成海（海洋已经先判定过）
+    height += BIOME_DEFS[biome].heightBias;
     const info: ColumnInfo = {
       height: Math.max(MIN_TERRAIN_HEIGHT, Math.min(MAX_TERRAIN_HEIGHT, Math.floor(height))),
       biome,
@@ -243,6 +246,7 @@ export class TerrainGenerator implements ChunkGenerator {
       }
     }
     this.generatePlants(chunk);
+    this.generateSandPlants(chunk);
     this.villages?.placeInChunk(chunk);
   }
 
@@ -250,6 +254,7 @@ export class TerrainGenerator implements ChunkGenerator {
     const x = chunk.originX + lx;
     const z = chunk.originZ + lz;
     // 顺序固定：先取地表/土层用的随机数，再逐层填充，保证 surfaceBlockAt 与此处一致
+    const biomeDef = BIOME_DEFS[biome];
     const surface = this.surfaceBlock(biome, height, rng);
     const bedrockJitter = rng() < BEDROCK_JITTER_CHANCE;
     const underwaterFill = rng() < 0.5 ? BlockId.SAND : BlockId.DIRT;
@@ -260,19 +265,19 @@ export class TerrainGenerator implements ChunkGenerator {
       } else if (y > CAVE_MIN_Y && y < height - CAVE_MAX_DEPTH_BELOW_SURFACE && this.isCave(x, y, z)) {
         // 深处的洞穴积着岩浆（1.8.9 的"岩浆海"）
         id = y <= LAVA_LEVEL ? BlockId.LAVA : BlockId.AIR;
-      } else if (biome === Biome.DESERT && y > height - SAND_DEPTH) {
-        id = y > height - 2 ? BlockId.SAND : BlockId.SANDSTONE;
+      } else if (biomeDef.fillerDeep !== undefined && y > height - SAND_DEPTH) {
+        id = y > height - 2 ? biomeDef.filler : biomeDef.fillerDeep;
       } else if (y === height) {
         id = surface;
       } else if (y > height - DIRT_DEPTH) {
-        id = height < SEA_LEVEL ? underwaterFill : BlockId.DIRT;
+        id = height < SEA_LEVEL ? underwaterFill : biomeDef.filler;
       }
       chunk.setLocal(lx, y, lz, id);
     }
     for (let y = height + 1; y <= SEA_LEVEL; y++) {
       chunk.setLocal(lx, y, lz, BlockId.WATER);
     }
-    if (biome === Biome.SNOWY && height >= SEA_LEVEL && height + 1 < WORLD_SIZE_Y) {
+    if (biomeDef.snow && height >= SEA_LEVEL && height + 1 < WORLD_SIZE_Y) {
       chunk.setLocal(lx, height + 1, lz, BlockId.SNOW);
     }
   }
@@ -285,13 +290,12 @@ export class TerrainGenerator implements ChunkGenerator {
     if (height <= SEA_LEVEL + 1) {
       return BlockId.SAND;
     }
-    if (biome === Biome.MOUNTAINS && height > SNOW_HEIGHT) {
+    const def = BIOME_DEFS[biome];
+    // 高山山顶露岩，其余按群系的地表方块
+    if (def.stoneSurfaceChance !== undefined && (height > SNOW_HEIGHT || roll < def.stoneSurfaceChance)) {
       return BlockId.STONE;
     }
-    if (biome === Biome.MOUNTAINS && roll < MOUNTAIN_STONE_SURFACE_CHANCE) {
-      return BlockId.STONE;
-    }
-    return BlockId.GRASS;
+    return def.surface;
   }
 
   private isCave(x: number, y: number, z: number): boolean {
@@ -353,16 +357,18 @@ export class TerrainGenerator implements ChunkGenerator {
         }
         const x = x0 + lx;
         const z = z0 + lz;
-        const biome = this.biomeAt(x, z);
-        if (roll >= TREE_CHANCE[biome] || !this.isVegetationColumn(x, z)) {
+        const def = BIOME_DEFS[this.biomeAt(x, z)];
+        if (roll >= def.treeChance || !this.isVegetationColumn(x, z)) {
           continue;
         }
         const y = this.heightAt(x, z) + 1;
-        const height = TREE_MIN_HEIGHT + Math.floor(heightRoll * TREE_HEIGHT_VARIANCE);
+        const minHeight = def.treeMinHeight ?? TREE_MIN_HEIGHT;
+        const variance = def.treeHeightVariance ?? TREE_HEIGHT_VARIANCE;
+        const height = minHeight + Math.floor(heightRoll * variance);
         if (y + height + 2 >= WORLD_SIZE_Y) {
           continue;
         }
-        out.push({ x, y, z, height, cornerSeed, wood: TREE_WOOD[biome] });
+        out.push({ x, y, z, height, cornerSeed, wood: def.treeWood });
       }
     }
     return out;
@@ -397,10 +403,10 @@ export class TerrainGenerator implements ChunkGenerator {
         if (this.isReservedColumn(x, z)) {
           continue;
         }
-        const biome = this.biomeAt(x, z);
-        const treeChance = TREE_CHANCE[biome];
-        const grassEnd = treeChance + GRASS_CHANCE[biome];
-        const flowerEnd = grassEnd + FLOWER_CHANCE[biome];
+        const def = BIOME_DEFS[this.biomeAt(x, z)];
+        const treeChance = def.treeChance;
+        const grassEnd = treeChance + def.grassChance;
+        const flowerEnd = grassEnd + def.flowerChance;
         if (roll < treeChance) {
           continue;
         }
@@ -413,6 +419,73 @@ export class TerrainGenerator implements ChunkGenerator {
         }
       }
     }
+  }
+
+  /**
+   * 沙地 / 水边的植被：仙人掌要四周空、甘蔗要挨着水。
+   * 与草花分开一轮，因为它们不长在草方块上。
+   */
+  private generateSandPlants(chunk: Chunk): void {
+    const rng = this.rngAt(chunk.cx, chunk.cz, Salt.SAND_PLANTS);
+    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+      for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        const roll = rng();
+        const heightRoll = rng();
+        const x = chunk.originX + lx;
+        const z = chunk.originZ + lz;
+        const def = BIOME_DEFS[this.biomeAt(x, z)];
+        const cactusChance = def.cactusChance ?? 0;
+        const caneChance = def.sugarCaneChance ?? 0;
+        if (roll >= cactusChance + caneChance) {
+          continue;
+        }
+        const h = this.heightAt(x, z);
+        if (h <= SEA_LEVEL || h + PLANT_CLEARANCE >= WORLD_SIZE_Y || this.isReservedColumn(x, z)) {
+          continue;
+        }
+        const ground = chunk.getLocal(lx, h, lz);
+        if (chunk.getLocal(lx, h + 1, lz) !== BlockId.AIR) {
+          continue;
+        }
+        const tall = 1 + Math.floor(heightRoll * PLANT_MAX_EXTRA_HEIGHT);
+        if (roll < cactusChance) {
+          if (ground !== BlockId.SAND || this.hasSolidNeighbor(chunk, lx, h + 1, lz)) {
+            continue;
+          }
+          for (let i = 0; i < tall; i++) {
+            chunk.setLocal(lx, h + 1 + i, lz, BlockId.CACTUS);
+          }
+        } else {
+          if ((ground !== BlockId.SAND && ground !== BlockId.GRASS) || !this.hasWaterNeighbor(chunk, lx, h, lz)) {
+            continue;
+          }
+          for (let i = 0; i < tall; i++) {
+            chunk.setLocal(lx, h + 1 + i, lz, BlockId.SUGAR_CANE);
+          }
+        }
+      }
+    }
+  }
+
+  /** 该格四周（同层）是否有实心方块——仙人掌不能贴着别的方块长。 */
+  private hasSolidNeighbor(chunk: Chunk, lx: number, y: number, lz: number): boolean {
+    for (const [dx, dz] of NEIGHBOR_OFFSETS) {
+      const id = chunk.getLocal(clampLocal(lx + dx), y, clampLocal(lz + dz));
+      if (id !== BlockId.AIR) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 该格四周（同层）是否有水——甘蔗要挨着水。 */
+  private hasWaterNeighbor(chunk: Chunk, lx: number, y: number, lz: number): boolean {
+    for (const [dx, dz] of NEIGHBOR_OFFSETS) {
+      if (chunk.getLocal(clampLocal(lx + dx), y, clampLocal(lz + dz)) === BlockId.WATER) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** 绕原点螺旋搜索海面之上的草地作为出生点。 */

@@ -189,6 +189,8 @@ export const BlockId = {
   CRAFTING_TABLE: 58,
   FURNACE: 61,
   SNOW: 80,
+  CACTUS: 81,
+  SUGAR_CANE: 83,
   GLOWSTONE: 89,
   STONE_BRICKS: 98,
   MELON: 103,
@@ -581,6 +583,16 @@ export const BLOCK_DEFS: BlockDef[] = [
   ),
   cube(BlockId.MELON, 'melon', '西瓜', topSide('melon_top', 'melon_side'), 1, ToolType.AXE, {
     drops: [{ item: 'melon_slice', min: 3, max: 7 }],
+  }),
+  {
+    ...cube(BlockId.CACTUS, 'cactus', '仙人掌', topSide('cactus_top', 'cactus_side'), 0.4, null, {
+      opaque: false,
+      needsSupport: true,
+    }),
+    shape: BlockShape.CACTUS,
+  },
+  cross(BlockId.SUGAR_CANE, 'sugar_cane', '甘蔗', 'sugar_cane', {
+    drops: [{ item: 'sugar_cane', min: 1, max: 1 }],
   }),
   {
     ...cube(BlockId.FARMLAND, 'farmland', '耕地', topSide('farmland_dry', 'dirt'), 0.6, ToolType.SHOVEL, {

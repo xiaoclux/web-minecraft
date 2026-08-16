@@ -127,3 +127,7 @@ export const XP_ORB_PICKUP_RANGE = 1;
 export const XP_ORB_ATTRACT_ACCEL = 24;
 /** 一颗经验球最多装多少经验（超出就拆成多颗）。 */
 export const XP_ORB_MAX_AMOUNT = 7;
+
+/** 碰到仙人掌每隔多少 tick 掉多少血。 */
+export const CACTUS_DAMAGE_INTERVAL_TICKS = 10;
+export const CACTUS_DAMAGE = 1;

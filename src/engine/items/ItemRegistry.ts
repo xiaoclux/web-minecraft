@@ -251,6 +251,7 @@ export const ITEM_DEFS: ItemDef[] = [
   material('shears', '剪刀', { maxStack: 1, durability: SHEARS_DURABILITY }),
   material('flint', '燧石'),
   material('lapis_lazuli', '青金石'),
+  material('sugar', '糖'),
   ...DYE_ITEMS,
   material('flint_and_steel', '打火石', { maxStack: 1, durability: FLINT_AND_STEEL_DURABILITY }),
   material('bucket', '桶', { maxStack: 1 }),

@@ -73,6 +73,7 @@ import {
 } from './constants/world';
 import { BlockEntityStore, BlockEntityType } from './world/BlockEntityStore';
 import { RandomTickSystem } from './systems/RandomTickSystem';
+import { biomeLabel } from './world/biomes';
 import { ArrowEntity } from './entities/ArrowEntity';
 import { Entity, allocateEntityId, resetEntityIds, type EntitySaveData } from './entities/Entity';
 import type { EntityContext } from './entities/EntityContext';
@@ -590,7 +591,7 @@ export class Game implements EntityContext, ContainerHost {
       z: p.z,
       chunkX: toChunkCoord(bx),
       chunkZ: toChunkCoord(bz),
-      biome: this.generator.biomeAt(bx, bz),
+      biome: biomeLabel(this.generator.biomeAt(bx, bz)),
       chunks: this.world.chunkCount,
       entities: this.entities.size,
       light: `sky ${this.world.getSkyLight(bx, by, bz)} block ${this.world.getBlockLight(bx, by, bz)}`,

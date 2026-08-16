@@ -37,6 +37,8 @@ export const BlockShape = {
   FENCE_GATE: 'fence_gate',
   /** 耕地：比整格矮 1/16。 */
   FARMLAND: 'farmland',
+  /** 仙人掌：比整格细一圈。 */
+  CACTUS: 'cactus',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -112,6 +114,11 @@ const CROSS_BOXES: readonly BlockBox[] = [box(CROSS_INSET, 0, CROSS_INSET, 1 - C
 const SLAB_BOTTOM: readonly BlockBox[] = [box(0, 0, 0, 1, 0.5, 1)];
 const BED_BOXES: readonly BlockBox[] = [box(0, 0, 0, 1, BED_HEIGHT, 1)];
 const FARMLAND_BOXES: readonly BlockBox[] = [box(0, 0, 0, 1, FARMLAND_HEIGHT, 1)];
+/** 仙人掌比整格细 1/16（1.8.9 同）。 */
+const CACTUS_INSET = 1 / 16;
+const CACTUS_BOXES: readonly BlockBox[] = [
+  box(CACTUS_INSET, 0, CACTUS_INSET, 1 - CACTUS_INSET, 1, 1 - CACTUS_INSET),
+];
 /** 贴在格子某一侧面的薄板（厚度 t，方向 (dx,dz) 指向该侧面）。 */
 function panelBox(dx: number, dz: number, t: number): BlockBox {
   if (dx === 1) {
@@ -251,6 +258,8 @@ export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readon
       return BED_BOXES;
     case BlockShape.FARMLAND:
       return FARMLAND_BOXES;
+    case BlockShape.CACTUS:
+      return CACTUS_BOXES;
     case BlockShape.LADDER:
       return LADDER_BOXES[meta & FACING_MASK];
     case BlockShape.DOOR:

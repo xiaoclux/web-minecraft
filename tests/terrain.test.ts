@@ -7,6 +7,7 @@ import { Chunk } from '../src/engine/world/Chunk';
 import { createChunkGenerator } from '../src/engine/world/ChunkGenerator';
 import { FLAT_LAYERS, FlatGenerator } from '../src/engine/world/FlatGenerator';
 import { TerrainGenerator } from '../src/engine/world/TerrainGenerator';
+import { biomeFor } from '../src/engine/world/biomes';
 
 function generate(seed: string, cx: number, cz: number): Chunk {
   const chunk = new Chunk(cx, cz);
@@ -157,5 +158,44 @@ describe('按群系分木材的树', () => {
     expect(rollDrops(leaves, 0, null, () => 0)[0].id).toBe('sapling');
     expect(rollDrops(leaves, 1, null, () => 0)[0].id).toBe('spruce_sapling');
     expect(rollDrops(leaves, 2, null, () => 0)[0].id).toBe('birch_sapling');
+  });
+});
+
+describe('群系扩展', () => {
+  it('大范围里能生成出多种群系（含海洋）', () => {
+    const gen = new TerrainGenerator('biomes-seed');
+    const seen = new Set<string>();
+    for (let x = -600; x <= 600; x += 40) {
+      for (let z = -600; z <= 600; z += 40) {
+        seen.add(gen.biomeAt(x, z));
+      }
+    }
+    expect(seen.size).toBeGreaterThanOrEqual(6);
+    expect(seen.has('ocean')).toBe(true);
+  });
+
+  it('群系表按温湿度选群系', () => {
+    expect(biomeFor(-0.9, 0)).toBe('snowy');
+    expect(biomeFor(-0.3, 0)).toBe('taiga');
+    expect(biomeFor(0.9, 0.9)).toBe('jungle');
+    expect(biomeFor(0.9, -0.9)).toBe('desert');
+    expect(biomeFor(0.3, -0.9)).toBe('savanna');
+    expect(biomeFor(0, 0.9)).toBe('swamp');
+  });
+
+  it('海面以下的列判为海洋', () => {
+    const gen = new TerrainGenerator('biomes-seed');
+    for (let x = -600; x <= 600; x += 7) {
+      if (gen.heightAt(x, 0) < SEA_LEVEL - 1) {
+        expect(gen.biomeAt(x, 0)).toBe('ocean');
+        return;
+      }
+    }
+  });
+
+  it('沙漠里会长仙人掌与甘蔗', () => {
+    const world = generateArea(new TerrainGenerator('cactus-seed'), -6, 6);
+    const ids = collectBlockIds(world);
+    expect(ids.has(BlockId.CACTUS) || ids.has(BlockId.SUGAR_CANE)).toBe(true);
   });
 });
