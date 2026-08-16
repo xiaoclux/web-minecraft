@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { MOB_BABY_GROW_TICKS, MOB_BABY_SCALE, MOB_LOVE_TICKS } from '../src/engine/constants/mobs';
+import {
+  MOB_BABY_GROW_TICKS,
+  MOB_BABY_SCALE,
+  MOB_LOVE_TICKS,
+  SHEAR_WOOL_MAX,
+  SHEAR_WOOL_MIN,
+  SHEEP_WOOL_REGROW_TICKS,
+} from '../src/engine/constants/mobs';
+import { SHEARS_DURABILITY, getItem } from '../src/engine/items/ItemRegistry';
+import { RECIPES } from '../src/engine/items/Recipes';
 import { Mob } from '../src/engine/entities/Mob';
 import { MOB_DEFS } from '../src/engine/entities/MobDefs';
 
@@ -51,5 +60,31 @@ describe('动物繁殖', () => {
     const cow = new Mob('cow');
     cow.setBaby(true);
     expect(cow.growTicks).toBe(MOB_BABY_GROW_TICKS);
+  });
+});
+
+describe('剪羊毛', () => {
+  it('有毛的羊被剪后掉 1~3 羊毛并进入长毛倒计时', () => {
+    const sheep = new Mob('sheep');
+    const wool = sheep.shear(() => 0.5);
+    expect(wool).toBeGreaterThanOrEqual(SHEAR_WOOL_MIN);
+    expect(wool).toBeLessThanOrEqual(SHEAR_WOOL_MAX);
+    expect(sheep.hasWool).toBe(false);
+    expect(sheep.woolRegrowTicks).toBe(SHEEP_WOOL_REGROW_TICKS);
+  });
+
+  it('没毛的羊、幼崽和别的生物剪不出东西', () => {
+    const sheep = new Mob('sheep');
+    sheep.shear(() => 0);
+    expect(sheep.shear(() => 0)).toBe(0);
+    const baby = new Mob('sheep');
+    baby.setBaby(true);
+    expect(baby.shear(() => 0)).toBe(0);
+    expect(new Mob('cow').shear(() => 0)).toBe(0);
+  });
+
+  it('剪刀有耐久且能合成', () => {
+    expect(getItem('shears')?.durability).toBe(SHEARS_DURABILITY);
+    expect(RECIPES.some((r) => r.result.id === 'shears')).toBe(true);
   });
 });

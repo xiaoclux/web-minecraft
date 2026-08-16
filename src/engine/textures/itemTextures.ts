@@ -318,6 +318,22 @@ const HAND_DRAWN_ICONS: Record<string, Painter> = {
     '................',
     '................',
   ]),
+  shears: (c) =>
+    c.draw(
+      [
+        'X....X..',
+        'XX..XX..',
+        '.XXXX...',
+        '..XX....',
+        '.XXXX...',
+        'X.X..X..',
+        'X.X..X..',
+        '.X....X.',
+      ],
+      { X: hex('#c8c8c8') },
+      4,
+      4,
+    ),
   bow: (c) =>
     c.draw(
       [

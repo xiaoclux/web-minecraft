@@ -9,6 +9,9 @@ import {
   MOB_BABY_GROW_TICKS,
   MOB_BABY_SCALE,
   MOB_LOVE_TICKS,
+  SHEAR_WOOL_MAX,
+  SHEAR_WOOL_MIN,
+  SHEEP_WOOL_REGROW_TICKS,
   MOB_ATTACK_RANGE,
   MOB_BURN_DAMAGE,
   MOB_BURN_DAMAGE_INTERVAL_TICKS,
@@ -66,6 +69,8 @@ export class Mob extends LivingEntity {
   isCharging = false;
   /** 羊毛（羊）。 */
   hasWool = true;
+  /** 被剪之后长回羊毛的剩余 tick。 */
+  woolRegrowTicks = 0;
   /** 幼崽：体型减半、无法繁殖，长大需要 MOB_BABY_GROW_TICKS。 */
   isBaby = false;
   /** 幼崽长大的剩余 tick。 */
@@ -122,8 +127,24 @@ export class Mob extends LivingEntity {
     super.tick(ctx);
   }
 
+  /** 被剪羊毛：返回掉落的羊毛数量，本来就没毛时返回 0。 */
+  shear(random: () => number): number {
+    if (this.type !== MobType.SHEEP || !this.hasWool || this.isBaby) {
+      return 0;
+    }
+    this.hasWool = false;
+    this.woolRegrowTicks = SHEEP_WOOL_REGROW_TICKS;
+    return SHEAR_WOOL_MIN + Math.floor(random() * (SHEAR_WOOL_MAX - SHEAR_WOOL_MIN + 1));
+  }
+
   /** 幼崽长大与求爱 / 冷却计时。 */
   private tickBreeding(): void {
+    if (this.woolRegrowTicks > 0) {
+      this.woolRegrowTicks--;
+      if (this.woolRegrowTicks === 0) {
+        this.hasWool = true;
+      }
+    }
     if (this.isBaby) {
       this.growTicks--;
       if (this.growTicks <= 0) {
@@ -420,6 +441,7 @@ export class Mob extends LivingEntity {
       ...this.serializeBase(),
       health: this.health,
       hasWool: this.hasWool,
+      woolRegrowTicks: this.woolRegrowTicks,
       isBaby: this.isBaby,
       growTicks: this.growTicks,
     };
@@ -436,6 +458,9 @@ export class Mob extends LivingEntity {
     }
     if (typeof data.hasWool === 'boolean') {
       mob.hasWool = data.hasWool;
+    }
+    if (typeof data.woolRegrowTicks === 'number') {
+      mob.woolRegrowTicks = data.woolRegrowTicks;
     }
     if (data.isBaby === true) {
       mob.setBaby(true, typeof data.growTicks === 'number' ? data.growTicks : MOB_BABY_GROW_TICKS);

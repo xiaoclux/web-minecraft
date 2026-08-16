@@ -1095,11 +1095,12 @@ export class Game implements EntityContext, ContainerHost {
       return;
     }
     const def = getItem(held.id);
-    if (!def?.tool) {
+    const durability = def?.tool?.durability ?? def?.durability;
+    if (!durability) {
       return;
     }
     const damage = (held.damage ?? 0) + amount;
-    if (damage >= def.tool.durability) {
+    if (damage >= durability) {
       this.player.inventory.set(this.player.selectedSlot, null);
       this.sound.play('break');
       return;
@@ -1137,6 +1138,9 @@ export class Game implements EntityContext, ContainerHost {
       }
       return;
     }
+    if (def.id === 'shears' && this.tryShearMob()) {
+      return;
+    }
     if (this.tryFeedMob(def.id)) {
       return;
     }
@@ -1149,6 +1153,23 @@ export class Game implements EntityContext, ContainerHost {
     if (def.kind === ItemKind.BLOCK && def.blockId !== undefined && hit) {
       this.tryPlaceBlock(def.blockId, hit);
     }
+  }
+
+  /** 用剪刀剪准星里的羊。 */
+  private tryShearMob(): boolean {
+    const target = this.findEntityInCrosshair();
+    if (!(target instanceof Mob)) {
+      return false;
+    }
+    const wool = target.shear(this.rng);
+    if (wool === 0) {
+      return false;
+    }
+    this.dropItem(target.x, target.y + target.height * 0.5, target.z, { id: 'wool', count: wool }, 0.2);
+    this.sound.play('break', 0);
+    this.renderer.hand.swing();
+    this.damageHeldTool(1);
+    return true;
   }
 
   /** 用手里的食物喂准星里的动物，让它进入求爱状态。 */

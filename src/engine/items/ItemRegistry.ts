@@ -11,6 +11,9 @@ export const ItemKind = {
 } as const;
 export type ItemKind = (typeof ItemKind)[keyof typeof ItemKind];
 
+/** 剪刀耐久（1.8.9 为 238）。 */
+export const SHEARS_DURABILITY = 238;
+
 /** 工具属性。 */
 export interface ToolProps {
   type: ToolType;
@@ -64,6 +67,8 @@ export interface ItemDef {
   burnTicks?: number;
   /** 烧炼产物。 */
   smeltsInto?: string;
+  /** 非工具类物品的耐久（剪刀等）；工具的耐久在 tool.durability。 */
+  durability?: number;
 }
 
 const TIER_SPEED: Record<number, number> = { 0: 2, 1: 4, 2: 6, 3: 8 };
@@ -198,6 +203,7 @@ export const ITEM_DEFS: ItemDef[] = [
   material('arrow', '箭'),
   material('snowball', '雪球', { maxStack: 16 }),
   material('bow', '弓', { maxStack: 1 }),
+  material('shears', '剪刀', { maxStack: 1, durability: SHEARS_DURABILITY }),
   food('apple', '苹果', 4, 2.4),
   food('bread', '面包', 5, 6),
   food('porkchop', '生猪排', 3, 1.8, { smeltsInto: 'cooked_porkchop' }),

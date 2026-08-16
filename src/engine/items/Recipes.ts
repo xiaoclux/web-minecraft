@@ -121,6 +121,7 @@ export const RECIPES: Recipe[] = [
   shaped(['GGG', 'GGG', 'GGG'], { G: 'glowstone' }, 'glowstone'),
   shaped(['GSG', 'SGS', 'GSG'], { G: 'gunpowder', S: 'sand' }, 'tnt'),
   shaped([' SF', 'S F', ' SF'], { S: 'stick', F: 'string' }, 'bow'),
+  shaped([' I', 'I '], { I: 'iron_ingot' }, 'shears'),
   shaped(['F', 'S', 'E'], { F: 'cobblestone', S: 'stick', E: 'feather' }, 'arrow', 4),
   shaped(['WWW'], { W: 'wheat' }, 'bread'),
   shapeless(['pumpkin'], 'wheat_seeds', 4),
