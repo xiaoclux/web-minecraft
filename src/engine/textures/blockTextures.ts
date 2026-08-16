@@ -644,6 +644,59 @@ const anvilTop: Painter = (c, rng) => {
   c.rect(2, 3, 12, 10, hex('#3a3a3a'));
 };
 
+/** 末地石：米黄色带斑点。 */
+const endStone: Painter = (c, rng) => {
+  c.noise(hex('#dbdc9b'), 0.1, rng);
+  c.speckle(hex('#b0b070'), 26, rng);
+};
+
+/** 地狱岩：暗红色多孔石。 */
+const netherrack: Painter = (c, rng) => {
+  c.noise(hex('#9c4a44'), 0.16, rng);
+  c.speckle(hex('#6b2a28'), 30, rng);
+};
+
+/** 灵魂沙：褐色沙里嵌着几张脸。 */
+const soulSand: Painter = (c, rng) => {
+  c.noise(hex('#5a4437'), 0.1, rng);
+  c.rect(3, 4, 3, 4, hex('#463228'));
+  c.rect(10, 8, 3, 4, hex('#463228'));
+};
+
+/** 下界石英矿：地狱岩底 + 白色石英颗粒。 */
+const QUARTZ_SPOTS = 8;
+const quartzOre: Painter = (c, rng) => {
+  netherrack(c, rng);
+  const white = hex('#e8e2dc');
+  const dark = shade(white, 0.7);
+  for (let i = 0; i < QUARTZ_SPOTS; i++) {
+    const x = Math.floor(rng() * 14);
+    const y = Math.floor(rng() * 14);
+    c.set(x, y, white);
+    c.set(x + 1, y, white);
+    c.set(x, y + 1, dark);
+    c.set(x + 1, y + 1, white);
+  }
+};
+
+/** 下界砖块：暗红砖缝。 */
+const netherBricks: Painter = (c, rng) => {
+  c.noise(hex('#2d1519'), 0.08, rng);
+  for (let y = 0; y < 16; y += 4) {
+    c.rect(0, y, 16, 1, hex('#1b0c0f'));
+    const offset = (y / 4) % 2 === 0 ? 0 : 8;
+    c.rect(offset, y, 1, 4, hex('#1b0c0f'));
+    c.rect((offset + 8) % 16, y, 1, 4, hex('#1b0c0f'));
+  }
+};
+
+/** 传送门：紫色漩涡。 */
+const netherPortal: Painter = (c, rng) => {
+  c.noise(hex('#7a3ac0'), 0.25, rng);
+  c.speckle(hex('#c08ae8'), 40, rng);
+  c.speckle(hex('#3a1060'), 30, rng);
+};
+
 /** 甘蔗：细长的浅绿叶片。 */
 const sugarCane: Painter = (c) => {
   c.fill(TRANSPARENT);
@@ -853,6 +906,12 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   cactus_side: cactusSide,
   cactus_top: cactusTop,
   brewing_stand: brewingStand,
+  netherrack,
+  end_stone: endStone,
+  soul_sand: soulSand,
+  quartz_ore: quartzOre,
+  nether_bricks: netherBricks,
+  nether_portal: netherPortal,
   enchanting_table_top: enchantingTableTop,
   gold_block: mineralBlock('#f0c040'),
   iron_block: mineralBlock('#dcdcdc'),

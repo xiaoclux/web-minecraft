@@ -87,6 +87,15 @@ import {
 import { BlockEntityStore, BlockEntityType } from './world/BlockEntityStore';
 import { RandomTickSystem } from './systems/RandomTickSystem';
 import { WeatherSystem } from './systems/WeatherSystem';
+import { DIMENSION_DEFS, Dimension, DimensionId, isDimensionId } from './world/Dimension';
+import {
+  PORTAL_TRIGGER_TICKS,
+  PORTAL_COOLDOWN_TICKS,
+  buildPortal,
+  findExistingPortal,
+  mapCoordinate,
+  tryLightPortal,
+} from './systems/PortalSystem';
 import { breakSound, digSound, placeSound, soundGroupOf, stepSound } from './blocks/blockSounds';
 import { AchievementSystem, StatId } from './systems/Achievements';
 import { potionOfItem } from './items/potions';
@@ -143,15 +152,15 @@ import { BABY_PITCH, mobSound, MobSoundKind } from './entities/mobSounds';
 import { MusicPlayer } from './render/MusicPlayer';
 import { SoundManager, type SoundSpec } from './render/SoundManager';
 import { deserializeChunk, serializeChunk } from './save/chunkSerializer';
+import type { DimensionSaveData } from './save/SaveManager';
 import { SaveManager, type WorldMeta, type WorldSave } from './save/SaveManager';
 import { TextureAtlas } from './textures/TextureAtlas';
 import { createRng, hashString } from './textures/PixelCanvas';
 import type { Chunk } from './world/Chunk';
 import { toChunkCoord } from './world/Chunk';
-import { createChunkGenerator, type ChunkGenerator } from './world/ChunkGenerator';
+import { createDimensionGenerator, type ChunkGenerator } from './world/ChunkGenerator';
 import { ChunkManager } from './world/ChunkManager';
 import { FluidSimulator } from './world/FluidSimulator';
-import { LightEngine } from './world/LightEngine';
 import { World } from './world/World';
 
 /** 游戏初始化参数。 */
@@ -222,6 +231,16 @@ const BOOKSHELF_RING_OFFSETS: readonly (readonly (readonly [number, number])[])[
   [[2, -1], [2, 0], [2, 1]],
   [[2, 2]],
 ];
+/** 无昼夜的维度用的固定天色（主世界为 null，走正常昼夜）。 */
+const DIMENSION_SKY_COLORS: Readonly<Record<DimensionId, THREE.Color | null>> = {
+  overworld: null,
+  nether: new THREE.Color(0x330808),
+  end: new THREE.Color(0x0a0a16),
+};
+/** 传送前后要同步加载的 chunk 半径。 */
+const PORTAL_LOAD_RADIUS = 2;
+/** 在已加载区里找现成传送门的半径（比 1.8.9 的 128 小，只在已加载的 chunk 里找）。 */
+const PORTAL_SEARCH_RADIUS_LOADED = 32;
 /** 洞穴环境音的判定：埋得比地表低这么多且光照低于此值。 */
 const UNDERGROUND_DEPTH = 8;
 const UNDERGROUND_MAX_LIGHT = 6;
@@ -237,15 +256,15 @@ const SPLASH_PARTICLE_COUNT = 10;
 
 /** 游戏主循环与全部玩法逻辑的编排者。 */
 export class Game implements EntityContext, ContainerHost {
-  readonly world = new World();
   readonly player = new Player();
   readonly store: Store<GameUiState>;
   readonly meta: WorldMeta;
   readonly rules: GameModeRules;
   readonly difficulty: Difficulty;
-  readonly entities = new Map<number, Entity>();
-  /** 方块实体（熔炉 / 箱子等附着在坐标上的状态）。 */
-  readonly blockEntities = new BlockEntityStore();
+  /** 各维度的世界数据；只有玩家所在的维度会 tick 与渲染。 */
+  private readonly dimensions = new Map<DimensionId, Dimension>();
+  /** 玩家当前所在维度。 */
+  private current: Dimension;
   readonly craftingGrid: (ItemStack | null)[] = new Array<ItemStack | null>(CRAFT_GRID_SIZE).fill(null);
   craftGridSize = 2;
   readonly enchantingSlots: (ItemStack | null)[] = new Array<ItemStack | null>(ENCHANTING_SLOT_COUNT).fill(null);
@@ -259,15 +278,69 @@ export class Game implements EntityContext, ContainerHost {
   tick = 0;
   timeTick = INITIAL_TIME_TICK;
 
-  private readonly generator: ChunkGenerator;
-  private readonly chunkManager: ChunkManager;
-  private readonly randomTicks = new RandomTickSystem(this);
+  // ---------------------------------------------------------------- 维度委托
+  // 世界数据都归当前维度所有；下面这些 getter 让其余代码继续用 this.world / this.entities 的写法。
+
+  /** 当前维度的方块与光照数据。 */
+  get world(): World {
+    return this.current.world;
+  }
+
+  /** 当前维度里的实体。 */
+  get entities(): Map<number, Entity> {
+    return this.current.entities;
+  }
+
+  /** 当前维度的方块实体（熔炉 / 箱子等附着在坐标上的状态）。 */
+  get blockEntities(): BlockEntityStore {
+    return this.current.blockEntities;
+  }
+
+  /** 当前维度。 */
+  get dimension(): Dimension {
+    return this.current;
+  }
+
+  /** 天空亮度系数（DimensionHost；渲染器就绪前按满亮度算）。 */
+  get skyLevel(): number {
+    return this.renderer?.sky.skyLevel ?? 1;
+  }
+
+  private get generator(): ChunkGenerator {
+    return this.current.generator;
+  }
+
+  private get chunkManager(): ChunkManager {
+    return this.current.chunkManager;
+  }
+
+  private get fluids(): FluidSimulator {
+    return this.current.fluids;
+  }
+
+  private get randomTicks(): RandomTickSystem {
+    return this.current.randomTicks;
+  }
+
+  /**
+   * 取（必要时新建）某个维度。各维度共用世界种子，所以同一个存档的下界 / 末地也是确定的。
+   */
+  private dimensionOf(id: DimensionId): Dimension {
+    const existing = this.dimensions.get(id);
+    if (existing) {
+      return existing;
+    }
+    const dimension = new Dimension(DIMENSION_DEFS[id], createDimensionGenerator(id, this.meta), this);
+    dimension.world.onChunkLoad((chunk) => this.applyPendingBlockEntities(chunk));
+    dimension.world.onChunkUnload((chunk) => this.onChunkUnloaded(chunk));
+    this.dimensions.set(id, dimension);
+    return dimension;
+  }
+
   /** 天气（构造函数里在 rng 就绪后创建）。 */
   readonly weather: WeatherSystem;
   /** 成就与统计。 */
   readonly achievements = new AchievementSystem((def) => this.showToast(`成就达成：${def.label}`));
-  private readonly fluids: FluidSimulator;
-  private readonly light: LightEngine;
   private readonly atlas: TextureAtlas;
   private readonly renderer: Renderer;
   private readonly controls: Controls;
@@ -291,6 +364,9 @@ export class Game implements EntityContext, ContainerHost {
   readonly isTouch = isTouchDevice();
   private breakTarget: { x: number; y: number; z: number; id: number } | null = null;
   /** 脚步声：累计走过的水平距离与上一次采样点。 */
+  /** 站在传送门里的累计 tick 与传送后的冷却。 */
+  private portalTicks = 0;
+  private portalCooldown = 0;
   private stepDistance = 0;
   private lastFootX = 0;
   private lastFootZ = 0;
@@ -321,11 +397,8 @@ export class Game implements EntityContext, ContainerHost {
     this.rules = getRules(options.meta.mode);
     this.difficulty = this.rules.forcedDifficulty ?? options.meta.difficulty;
     this.rng = createRng(hashString(`${options.meta.seed}:${Date.now()}`));
-    this.generator = createChunkGenerator(options.meta);
     this.weather = new WeatherSystem(this.rng);
-    this.light = new LightEngine(this.world);
-    this.chunkManager = new ChunkManager(this.world, this.generator, this.light);
-    this.fluids = new FluidSimulator(this.world);
+    this.current = this.dimensionOf(DimensionId.OVERWORLD);
     this.atlas = new TextureAtlas();
     this.renderer = new Renderer(options.canvas, this.world, this.atlas);
     this.controls = new Controls(options.canvas, settingsStore.get());
@@ -462,11 +535,39 @@ export class Game implements EntityContext, ContainerHost {
     }
     this.weather.load(save.weather);
     this.achievements.load(save.achievements);
+    this.loadOtherDimensions(save);
     if (typeof save.timeTick === 'number') {
       this.timeTick = save.timeTick;
     }
     if (this.player.health <= 0) {
       this.player.respawn();
+    }
+  }
+
+  /** 读入主世界以外的维度，并把玩家放回存档时所在的维度。 */
+  private loadOtherDimensions(save: WorldSave): void {
+    for (const data of save.dimensions ?? []) {
+      if (data.id === DimensionId.OVERWORLD || !isDimensionId(data.id)) {
+        continue;
+      }
+      const dimension = this.dimensionOf(data.id);
+      for (const chunkData of data.chunks) {
+        dimension.chunkManager.addLoadedChunk(deserializeChunk(chunkData, dimension.world.hasSkyLight));
+      }
+      for (const entityData of data.entities) {
+        const entity = this.deserializeEntity(entityData);
+        if (entity) {
+          dimension.entities.set(entity.id, entity);
+        }
+      }
+      dimension.blockEntities.load(data.blockEntities);
+    }
+    const playerDimension = save.playerDimension;
+    if (playerDimension && isDimensionId(playerDimension) && playerDimension !== this.current.id) {
+      const target = this.dimensionOf(playerDimension);
+      this.current = target;
+      this.renderer.setWorld(target.world);
+      this.chunkManager.ensureLoaded(this.player.x, this.player.z, SPAWN_PRELOAD_RADIUS);
     }
   }
 
@@ -485,29 +586,49 @@ export class Game implements EntityContext, ContainerHost {
 
   /** 生成存档对象。 */
   serialize(): WorldSave {
-    const entities: EntitySaveData[] = [];
-    for (const e of this.entities.values()) {
-      if (e.isDead) {
-        continue;
-      }
-      if (e instanceof Mob) {
-        entities.push(e.serialize());
-      } else if (e instanceof ItemDropEntity || e instanceof XpOrbEntity) {
-        entities.push(e.serialize());
+    const overworld = this.dimensionOf(DimensionId.OVERWORLD);
+    const others: DimensionSaveData[] = [];
+    for (const dimension of this.dimensions.values()) {
+      if (dimension !== overworld) {
+        others.push(this.serializeDimension(dimension));
       }
     }
+    const overworldData = this.serializeDimension(overworld);
     return {
       version: SAVE_FORMAT_VERSION,
       meta: { ...this.meta, lastPlayed: Date.now() },
       tick: this.tick,
       timeTick: this.timeTick,
-      chunks: this.world.listModifiedChunks().map(serializeChunk),
+      // 主世界仍写在顶层，旧版本也能读
+      chunks: overworldData.chunks,
       player: this.player.serialize(),
-      entities,
+      entities: overworldData.entities,
       nextEntityId: allocateEntityId(),
-      blockEntities: this.blockEntities.serialize(),
+      blockEntities: overworldData.blockEntities,
       weather: this.weather.serialize(),
       achievements: this.achievements.serialize(),
+      dimensions: others,
+      playerDimension: this.current.id,
+    };
+  }
+
+  /** 序列化一个维度：被修改过的 chunk、可存档的实体与方块实体。 */
+  private serializeDimension(dimension: Dimension): DimensionSaveData {
+    const entities: EntitySaveData[] = [];
+    for (const e of dimension.entities.values()) {
+      if (e.isDead) {
+        continue;
+      }
+      const data = e instanceof Mob || e instanceof ItemDropEntity || e instanceof XpOrbEntity ? e.serialize() : null;
+      if (data) {
+        entities.push(data);
+      }
+    }
+    return {
+      id: dimension.id,
+      chunks: dimension.world.listModifiedChunks().map(serializeChunk),
+      entities,
+      blockEntities: dimension.blockEntities.serialize(),
     };
   }
 
@@ -584,7 +705,7 @@ export class Game implements EntityContext, ContainerHost {
     this.chunkManager.update(this.player.x, this.player.z, this.renderDistance);
     this.updateCamera();
     this.renderer.chunks.update(this.player.x, this.player.z);
-    const minLight = this.nightVisionMinLight();
+    const minLight = this.minLight();
     this.renderer.entities.update(
       this.entities.values(),
       this.renderer.sky.skyLevel,
@@ -603,7 +724,13 @@ export class Game implements EntityContext, ContainerHost {
     const brightness = this.brightnessAtPlayer();
     this.renderer.particles.update(dt);
     this.renderer.hand.update(this.player.heldItem?.id ?? null, brightness);
-    this.renderer.render(this.timeTick, this.isPlayerUnderwater(), this.weather.rainLevel, minLight);
+    this.renderer.render(
+      this.timeTick,
+      this.isPlayerUnderwater(),
+      this.current.def.hasWeather ? this.weather.rainLevel : 0,
+      minLight,
+      DIMENSION_SKY_COLORS[this.current.id],
+    );
     this.music.update(this.rng);
   }
 
@@ -664,6 +791,7 @@ export class Game implements EntityContext, ContainerHost {
         /* toast 已提示 */
       });
     }
+    this.tickPortal();
     this.tickFootsteps();
     this.tickDigSound();
     this.music.underground = this.isPlayerUnderground();
@@ -724,6 +852,72 @@ export class Game implements EntityContext, ContainerHost {
     }
     const { x, y, z, id } = this.breakTarget;
     this.playBlockSound(digSound(soundGroupOf(getBlock(id))), x, y, z, 'dig');
+  }
+
+  /**
+   * 玩家站在传送门里够久就传送。冷却期间（刚传送过来）站着不动不会被弹回去。
+   */
+  private tickPortal(): void {
+    if (this.portalCooldown > 0) {
+      this.portalCooldown--;
+      this.portalTicks = 0;
+      return;
+    }
+    const p = this.player;
+    const inPortal = this.world.getBlock(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)) === BlockId.NETHER_PORTAL;
+    if (!inPortal) {
+      this.portalTicks = 0;
+      return;
+    }
+    this.portalTicks++;
+    if (this.portalTicks < PORTAL_TRIGGER_TICKS) {
+      return;
+    }
+    this.portalTicks = 0;
+    this.travelThroughPortal();
+  }
+
+  /** 走一次下界传送门：主世界 ↔ 下界互换。 */
+  private travelThroughPortal(): void {
+    const from = this.current;
+    const targetId = from.id === DimensionId.NETHER ? DimensionId.OVERWORLD : DimensionId.NETHER;
+    const target = this.dimensionOf(targetId);
+    const x = mapCoordinate(Math.floor(this.player.x), from.def, target.def);
+    const z = mapCoordinate(Math.floor(this.player.z), from.def, target.def);
+    const y = Math.floor(this.player.y);
+    this.enterDimension(target, x, y, z, true);
+  }
+
+  /**
+   * 切换到某个维度并把玩家放到 (x, y, z) 附近。
+   * @param usePortal 是否找 / 造一座传送门作为落点（末地那种直接落地的传送传 false）
+   */
+  private enterDimension(target: Dimension, x: number, y: number, z: number, usePortal: boolean): void {
+    if (target === this.current) {
+      return;
+    }
+    this.current = target;
+    this.renderer.setWorld(target.world);
+    this.chunkManager.ensureLoaded(x, z, PORTAL_LOAD_RADIUS);
+    let spot = { x: x + 0.5, y, z: z + 0.5 };
+    if (usePortal) {
+      const existing = findExistingPortal(target.world, x, y, z, PORTAL_SEARCH_RADIUS_LOADED);
+      const portal = existing ?? buildPortal(target.world, x, y, z, target.id);
+      spot = { x: portal.x + 0.5, y: portal.y, z: portal.z + 0.5 };
+    }
+    this.player.setPosition(spot.x, spot.y, spot.z);
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.player.vz = 0;
+    this.portalCooldown = PORTAL_COOLDOWN_TICKS;
+    this.chunkManager.ensureLoaded(this.player.x, this.player.z, PORTAL_LOAD_RADIUS);
+    this.achievements.onEnterDimension(target.id);
+    this.showToast(`进入${target.def.label}`);
+  }
+
+  /** 当前维度 id（存档与调试面板用）。 */
+  get dimensionId(): DimensionId {
+    return this.current.id;
   }
 
   /** 准星指向的方块名（带变种，如"云杉木板"）。 */
@@ -1168,9 +1362,13 @@ export class Game implements EntityContext, ContainerHost {
     this.renderer.particles.spawnBlockBreak(x, y, z, def.textures.top, BREAK_PARTICLE_COUNT, 0.3 + 0.7 * level);
   }
 
-  /** 夜视给世界与实体的最低亮度（没有夜视为 0，按环境光正常渲染）。 */
-  private nightVisionMinLight(): number {
-    return this.player.hasEffect(EffectId.NIGHT_VISION) ? NIGHT_VISION_MIN_LIGHT : 0;
+  /**
+   * 世界与实体的最低亮度：夜视与维度自带的环境光取大者。
+   * 下界本身就有一点微光，末地更暗，主世界为 0（完全按光照走）。
+   */
+  private minLight(): number {
+    const nightVision = this.player.hasEffect(EffectId.NIGHT_VISION) ? NIGHT_VISION_MIN_LIGHT : 0;
+    return Math.max(nightVision, this.current.def.ambientLight);
   }
 
   private brightnessAtPlayer(): number {
@@ -1498,6 +1696,13 @@ export class Game implements EntityContext, ContainerHost {
     const pz = hit.z + hit.nz;
     if (!this.world.inBounds(px, py, pz) || this.world.getBlock(px, py, pz) !== BlockId.AIR) {
       return false;
+    }
+    // 点在黑曜石框架里就是开传送门，否则才是点一团火
+    if (this.world.getBlock(hit.x, hit.y, hit.z) === BlockId.OBSIDIAN && tryLightPortal(this.world, px, py, pz)) {
+      this.sound.play('fizz', 0);
+      this.renderer.hand.swing();
+      this.damageHeldTool(1);
+      return true;
     }
     this.world.setBlock(px, py, pz, BlockId.FIRE, 0);
     this.sound.play('fuse', 0);

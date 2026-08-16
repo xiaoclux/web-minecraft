@@ -391,6 +391,15 @@ export class AchievementSystem {
     }
   }
 
+  /** 进入某个维度。 */
+  onEnterDimension(dimensionId: string): void {
+    if (dimensionId === 'nether') {
+      this.unlock(AchievementId.PORTAL);
+    } else if (dimensionId === 'end') {
+      this.unlock(AchievementId.THE_END);
+    }
+  }
+
   onEnchanted(): void {
     this.addStat(StatId.ITEMS_ENCHANTED);
     this.unlock(AchievementId.ENCHANTMENTS);

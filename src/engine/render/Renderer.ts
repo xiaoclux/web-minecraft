@@ -84,9 +84,15 @@ export class Renderer {
     this.camera.updateProjectionMatrix();
   }
 
+  /** 换维度：区块与实体渲染都切到新世界。 */
+  setWorld(world: World): void {
+    this.chunks.setWorld(world);
+    this.entities.setWorld(world);
+  }
+
   /** 渲染一帧。 */
-  render(timeTick: number, isUnderwater: boolean, rainLevel = 0, minLight = 0): void {
-    this.sky.update(timeTick, this.camera.position);
+  render(timeTick: number, isUnderwater: boolean, rainLevel = 0, minLight = 0, skyColor: THREE.Color | null = null): void {
+    this.sky.update(timeTick, this.camera.position, skyColor);
     // 下雨时天光整体压暗，云雾也更灰
     const skyLevel = this.sky.skyLevel * (1 - RAIN_DARKEN * rainLevel);
     this.chunks.sharedUniforms.uSkyLevel.value = skyLevel;

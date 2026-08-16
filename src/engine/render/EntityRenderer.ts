@@ -46,7 +46,22 @@ export class EntityRenderer {
   private readonly textureCache = new Map<string, THREE.Texture>();
   private readonly geometryCache = new Map<string, THREE.BoxGeometry>();
 
-  constructor(private readonly world: World) {}
+  constructor(private world: World) {}
+
+  /** 换世界（切维度）：清掉当前维度的实体表现。 */
+  setWorld(world: World): void {
+    if (world === this.world) {
+      return;
+    }
+    this.world = world;
+    for (const [id, r] of this.rendered) {
+      this.group.remove(r.group);
+      for (const m of r.materials) {
+        m.dispose();
+      }
+      this.rendered.delete(id);
+    }
+  }
 
   /** 每帧同步。 */
   /** 夜视等效果给的最低亮度 0~1（0 表示按环境光正常渲染）。 */

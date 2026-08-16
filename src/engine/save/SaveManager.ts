@@ -57,6 +57,18 @@ export interface WorldSave {
   blockEntities?: BlockEntitySaveData[];
   weather?: WeatherSaveData;
   achievements?: AchievementSaveData;
+  /** 主世界以外的维度数据（旧存档没有这一项）。 */
+  dimensions?: DimensionSaveData[];
+  /** 玩家所在维度（旧存档没有，按主世界处理）。 */
+  playerDimension?: string;
+}
+
+/** 一个非主世界维度的存档数据。 */
+export interface DimensionSaveData {
+  id: string;
+  chunks: ChunkSaveData[];
+  entities: EntitySaveData[];
+  blockEntities: BlockEntitySaveData[];
 }
 
 /** 基于 IndexedDB 的存档管理。 */

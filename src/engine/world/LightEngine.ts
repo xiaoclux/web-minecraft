@@ -146,10 +146,10 @@ export class LightEngine {
     // 清零区域按段对齐，向上取整到段边界；再往上的段整体是满天光
     const zeroTop = maxHeight === 0 ? 0 : ((((maxHeight - 1) >> SECTION_SHIFT) + 1) << SECTION_SHIFT);
     this.resetChunkLight(chunk, maxHeight);
-    // 直射天光（地表以上）+ 侧向种子（相邻列更高的部分）
+    // 直射天光（地表以上）+ 侧向种子（相邻列更高的部分）；没有天空的维度整段跳过
     this.skyAdds.clear();
     this.blockAdds.clear();
-    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+    for (let lz = 0; w.hasSkyLight && lz < CHUNK_SIZE; lz++) {
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         const x = x0 + lx;
         const z = z0 + lz;
@@ -172,8 +172,10 @@ export class LightEngine {
         }
       }
     }
-    this.seedShell(chunk, Channel.SKY);
-    this.propagate(Channel.SKY, this.skyAdds);
+    if (w.hasSkyLight) {
+      this.seedShell(chunk, Channel.SKY);
+      this.propagate(Channel.SKY, this.skyAdds);
+    }
     // 方块光源（只扫已分配的段）
     for (let sy = 0; sy < SECTION_COUNT; sy++) {
       const section = chunk.sections[sy];
@@ -206,13 +208,14 @@ export class LightEngine {
       const belowSurface = sy * SECTION_HEIGHT < maxHeight;
       let section = chunk.sections[sy];
       if (!section) {
-        if (!belowSurface) {
+        // 无天空光的维度里未分配段本就是全黑，地表以上也无需分配
+        if (!belowSurface || !this.world.hasSkyLight) {
           continue;
         }
         section = chunk.ensureSectionAt(sy * SECTION_HEIGHT);
       }
       section.blockLight.fill(0);
-      section.skyLight.fill(belowSurface ? 0 : DEFAULT_SKY_LIGHT);
+      section.skyLight.fill(!this.world.hasSkyLight || belowSurface ? 0 : DEFAULT_SKY_LIGHT);
     }
   }
 

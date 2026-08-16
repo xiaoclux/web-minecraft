@@ -19,8 +19,8 @@ export function serializeChunk(chunk: Chunk): ChunkSaveData {
  * 反序列化为已标记修改的 chunk。
  * 长度由 RLE 自身决定，因此更矮的旧存档（如世界高度 64 时代）可直接落到底部，其余保持空气。
  */
-export function deserializeChunk(data: ChunkSaveData): Chunk {
-  const chunk = new Chunk(data.cx, data.cz);
+export function deserializeChunk(data: ChunkSaveData, hasSkyLight = true): Chunk {
+  const chunk = new Chunk(data.cx, data.cz, hasSkyLight);
   const blocks = rleDecodeAuto(data.blocks);
   const meta = rleDecode(data.meta, blocks.length);
   chunk.loadFlat(blocks, meta);

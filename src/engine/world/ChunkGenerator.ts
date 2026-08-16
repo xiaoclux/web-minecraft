@@ -2,6 +2,9 @@ import type { WorldMeta } from '../save/SaveManager';
 import { WorldType } from '../constants/world';
 import type { Chunk } from './Chunk';
 import { FlatGenerator } from './FlatGenerator';
+import { DimensionId } from './Dimension';
+import { EndGenerator } from './EndGenerator';
+import { NetherGenerator } from './NetherGenerator';
 import { TerrainGenerator } from './TerrainGenerator';
 
 /** 出生点。 */
@@ -23,6 +26,20 @@ export interface ChunkGenerator {
   findSpawn(): SpawnPoint;
   /** 该列的群系名（调试面板显示）。 */
   biomeAt(x: number, z: number): string;
+}
+
+/** 按维度创建生成器：主世界用世界类型对应的生成器，其余维度各有自己的。 */
+export function createDimensionGenerator(
+  id: DimensionId,
+  meta: Pick<WorldMeta, 'seed' | 'worldType' | 'generateStructures'>,
+): ChunkGenerator {
+  if (id === DimensionId.NETHER) {
+    return new NetherGenerator(meta.seed);
+  }
+  if (id === DimensionId.END) {
+    return new EndGenerator(meta.seed);
+  }
+  return createChunkGenerator(meta);
 }
 
 /** 根据世界元数据创建生成器。 */

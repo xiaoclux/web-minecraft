@@ -27,24 +27,43 @@ export class ChunkRenderer {
     uFogFar: { value: 120 },
   };
   private readonly materials;
-  private readonly mesher: ChunkMesher;
+  private mesher: ChunkMesher;
   private readonly meshes = new Map<number, ChunkMeshes>();
   /** 已构建过网格的 chunk。 */
   private readonly built = new Set<number>();
   private renderDistance: number;
-  private readonly unsubscribeUnload: () => void;
+  private unsubscribeUnload: () => void;
   private lastCenterX = Number.NaN;
   private lastCenterZ = Number.NaN;
 
   constructor(
-    private readonly world: World,
-    atlas: TextureAtlas,
+    private world: World,
+    private readonly atlas: TextureAtlas,
     renderDistance: number,
   ) {
     this.mesher = new ChunkMesher(world, atlas);
     this.materials = createChunkMaterials(atlas.texture, this.sharedUniforms);
     this.renderDistance = renderDistance;
     this.materials.translucent.transparent = true;
+    this.unsubscribeUnload = world.onChunkUnload((chunk) => this.unload(chunk.key));
+  }
+
+  /** 换一个世界渲染（切维度）：丢掉全部网格，重新订阅卸载事件。 */
+  setWorld(world: World): void {
+    if (world === this.world) {
+      return;
+    }
+    this.unsubscribeUnload();
+    for (const meshes of this.meshes.values()) {
+      for (const m of meshes.layers) {
+        m.geometry.dispose();
+        this.group.remove(m);
+      }
+    }
+    this.meshes.clear();
+    this.built.clear();
+    this.world = world;
+    this.mesher = new ChunkMesher(world, this.atlas);
     this.unsubscribeUnload = world.onChunkUnload((chunk) => this.unload(chunk.key));
   }
 

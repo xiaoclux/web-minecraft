@@ -23,6 +23,11 @@ type ChunkListener = (chunk: Chunk) => void;
  */
 export class World {
   readonly sizeY = WORLD_SIZE_Y;
+  /**
+   * 该维度有没有天空光。没有时（下界 / 末地）未加载区与新分配的段一律按全黑处理，
+   * 亮度只来自方块光。
+   */
+  readonly hasSkyLight: boolean;
   readonly chunks = new Map<number, Chunk>();
   /** 需要重建网格的 chunk 键集合。 */
   readonly dirtyChunks = new Set<number>();
@@ -38,6 +43,10 @@ export class World {
   /** 命中的段；null 表示该段未分配（全空气、天光满值）。 */
   private hitSection: ChunkSection | null = null;
   private hitIndex = 0;
+
+  constructor(hasSkyLight = true) {
+    this.hasSkyLight = hasSkyLight;
+  }
 
   // ---------------------------------------------------------------- chunk 管理
 
@@ -311,6 +320,9 @@ export class World {
 
   /** 读取天空光；未加载或高于世界返回满亮度，低于世界返回 0。 */
   getSkyLight(x: number, y: number, z: number): number {
+    if (!this.hasSkyLight) {
+      return 0;
+    }
     if (y >= this.sizeY) {
       return MAX_LIGHT;
     }

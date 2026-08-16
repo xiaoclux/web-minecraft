@@ -57,8 +57,19 @@ export class Sky {
     this.group.add(this.stars);
   }
 
-  /** 按世界 tick 更新天空。 */
-  update(timeTick: number, cameraPos: THREE.Vector3): void {
+  /**
+   * 按世界 tick 更新天空。
+   * @param fixedColor 有值时表示这个维度没有昼夜（下界 / 末地）：天幕用固定色、不画日月星
+   */
+  update(timeTick: number, cameraPos: THREE.Vector3, fixedColor: THREE.Color | null = null): void {
+    if (fixedColor) {
+      this.skyLevel = 1;
+      this.color.copy(fixedColor);
+      this.group.position.copy(cameraPos);
+      this.group.visible = false;
+      return;
+    }
+    this.group.visible = true;
     const t = (timeTick % DAY_LENGTH_TICKS) / DAY_LENGTH_TICKS;
     // 太阳角度：t=0 日出(东), 0.25 正午, 0.5 日落, 0.75 午夜
     const angle = t * Math.PI * 2;

@@ -98,7 +98,7 @@ export class ChunkManager {
     if (existing) {
       return existing;
     }
-    const chunk = new Chunk(cx, cz);
+    const chunk = new Chunk(cx, cz, this.world.hasSkyLight);
     this.generator.generateChunk(chunk);
     this.addLoadedChunk(chunk);
     return chunk;

@@ -48,9 +48,17 @@ export class ChunkSection {
   readonly skyLight = new Uint8Array(SECTION_VOLUME);
   readonly blockLight = new Uint8Array(SECTION_VOLUME);
 
-  constructor(readonly sy: number) {
-    // 与"未分配段"保持一致的初值，段被分配的瞬间不改变任何可见状态
-    this.skyLight.fill(DEFAULT_SKY_LIGHT);
+  /**
+   * @param hasSkyLight 该维度有没有天空光。有则初值取满（与"未分配段"一致，
+   *   段被分配的瞬间不改变任何可见状态）；没有则保持全 0。
+   */
+  constructor(
+    readonly sy: number,
+    hasSkyLight = true,
+  ) {
+    if (hasSkyLight) {
+      this.skyLight.fill(DEFAULT_SKY_LIGHT);
+    }
   }
 
   /** 段底部的世界 y。 */
@@ -93,6 +101,8 @@ export class Chunk {
   constructor(
     readonly cx: number,
     readonly cz: number,
+    /** 所属维度有没有天空光（决定新分配段的天空光初值）。 */
+    readonly hasSkyLight = true,
   ) {
     this.key = chunkKey(cx, cz);
   }
@@ -128,7 +138,7 @@ export class Chunk {
     if (existing) {
       return existing;
     }
-    const section = new ChunkSection(sy);
+    const section = new ChunkSection(sy, this.hasSkyLight);
     this.sections[sy] = section;
     if (sy < this.lowestSection) {
       this.lowestSection = sy;

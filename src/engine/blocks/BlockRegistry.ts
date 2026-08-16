@@ -38,7 +38,7 @@ export const RenderType = {
 } as const;
 export type RenderType = (typeof RenderType)[keyof typeof RenderType];
 
-import type { SoundGroup } from './blockSounds';
+import { SoundGroup } from './blockSounds';
 import { BED_HEAD_BIT, BlockShape, CROP_MAX_STAGE, DOOR_UPPER_BIT } from './blockShapes';
 
 /** 六个面各自的贴图 key。 */
@@ -201,6 +201,13 @@ export const BlockId = {
   IRON_BLOCK: 42,
   DIAMOND_BLOCK: 57,
   ANVIL: 145,
+  NETHERRACK: 87,
+  SOUL_SAND: 88,
+  QUARTZ_ORE: 153,
+  NETHER_BRICKS: 112,
+  NETHER_PORTAL: 90,
+  NETHER_WART_BLOCK: 115,
+  END_STONE: 121,
   SUGAR_CANE: 83,
   GLOWSTONE: 89,
   STONE_BRICKS: 98,
@@ -655,6 +662,31 @@ export const BLOCK_DEFS: BlockDef[] = [
       minTier: ToolTier.WOOD,
     }),
     shape: BlockShape.ANVIL,
+  },
+  cube(BlockId.NETHERRACK, 'netherrack', '地狱岩', same('netherrack'), 0.4, ToolType.PICKAXE),
+  cube(BlockId.END_STONE, 'end_stone', '末地石', same('end_stone'), 3, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+  }),
+  cube(BlockId.SOUL_SAND, 'soul_sand', '灵魂沙', same('soul_sand'), 0.5, ToolType.SHOVEL, {
+    soundGroup: SoundGroup.SAND,
+  }),
+  cube(BlockId.QUARTZ_ORE, 'quartz_ore', '下界石英矿', same('quartz_ore'), 3, ToolType.PICKAXE, {
+    drops: [{ item: 'quartz', min: 1, max: 1 }],
+    xp: [2, 5],
+  }),
+  cube(BlockId.NETHER_BRICKS, 'nether_bricks', '下界砖块', same('nether_bricks'), 2, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+  }),
+  // 传送门：站进去会被传送，本身不挡人、自带微光
+  {
+    ...cube(BlockId.NETHER_PORTAL, 'nether_portal', '下界传送门', same('nether_portal'), -1, null, {
+      solid: false,
+      opaque: false,
+      light: 11,
+      noItem: true,
+      render: RenderType.TRANSLUCENT,
+      isBlastResistant: false,
+    }),
   },
   cross(BlockId.SUGAR_CANE, 'sugar_cane', '甘蔗', 'sugar_cane', {
     drops: [{ item: 'sugar_cane', min: 1, max: 1 }],
