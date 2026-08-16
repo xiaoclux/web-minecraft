@@ -611,6 +611,18 @@ const brewingStand: Painter = (c, rng) => {
   c.rect(7, 0, 2, 16, hex('#e0c060'));
 };
 
+/** 附魔台：黑曜石底 + 红布面，顶上一本翻开的书；侧面镶钻石。 */
+const enchantingTableTop: Painter = (c, rng) => {
+  c.noise(hex('#8b1a2a'), 0.08, rng);
+  c.rect(4, 4, 8, 8, hex('#f0f0f0'));
+  c.rect(7, 4, 2, 8, hex('#c8c8c8'));
+};
+const enchantingTableSide: Painter = (c, rng) => {
+  c.noise(hex('#1c1424'), 0.08, rng);
+  c.rect(0, 0, 16, 4, hex('#8b1a2a'));
+  c.rect(6, 7, 4, 4, hex('#4be3d6'));
+};
+
 /** 甘蔗：细长的浅绿叶片。 */
 const sugarCane: Painter = (c) => {
   c.fill(TRANSPARENT);
@@ -820,6 +832,8 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   cactus_side: cactusSide,
   cactus_top: cactusTop,
   brewing_stand: brewingStand,
+  enchanting_table_top: enchantingTableTop,
+  enchanting_table_side: enchantingTableSide,
   sugar_cane: sugarCane,
   chest_top: chestTop,
   chest_front: chestFront,

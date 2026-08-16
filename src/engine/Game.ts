@@ -105,6 +105,17 @@ import { ContainerController, type ContainerHost, type SlotRef } from './items/C
 import { createFurnace, tickFurnace, type FurnaceState } from './items/Furnace';
 import { createBrewingStand, tickBrewing, type BrewingState } from './items/Brewing';
 import { POTION_DEFS, PotionBase, potionItemId } from './items/potions';
+import {
+  ENCHANTING_SLOT_COUNT,
+  ENCHANT_ITEM_SLOT,
+  ENCHANT_LAPIS_SLOT,
+  LAPIS_PER_OPTION,
+  LEVELS_PER_OPTION,
+  MAX_BOOKSHELVES,
+  applyEnchants,
+  rollOptions,
+  type EnchantOption,
+} from './items/EnchantingTable';
 export type { SlotRef } from './items/ContainerController';
 import { getAttackDamage, getItem, ItemKind } from './items/ItemRegistry';
 import {
@@ -190,6 +201,21 @@ const BREAK_PARTICLE_COUNT = 12;
 /** 爆炸粒子数量与取样贴图（用石头的灰色当烟）。 */
 const EXPLOSION_PARTICLE_COUNT = 40;
 const EXPLOSION_PARTICLE_TEXTURE = 'stone';
+/**
+ * 附魔台书架的检查表：以附魔台为中心，8 个方向各对应"距离 2 的那一段外圈"上的书架位置；
+ * 下标 = (dx+1)*3 + (dz+1)，中心 (0,0) 留空。
+ */
+const BOOKSHELF_RING_OFFSETS: readonly (readonly (readonly [number, number])[])[] = [
+  [[-2, -2]],
+  [[-2, -1], [-2, 0], [-2, 1]],
+  [[-2, 2]],
+  [[-1, -2], [0, -2], [1, -2]],
+  [],
+  [[-1, 2], [0, 2], [1, 2]],
+  [[2, -2]],
+  [[2, -1], [2, 0], [2, 1]],
+  [[2, 2]],
+];
 /** 喷溅药水碎掉时的玻璃碎屑。 */
 const SPLASH_PARTICLE_TEXTURE = 'glass';
 const SPLASH_PARTICLE_COUNT = 10;
@@ -207,6 +233,11 @@ export class Game implements EntityContext, ContainerHost {
   readonly blockEntities = new BlockEntityStore();
   readonly craftingGrid: (ItemStack | null)[] = new Array<ItemStack | null>(CRAFT_GRID_SIZE).fill(null);
   craftGridSize = 2;
+  readonly enchantingSlots: (ItemStack | null)[] = new Array<ItemStack | null>(ENCHANTING_SLOT_COUNT).fill(null);
+  /** 附魔台：本次打开的随机种子（附魔一次后重掷）与选项缓存。 */
+  private enchantSeed = 0;
+  private enchantOptionsCache: { key: string; options: EnchantOption[] | null } | null = null;
+  private enchantShelves = 0;
   tick = 0;
   timeTick = INITIAL_TIME_TICK;
 
@@ -1599,6 +1630,11 @@ export class Game implements EntityContext, ContainerHost {
         }));
         this.openScreen(Screen.BREWING, { x: hit.x, y: hit.y, z: hit.z });
         return true;
+      case BlockId.ENCHANTING_TABLE:
+        this.enchantShelves = this.countBookshelves(hit.x, hit.y, hit.z);
+        this.rerollEnchantSeed();
+        this.openScreen(Screen.ENCHANTING, { x: hit.x, y: hit.y, z: hit.z });
+        return true;
       case BlockId.BED:
         this.useBed(hit.x, hit.y, hit.z);
         return true;
@@ -1953,6 +1989,87 @@ export class Game implements EntityContext, ContainerHost {
     }
     const entity = this.blockEntities.get(pos.x, pos.y, pos.z);
     return entity?.type === BlockEntityType.FURNACE ? entity.state : null;
+  }
+
+  /**
+   * 附魔台周围生效的书架数：与 1.8.9 一致，数距离 2 格、同层与上一层的书架，
+   * 且书架与附魔台之间那一格必须是空气。
+   */
+  private countBookshelves(x: number, y: number, z: number): number {
+    let count = 0;
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dz === 0) {
+          continue;
+        }
+        if (this.world.getBlock(x + dx, y, z + dz) !== BlockId.AIR || this.world.getBlock(x + dx, y + 1, z + dz) !== BlockId.AIR) {
+          continue;
+        }
+        for (const [ox, oz] of BOOKSHELF_RING_OFFSETS[(dx + 1) * 3 + (dz + 1)]) {
+          if (this.world.getBlock(x + ox, y, z + oz) === BlockId.BOOKSHELF) {
+            count++;
+          }
+          if (this.world.getBlock(x + ox, y + 1, z + oz) === BlockId.BOOKSHELF) {
+            count++;
+          }
+        }
+      }
+    }
+    return Math.min(MAX_BOOKSHELVES, count);
+  }
+
+  private rerollEnchantSeed(): void {
+    this.enchantSeed = Math.floor(this.rng() * 0x7fffffff);
+    this.enchantOptionsCache = null;
+  }
+
+  /** 附魔台当前的三档选项（格子里没有可附魔物品时为 null）。同一种子 + 同一物品结果不变。 */
+  get enchantOptions(): EnchantOption[] | null {
+    const item = this.enchantingSlots[ENCHANT_ITEM_SLOT];
+    const key = item ? `${this.enchantSeed}:${item.id}` : '';
+    if (this.enchantOptionsCache?.key === key) {
+      return this.enchantOptionsCache.options;
+    }
+    const options = item ? rollOptions(item, this.enchantShelves, createRng(this.enchantSeed ^ hashString(item.id))) : null;
+    this.enchantOptionsCache = { key, options };
+    return options;
+  }
+
+  /** 附魔台周围的书架数（UI 显示）。 */
+  get enchantBookshelves(): number {
+    return this.enchantShelves;
+  }
+
+  /** 玩家能不能选某一档：等级够、青金石够（创造模式免费）。 */
+  canEnchant(index: number): boolean {
+    const option = this.enchantOptions?.[index];
+    if (!option || Object.keys(option.enchants).length === 0) {
+      return false;
+    }
+    if (this.rules.infiniteItems) {
+      return true;
+    }
+    const lapis = this.enchantingSlots[ENCHANT_LAPIS_SLOT];
+    return this.player.xpLevel >= option.cost && (lapis?.count ?? 0) >= LAPIS_PER_OPTION[index];
+  }
+
+  /** 选择附魔台的第 index 档：扣等级与青金石，把附魔写到物品上，然后重掷种子。 */
+  enchant(index: number): void {
+    if (!this.canEnchant(index)) {
+      return;
+    }
+    const option = this.enchantOptions as EnchantOption[];
+    const item = this.enchantingSlots[ENCHANT_ITEM_SLOT] as ItemStack;
+    this.enchantingSlots[ENCHANT_ITEM_SLOT] = applyEnchants(item, option[index].enchants);
+    if (!this.rules.infiniteItems) {
+      const lapis = this.enchantingSlots[ENCHANT_LAPIS_SLOT] as ItemStack;
+      const left = lapis.count - LAPIS_PER_OPTION[index];
+      this.enchantingSlots[ENCHANT_LAPIS_SLOT] = left > 0 ? { ...lapis, count: left } : null;
+      this.player.removeXpLevels(LEVELS_PER_OPTION[index]);
+    }
+    this.rerollEnchantSeed();
+    this.sound.play('level');
+    this.notifyChanged();
   }
 
   /** 当前打开的酿造台状态。 */

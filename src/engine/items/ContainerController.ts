@@ -6,6 +6,8 @@ import { Inventory } from './Inventory';
 import { getItem } from './ItemRegistry';
 import { canMerge, maxStackOf, type ItemStack } from './ItemStack';
 import { isBrewingIngredient, potionOfItem } from './potions';
+import { isEnchantable } from './enchantments';
+import { ENCHANT_ITEM_SLOT, LAPIS_ITEM_ID } from './EnchantingTable';
 import { matchRecipe } from './Recipes';
 
 /** 容器格引用。 */
@@ -19,6 +21,7 @@ export interface SlotRef {
     | 'furnaceOutput'
     | 'brewIngredient'
     | 'brewBottle'
+    | 'enchanting'
     | 'chest'
     | 'armor'
     | 'creative';
@@ -32,6 +35,8 @@ export interface ContainerHost {
   readonly inventory: Inventory;
   readonly craftingGrid: (ItemStack | null)[];
   readonly craftGridSize: number;
+  /** 附魔台的两个格子：[待附魔物品, 青金石]。与合成格一样归玩家临时持有，关界面时收回。 */
+  readonly enchantingSlots: (ItemStack | null)[];
   readonly openFurnace: FurnaceState | null;
   /** 打开中的酿造台（未打开时为 null）。 */
   readonly openBrewingStand: BrewingState | null;
@@ -93,6 +98,8 @@ export class ContainerController {
         return this.host.openBrewingStand?.ingredient ?? null;
       case 'brewBottle':
         return this.host.openBrewingStand?.bottles[ref.index] ?? null;
+      case 'enchanting':
+        return this.host.enchantingSlots[ref.index] ?? null;
       case 'chest':
         return this.host.openChestItems?.[ref.index] ?? null;
       case 'armor':
@@ -148,6 +155,9 @@ export class ContainerController {
         }
         break;
       }
+      case 'enchanting':
+        this.host.enchantingSlots[ref.index] = value;
+        break;
       case 'chest': {
         const items = this.host.openChestItems;
         if (items) {
@@ -252,6 +262,8 @@ export class ContainerController {
         return isBrewingIngredient(stack.id);
       case 'brewBottle':
         return potionOfItem(stack.id) !== null;
+      case 'enchanting':
+        return ref.index === ENCHANT_ITEM_SLOT ? isEnchantable(stack.id) : stack.id === LAPIS_ITEM_ID;
       default:
         return true;
     }
@@ -466,14 +478,19 @@ export class ContainerController {
    * @returns 放不下的总数量，0 表示已全部收回
    */
   returnCraftingItems(): number {
+    return this.returnSlots(this.host.craftingGrid) + this.returnSlots(this.host.enchantingSlots);
+  }
+
+  /** 把一组临时格子里的物品收回背包，返回放不下的数量。 */
+  private returnSlots(slots: (ItemStack | null)[]): number {
     let leftover = 0;
-    for (let i = 0; i < CRAFT_GRID_SIZE; i++) {
-      const s = this.host.craftingGrid[i];
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
       if (!s) {
         continue;
       }
       const remaining = this.host.inventory.add(s);
-      this.host.craftingGrid[i] = remaining > 0 ? { ...s, count: remaining } : null;
+      slots[i] = remaining > 0 ? { ...s, count: remaining } : null;
       leftover += remaining;
     }
     return leftover;
@@ -489,11 +506,13 @@ export class ContainerController {
       stacks.push(this.cursorStack);
       this.cursorStack = null;
     }
-    for (let i = 0; i < CRAFT_GRID_SIZE; i++) {
-      const s = this.host.craftingGrid[i];
-      if (s) {
-        stacks.push(s);
-        this.host.craftingGrid[i] = null;
+    for (const slots of [this.host.craftingGrid, this.host.enchantingSlots]) {
+      for (let i = 0; i < slots.length; i++) {
+        const s = slots[i];
+        if (s) {
+          stacks.push(s);
+          slots[i] = null;
+        }
       }
     }
     if (stacks.length > 0) {

@@ -21,6 +21,7 @@ function setup(screen: 'inventory' | 'crafting' | 'furnace' | 'chest' | 'brewing
     inventory,
     craftingGrid,
     craftGridSize: screen === 'crafting' ? 3 : 2,
+    enchantingSlots: [null, null],
     openFurnace: screen === 'furnace' ? furnace : null,
     openBrewingStand: screen === 'brewing' ? brewing : null,
     openChestItems: screen === 'chest' ? chestItems : null,

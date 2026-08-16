@@ -203,6 +203,7 @@ export const RECIPES: Recipe[] = [
   shapeless(['spider_eye', 'sugar'], 'fermented_spider_eye'),
   shaped(['GG', 'GG'], { G: 'glowstone_dust' }, 'glowstone'),
   shaped([' B ', 'CCC'], { B: 'blaze_rod', C: 'cobblestone' }, 'brewing_stand'),
+  shaped([' B ', 'DOD', 'OOO'], { B: 'book', D: 'diamond', O: 'obsidian' }, 'enchanting_table'),
   shapeless(['pumpkin'], 'wheat_seeds', 4),
   shapeless(['melon_slice'], 'wheat_seeds'),
   shaped(['MMM', 'MMM', 'MMM'], { M: 'melon_slice' }, 'melon'),

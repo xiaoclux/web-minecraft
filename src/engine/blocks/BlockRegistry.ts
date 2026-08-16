@@ -193,6 +193,7 @@ export const BlockId = {
   SNOW: 80,
   CACTUS: 81,
   BREWING_STAND: 117,
+  ENCHANTING_TABLE: 116,
   SUGAR_CANE: 83,
   GLOWSTONE: 89,
   STONE_BRICKS: 98,
@@ -618,6 +619,18 @@ export const BLOCK_DEFS: BlockDef[] = [
       light: 1,
     }),
     shape: BlockShape.BREWING_STAND,
+  },
+  {
+    ...cube(
+      BlockId.ENCHANTING_TABLE,
+      'enchanting_table',
+      '附魔台',
+      topSide('enchanting_table_top', 'enchanting_table_side', 'obsidian'),
+      5,
+      ToolType.PICKAXE,
+      { opaque: false, interactive: true, minTier: ToolTier.WOOD },
+    ),
+    shape: BlockShape.ENCHANTING_TABLE,
   },
   cross(BlockId.SUGAR_CANE, 'sugar_cane', '甘蔗', 'sugar_cane', {
     drops: [{ item: 'sugar_cane', min: 1, max: 1 }],

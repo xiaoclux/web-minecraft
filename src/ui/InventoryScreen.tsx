@@ -12,6 +12,8 @@ import { MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT } from '../engine/constants/keys'
 import { CHEST_COLUMNS, TOUCH_LONG_PRESS_MS } from '../engine/constants/ui';
 import { Screen, type GameUiState } from '../engine/events/GameState';
 import { BREW_TICKS } from '../engine/items/potions';
+import { ENCHANTMENT_DEFS, type EnchantmentId } from '../engine/items/enchantments';
+import { ENCHANT_ITEM_SLOT, ENCHANT_LAPIS_SLOT, LAPIS_PER_OPTION } from '../engine/items/EnchantingTable';
 import { SMELT_TICKS } from '../engine/items/Furnace';
 import { ITEM_DEFS, ItemKind } from '../engine/items/ItemRegistry';
 import type { ItemStack } from '../engine/items/ItemStack';
@@ -205,6 +207,44 @@ function BrewingArea({ game }: { game: Game }) {
   );
 }
 
+const ENCHANT_OPTION_INDICES = [0, 1, 2] as const;
+
+function EnchantingArea({ game }: { game: Game }) {
+  const options = game.enchantOptions;
+  return (
+    <div className="enchanting-area">
+      <div className="section-title">附魔台（书架 {game.enchantBookshelves}）</div>
+      <div className="enchanting-row">
+        <div className="enchanting-inputs">
+          <Slot game={game} refer={{ kind: 'enchanting', index: ENCHANT_ITEM_SLOT }} stack={game.enchantingSlots[ENCHANT_ITEM_SLOT]} />
+          <Slot game={game} refer={{ kind: 'enchanting', index: ENCHANT_LAPIS_SLOT }} stack={game.enchantingSlots[ENCHANT_LAPIS_SLOT]} />
+        </div>
+        <div className="enchanting-options">
+          {ENCHANT_OPTION_INDICES.map((i) => {
+            const option = options?.[i];
+            const first = option ? Object.keys(option.enchants)[0] : undefined;
+            const enabled = game.canEnchant(i);
+            return (
+              <button
+                key={i}
+                className={`enchant-option${enabled ? '' : ' disabled'}`}
+                disabled={!enabled}
+                onClick={() => game.enchant(i)}
+              >
+                <span className="enchant-cost">{option ? option.cost : '-'}</span>
+                <span className="enchant-hint">
+                  {first ? `${ENCHANTMENT_DEFS[first as EnchantmentId].label}…` : ''}
+                </span>
+                <span className="enchant-lapis">{'●'.repeat(LAPIS_PER_OPTION[i])}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ChestArea({ game }: { game: Game }) {
   const items = game.openChestItems;
   const indices = useMemo(() => (items ? Array.from({ length: items.length }, (_, i) => i) : []), [items]);
@@ -285,6 +325,7 @@ export function InventoryScreen({ game, state }: InventoryScreenProps) {
           {state.screen === Screen.CRAFTING && <CraftingArea game={game} size={3} />}
           {state.screen === Screen.FURNACE && <FurnaceArea game={game} />}
           {state.screen === Screen.BREWING && <BrewingArea game={game} />}
+          {state.screen === Screen.ENCHANTING && <EnchantingArea game={game} />}
           {state.screen === Screen.CHEST && <ChestArea game={game} />}
           <div className="section-title">物品栏</div>
           <InventoryGrid game={game} />

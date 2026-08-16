@@ -41,6 +41,8 @@ export const BlockShape = {
   CACTUS: 'cactus',
   /** 酿造台：一层薄底座 + 中间一根细杆。 */
   BREWING_STAND: 'brewing_stand',
+  /** 附魔台：3/4 高的方块。 */
+  ENCHANTING_TABLE: 'enchanting_table',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -129,6 +131,8 @@ const BREWING_STAND_BOXES: readonly BlockBox[] = [
   box(0, 0, 0, 1, BREWING_BASE_HEIGHT, 1),
   box(0.5 - BREWING_ROD_HALF, 0, 0.5 - BREWING_ROD_HALF, 0.5 + BREWING_ROD_HALF, BREWING_ROD_HEIGHT, 0.5 + BREWING_ROD_HALF),
 ];
+const ENCHANTING_TABLE_HEIGHT = 0.75;
+const ENCHANTING_TABLE_BOXES: readonly BlockBox[] = [box(0, 0, 0, 1, ENCHANTING_TABLE_HEIGHT, 1)];
 /** 贴在格子某一侧面的薄板（厚度 t，方向 (dx,dz) 指向该侧面）。 */
 function panelBox(dx: number, dz: number, t: number): BlockBox {
   if (dx === 1) {
@@ -272,6 +276,8 @@ export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readon
       return CACTUS_BOXES;
     case BlockShape.BREWING_STAND:
       return BREWING_STAND_BOXES;
+    case BlockShape.ENCHANTING_TABLE:
+      return ENCHANTING_TABLE_BOXES;
     case BlockShape.LADDER:
       return LADDER_BOXES[meta & FACING_MASK];
     case BlockShape.DOOR:

@@ -11,6 +11,7 @@ import {
   isEnchantable,
   unbreakingSkips,
 } from '../src/engine/items/enchantments';
+import { applyEnchants, enchantCosts, rollEnchantments, rollOptions } from '../src/engine/items/EnchantingTable';
 import { requireItem } from '../src/engine/items/ItemRegistry';
 import { canMerge, cloneStack, type ItemStack } from '../src/engine/items/ItemStack';
 
@@ -69,5 +70,48 @@ describe('附魔效果', () => {
     expect(unbreakingSkips(3, false, () => 0.9)).toBe(false);
     // 盔甲先过 60% 的"不受影响"判定
     expect(unbreakingSkips(3, true, () => 0.1)).toBe(false);
+  });
+});
+
+describe('附魔台', () => {
+  it('书架越多三档消耗越高，且不超过 30 级', () => {
+    const rng = () => 0.999;
+    const none = enchantCosts(0, rng);
+    const full = enchantCosts(15, rng);
+    expect(none[0]).toBeLessThanOrEqual(none[1]);
+    expect(none[1]).toBeLessThanOrEqual(none[2]);
+    expect(full[2]).toBe(30);
+    expect(full[2]).toBeGreaterThan(none[2]);
+  });
+
+  it('抽出的附魔都适用于该物品、互不冲突、不超过最高等级', () => {
+    let seed = 1;
+    const rng = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    for (let i = 0; i < 200; i++) {
+      const enchants = rollEnchantments(requireItem('diamond_pickaxe'), 30, rng);
+      const ids = Object.keys(enchants) as EnchantmentId[];
+      expect(ids.length).toBeGreaterThan(0);
+      for (const id of ids) {
+        expect(canEnchant(requireItem('diamond_pickaxe'), ENCHANTMENT_DEFS[id])).toBe(true);
+        expect(enchants[id]).toBeLessThanOrEqual(ENCHANTMENT_DEFS[id].maxLevel);
+        for (const other of ids) {
+          if (other !== id) {
+            expect(enchantsCompatible(id, other)).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it('书附魔后变成附魔书；已附魔物品不再出选项', () => {
+    const book = applyEnchants({ id: 'book', count: 1 }, { sharpness: 3 });
+    expect(book.id).toBe('enchanted_book');
+    expect(enchantLevel(book, EnchantmentId.SHARPNESS)).toBe(3);
+    expect(rollOptions(book, 0, () => 0.5)).toBeNull();
+    expect(rollOptions({ id: 'dirt', count: 1 }, 0, () => 0.5)).toBeNull();
+    expect(rollOptions({ id: 'iron_sword', count: 1 }, 0, () => 0.5)?.length).toBe(3);
   });
 });

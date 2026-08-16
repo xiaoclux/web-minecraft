@@ -792,6 +792,60 @@ button:disabled {
   background: linear-gradient(#e6f2ff, #7cafc6);
 }
 
+.enchanting-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.enchanting-inputs {
+  display: flex;
+  gap: 6px;
+}
+
+.enchanting-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 附魔选项：左边等级数、中间半遮的附魔名、右边青金石点数 */
+.enchant-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 200px;
+  padding: 4px 8px;
+  border: 2px solid #555;
+  background: #6f6f6f;
+  color: #eee;
+  font: inherit;
+  cursor: pointer;
+}
+
+.enchant-option.disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.enchant-cost {
+  min-width: 24px;
+  color: #7cff5c;
+  font-weight: bold;
+}
+
+.enchant-hint {
+  flex: 1;
+  text-align: left;
+  color: #ddd;
+  font-style: italic;
+}
+
+.enchant-lapis {
+  color: #3a5bd6;
+  letter-spacing: 2px;
+}
+
 .progress-arrow {
   width: 48px;
   height: 12px;

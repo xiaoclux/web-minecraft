@@ -237,6 +237,12 @@ export class Player extends LivingEntity {
     }
   }
 
+  /** 扣除整数级（附魔消耗）；不够扣就归零。 */
+  removeXpLevels(levels: number): void {
+    this.xpLevel = Math.max(0, this.xpLevel - levels);
+    this.xp = 0;
+  }
+
   /** 升到下一级所需经验（简化公式）。 */
   xpToNextLevel(): number {
     return XP_PER_LEVEL_BASE + this.xpLevel * 2;
