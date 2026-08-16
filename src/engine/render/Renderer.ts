@@ -85,11 +85,12 @@ export class Renderer {
   }
 
   /** 渲染一帧。 */
-  render(timeTick: number, isUnderwater: boolean, rainLevel = 0): void {
+  render(timeTick: number, isUnderwater: boolean, rainLevel = 0, minLight = 0): void {
     this.sky.update(timeTick, this.camera.position);
     // 下雨时天光整体压暗，云雾也更灰
     const skyLevel = this.sky.skyLevel * (1 - RAIN_DARKEN * rainLevel);
     this.chunks.sharedUniforms.uSkyLevel.value = skyLevel;
+    this.chunks.sharedUniforms.uMinLight.value = minLight;
     // 直接在 uniform 的 Color 上算，每帧零分配
     const fogColor: THREE.Color = this.chunks.sharedUniforms.uFogColor.value;
     if (isUnderwater) {

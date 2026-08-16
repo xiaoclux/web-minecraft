@@ -22,6 +22,7 @@ void main() {
 const FRAGMENT_SHADER = /* glsl */ `
 uniform sampler2D uMap;
 uniform float uSkyLevel;
+uniform float uMinLight;
 uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;
@@ -43,7 +44,8 @@ void main() {
   }
   float sky = vLight.x * uSkyLevel;
   float block = vLight.y;
-  float level = max(sky, block);
+  // 夜视把整体亮度托到 uMinLight 以上
+  float level = max(max(sky, block), uMinLight);
   float brightness = mix(${MIN_BRIGHTNESS.toFixed(3)}, 1.0, lightCurve(level)) * vLight.z;
   // 火把光偏暖
   vec3 tint = mix(vec3(1.0), vec3(1.0, 0.92, 0.78), clamp(block - sky, 0.0, 1.0));
@@ -58,6 +60,7 @@ void main() {
 export interface ChunkUniforms {
   uMap: { value: THREE.Texture };
   uSkyLevel: { value: number };
+  uMinLight: { value: number };
   uFogColor: { value: THREE.Color };
   uFogNear: { value: number };
   uFogFar: { value: number };
@@ -70,6 +73,7 @@ export function createChunkMaterials(
   map: THREE.Texture,
   shared: {
     uSkyLevel: { value: number };
+    uMinLight: { value: number };
     uFogColor: { value: THREE.Color };
     uFogNear: { value: number };
     uFogFar: { value: number };
@@ -79,6 +83,7 @@ export function createChunkMaterials(
     const uniforms: ChunkUniforms = {
       uMap: { value: map },
       uSkyLevel: shared.uSkyLevel,
+      uMinLight: shared.uMinLight,
       uFogColor: shared.uFogColor,
       uFogNear: shared.uFogNear,
       uFogFar: shared.uFogFar,

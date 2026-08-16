@@ -49,7 +49,11 @@ export class EntityRenderer {
   constructor(private readonly world: World) {}
 
   /** 每帧同步。 */
-  update(entities: Iterable<Entity>, skyLevel: number, time: number, cameraYaw: number): void {
+  /** 夜视等效果给的最低亮度 0~1（0 表示按环境光正常渲染）。 */
+  private minLight = 0;
+
+  update(entities: Iterable<Entity>, skyLevel: number, time: number, cameraYaw: number, minLight = 0): void {
+    this.minLight = minLight;
     const alive = new Set<number>();
     for (const entity of entities) {
       alive.add(entity.id);
@@ -267,7 +271,7 @@ export class EntityRenderer {
     const bz = Math.floor(z);
     const sky = this.world.getSkyLight(bx, by, bz) / MAX_LIGHT;
     const block = this.world.getBlockLight(bx, by, bz) / MAX_LIGHT;
-    const level = Math.max(sky * skyLevel, block);
+    const level = Math.max(sky * skyLevel, block, this.minLight);
     return 0.08 + 0.92 * (level / (4 - 3 * level));
   }
 

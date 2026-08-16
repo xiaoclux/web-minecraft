@@ -274,6 +274,8 @@ export class Player extends LivingEntity {
   override tick(ctx: EntityContext): void {
     this.age++;
     if (this.health > 0) {
+      // 玩家不走 LivingEntity.tick（那里有生物专用的受伤 / 死亡计时），效果与着火要自己推进
+      this.tickEffects(ctx);
       this.tickFire(ctx);
     }
   }

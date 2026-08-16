@@ -142,7 +142,7 @@ export abstract class LivingEntity extends Entity {
   }
 
   /** 效果计时与周期性结算（生命恢复 / 中毒 / 凋零）。 */
-  private tickEffects(ctx: EntityContext): void {
+  protected tickEffects(ctx: EntityContext): void {
     if (this.effects.size === 0) {
       return;
     }

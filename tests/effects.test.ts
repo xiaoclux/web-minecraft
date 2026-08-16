@@ -98,4 +98,16 @@ describe('状态效果', () => {
     mob.addEffect(EffectId.STRENGTH, 100, 0);
     expect(mob.effectLevel(EffectId.STRENGTH)).toBe(1);
   });
+
+  it('玩家自己的 tick 会推进效果计时与周期结算', () => {
+    const p = new Player();
+    p.health = 10;
+    p.addEffect(EffectId.SPEED, 100, 0);
+    p.addEffect(EffectId.REGENERATION, 200, 0);
+    for (let i = 0; i < 60; i++) {
+      p.tick(ctx());
+    }
+    expect(p.effects.get(EffectId.SPEED)?.ticks).toBe(40);
+    expect(p.health).toBeGreaterThan(10);
+  });
 });

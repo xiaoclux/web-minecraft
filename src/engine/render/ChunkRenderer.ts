@@ -21,6 +21,7 @@ export class ChunkRenderer {
   readonly group = new THREE.Group();
   readonly sharedUniforms = {
     uSkyLevel: { value: 1 },
+    uMinLight: { value: 0 },
     uFogColor: { value: new THREE.Color(0x87ceeb) },
     uFogNear: { value: 60 },
     uFogFar: { value: 120 },

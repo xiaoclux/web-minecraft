@@ -219,6 +219,8 @@ const BOOKSHELF_RING_OFFSETS: readonly (readonly (readonly [number, number])[])[
   [[2, -1], [2, 0], [2, 1]],
   [[2, 2]],
 ];
+/** 夜视把世界亮度托到的下限（1 = 满亮，略低一点保留一点氛围）。 */
+const NIGHT_VISION_MIN_LIGHT = 0.9;
 /** 喷溅药水碎掉时的玻璃碎屑。 */
 const SPLASH_PARTICLE_TEXTURE = 'glass';
 const SPLASH_PARTICLE_COUNT = 10;
@@ -563,7 +565,14 @@ export class Game implements EntityContext, ContainerHost {
     this.chunkManager.update(this.player.x, this.player.z, this.renderDistance);
     this.updateCamera();
     this.renderer.chunks.update(this.player.x, this.player.z);
-    this.renderer.entities.update(this.entities.values(), this.renderer.sky.skyLevel, now / 1000, this.player.yaw);
+    const minLight = this.nightVisionMinLight();
+    this.renderer.entities.update(
+      this.entities.values(),
+      this.renderer.sky.skyLevel,
+      now / 1000,
+      this.player.yaw,
+      minLight,
+    );
     const hit = this.currentHit;
     this.renderer.outline.set(
       hit,
@@ -575,7 +584,7 @@ export class Game implements EntityContext, ContainerHost {
     const brightness = this.brightnessAtPlayer();
     this.renderer.particles.update(dt);
     this.renderer.hand.update(this.player.heldItem?.id ?? null, brightness);
-    this.renderer.render(this.timeTick, this.isPlayerUnderwater(), this.weather.rainLevel);
+    this.renderer.render(this.timeTick, this.isPlayerUnderwater(), this.weather.rainLevel, minLight);
   }
 
   private logicTick(): void {
@@ -1078,6 +1087,11 @@ export class Game implements EntityContext, ContainerHost {
   private spawnBreakParticles(x: number, y: number, z: number, def: BlockDef): void {
     const level = this.lightLevelAt(x, y + 1, z) / MAX_LIGHT;
     this.renderer.particles.spawnBlockBreak(x, y, z, def.textures.top, BREAK_PARTICLE_COUNT, 0.3 + 0.7 * level);
+  }
+
+  /** 夜视给世界与实体的最低亮度（没有夜视为 0，按环境光正常渲染）。 */
+  private nightVisionMinLight(): number {
+    return this.player.hasEffect(EffectId.NIGHT_VISION) ? NIGHT_VISION_MIN_LIGHT : 0;
   }
 
   private brightnessAtPlayer(): number {
