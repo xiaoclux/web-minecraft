@@ -80,3 +80,28 @@ describe('FlatGenerator', () => {
     expect(gen.findSpawn().y).toBe(FLAT_LAYERS.length);
   });
 });
+
+describe('地下岩浆', () => {
+  it('深处洞穴里有岩浆，且不会出现在地表附近', () => {
+    const world = generateArea(new TerrainGenerator('lava-seed'), -2, 2);
+    let deepLava = 0;
+    let shallowLava = 0;
+    for (const chunk of world.chunks.values()) {
+      for (let y = 0; y < 40; y++) {
+        for (let lz = 0; lz < 16; lz++) {
+          for (let lx = 0; lx < 16; lx++) {
+            if (chunk.getLocal(lx, y, lz) === BlockId.LAVA) {
+              if (y <= 10) {
+                deepLava++;
+              } else {
+                shallowLava++;
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(deepLava).toBeGreaterThan(0);
+    expect(shallowLava).toBe(0);
+  });
+});

@@ -38,6 +38,8 @@ const CAVE_SCALE = 1 / 22;
 const CAVE_Y_STRETCH = 1.6;
 const CAVE_THRESHOLD = 0.62;
 const CAVE_MIN_Y = 4;
+/** 洞穴里低于该高度的空腔会被岩浆填满（1.8.9 为 y≤10）。 */
+const LAVA_LEVEL = 10;
 const CAVE_MAX_DEPTH_BELOW_SURFACE = 4;
 const DIRT_DEPTH = 3;
 const SAND_DEPTH = 4;
@@ -247,7 +249,8 @@ export class TerrainGenerator implements ChunkGenerator {
       if (y === 0 || (y === 1 && bedrockJitter)) {
         id = BlockId.BEDROCK;
       } else if (y > CAVE_MIN_Y && y < height - CAVE_MAX_DEPTH_BELOW_SURFACE && this.isCave(x, y, z)) {
-        id = BlockId.AIR;
+        // 深处的洞穴积着岩浆（1.8.9 的"岩浆海"）
+        id = y <= LAVA_LEVEL ? BlockId.LAVA : BlockId.AIR;
       } else if (biome === Biome.DESERT && y > height - SAND_DEPTH) {
         id = y > height - 2 ? BlockId.SAND : BlockId.SANDSTONE;
       } else if (y === height) {
