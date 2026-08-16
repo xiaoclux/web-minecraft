@@ -4,6 +4,7 @@ import { CHUNK_SIZE, SEA_LEVEL, WORLD_SIZE_Y } from '../constants/world';
 import { createRng, hashCoords, hashString } from '../textures/PixelCanvas';
 import type { Chunk } from './Chunk';
 import type { ChunkGenerator, SpawnPoint } from './ChunkGenerator';
+import { DungeonGenerator } from './structures/DungeonGenerator';
 import { VillageGenerator, VillageStyle } from './structures/VillageGenerator';
 import {
   TREE_HEIGHT_VARIANCE,
@@ -30,6 +31,8 @@ const CAVE_SCALE = 1 / 22;
 const CAVE_Y_STRETCH = 1.6;
 const CAVE_THRESHOLD = 0.62;
 const CAVE_MIN_Y = 4;
+/** 地牢顶部离地表至少这么多格，免得挖穿地面。 */
+const DUNGEON_MIN_COVER = 6;
 /** 洞穴里低于该高度的空腔会被岩浆填满（1.8.9 为 y≤10）。 */
 const LAVA_LEVEL = 10;
 const CAVE_MAX_DEPTH_BELOW_SURFACE = 4;
@@ -123,6 +126,7 @@ export class TerrainGenerator implements ChunkGenerator {
   private readonly cave: (x: number, y: number, z: number) => number;
   /** 村庄生成器（关闭结构时为 null）。 */
   readonly villages: VillageGenerator | null;
+  private readonly dungeons: DungeonGenerator | null;
   private readonly columnCache = new Map<number, ColumnInfo>();
 
   constructor(
@@ -136,6 +140,9 @@ export class TerrainGenerator implements ChunkGenerator {
     this.temperature = createNoise2D(createRng(this.base + 4));
     this.humidity = createNoise2D(createRng(this.base + 5));
     this.cave = createNoise3D(createRng(this.base + 6));
+    this.dungeons = generateStructures
+      ? new DungeonGenerator(seed, (x, y, z) => y < this.heightAt(x, z) - DUNGEON_MIN_COVER)
+      : null;
     this.villages = generateStructures
       ? new VillageGenerator(
           seed,
@@ -247,6 +254,7 @@ export class TerrainGenerator implements ChunkGenerator {
     }
     this.generatePlants(chunk);
     this.generateSandPlants(chunk);
+    this.dungeons?.placeInChunk(chunk);
     this.villages?.placeInChunk(chunk);
   }
 

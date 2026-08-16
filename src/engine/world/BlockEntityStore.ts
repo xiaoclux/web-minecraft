@@ -10,6 +10,7 @@ import type { ItemStack } from '../items/ItemStack';
 export const BlockEntityType = {
   FURNACE: 'furnace',
   CHEST: 'chest',
+  SPAWNER: 'spawner',
 } as const;
 export type BlockEntityType = (typeof BlockEntityType)[keyof typeof BlockEntityType];
 
@@ -25,7 +26,16 @@ export interface ChestBlockEntity {
   items: (ItemStack | null)[];
 }
 
-export type BlockEntity = FurnaceBlockEntity | ChestBlockEntity;
+/** 刷怪笼。 */
+export interface SpawnerBlockEntity {
+  type: typeof BlockEntityType.SPAWNER;
+  /** 生成的生物类型。 */
+  mob: string;
+  /** 距离下次生成还有多少 tick。 */
+  delay: number;
+}
+
+export type BlockEntity = FurnaceBlockEntity | ChestBlockEntity | SpawnerBlockEntity;
 
 /** 存档中的一条方块实体记录。 */
 export interface BlockEntitySaveData {
@@ -75,6 +85,11 @@ export class BlockEntityStore {
   /** 遍历全部实体。 */
   values(): IterableIterator<BlockEntity> {
     return this.byKey.values();
+  }
+
+  /** 遍历 [坐标键, 实体]。 */
+  entries(): IterableIterator<[string, BlockEntity]> {
+    return this.byKey.entries();
   }
 
   serialize(): BlockEntitySaveData[] {

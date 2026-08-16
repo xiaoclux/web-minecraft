@@ -60,8 +60,16 @@ import {
   MOB_MATE_SEEK_RANGE,
   MOB_BREED_XP_MAX,
   MOB_BREED_XP_MIN,
+  SPAWNER_ACTIVATE_RANGE,
+  SPAWNER_MAX_COUNT,
+  SPAWNER_MAX_DELAY_TICKS,
+  SPAWNER_MIN_COUNT,
+  SPAWNER_MIN_DELAY_TICKS,
+  SPAWNER_NEARBY_LIMIT,
+  SPAWNER_SPAWN_RANGE,
 } from './constants/mobs';
 import { CHEST_SLOT_COUNT } from './constants/ui';
+import { rollLoot, type LootTable } from './world/structures/LootTables';
 import { WATER_SOURCE_META, WATER_TICK_INTERVAL } from './constants/fluids';
 import {
   DAY_LENGTH_TICKS,
@@ -134,6 +142,8 @@ const FACING_LABELS = ['南 (+Z)', '西 (-X)', '北 (-Z)', '东 (+X)'];
 const XP_PER_MOB_KILL_MULTIPLIER = 1;
 const SPAWN_PROTECTION_TICKS = 40;
 const REPLACEABLE_BLOCKS: ReadonlySet<number> = new Set<number>([BlockId.AIR, BlockId.WATER, BlockId.TALL_GRASS]);
+/** 战利品在箱子里的摆放间隔（散开一点，别都挤在开头）。 */
+const LOOT_SLOT_STRIDE = 4;
 /** 各种桶倒出来的流体方块（空桶为 AIR，表示"去装"）。 */
 const BUCKET_FLUIDS: Record<string, number> = {
   bucket: BlockId.AIR,
@@ -265,6 +275,7 @@ export class Game implements EntityContext, ContainerHost {
       this.createNewWorld();
     }
     this.fluids.onWashed((x, y, z, id, meta) => this.onBlockWashed(x, y, z, id, meta));
+    this.world.onChunkLoad((chunk) => this.applyPendingBlockEntities(chunk));
     this.world.onChunkUnload((chunk) => this.onChunkUnloaded(chunk));
     this.player.inventory.subscribe(() =>
       this.store.patch({ inventoryVersion: this.store.get().inventoryVersion + 1 }),
@@ -520,6 +531,7 @@ export class Game implements EntityContext, ContainerHost {
     this.spawner.tick(this, this.entities.values());
     this.tickTnt();
     this.tickFurnaces();
+    this.tickSpawners();
     this.tickGravityBlocks();
     this.randomTicks.tick(this.player.x, this.player.z);
     this.tickBreeding();
@@ -1799,16 +1811,96 @@ export class Game implements EntityContext, ContainerHost {
     }
   }
 
+  /**
+   * chunk 加入世界后补上世界生成留下的方块实体（战利品箱、刷怪笼）。
+   * 已经存在实体的位置不覆盖——否则 chunk 卸载再加载时箱子会重新装满。
+   */
+  private applyPendingBlockEntities(chunk: Chunk): void {
+    for (const pending of chunk.pendingBlockEntities) {
+      const { x, y, z } = pending;
+      if (this.blockEntities.get(x, y, z)) {
+        continue;
+      }
+      if (pending.loot) {
+        const items = new Array<ItemStack | null>(CHEST_SLOT_COUNT).fill(null);
+        const loot = rollLoot(pending.loot as LootTable, this.rng);
+        loot.forEach((stack, i) => {
+          items[Math.min(items.length - 1, i * LOOT_SLOT_STRIDE)] = stack;
+        });
+        this.blockEntities.set(x, y, z, { type: BlockEntityType.CHEST, items });
+      } else if (pending.spawns) {
+        this.blockEntities.set(x, y, z, {
+          type: BlockEntityType.SPAWNER,
+          mob: pending.spawns,
+          delay: SPAWNER_MIN_DELAY_TICKS,
+        });
+      }
+    }
+  }
+
+  /** 刷怪笼：玩家靠近时倒计时，到点在周围生成几只生物。 */
+  private tickSpawners(): void {
+    for (const [key, entity] of this.blockEntities.entries()) {
+      if (entity.type !== BlockEntityType.SPAWNER) {
+        continue;
+      }
+      const [x, y, z] = key.split(',').map(Number);
+      if (Math.hypot(this.player.x - x, this.player.y - y, this.player.z - z) > SPAWNER_ACTIVATE_RANGE) {
+        continue;
+      }
+      if (entity.delay > 0) {
+        entity.delay--;
+        continue;
+      }
+      entity.delay =
+        SPAWNER_MIN_DELAY_TICKS + Math.floor(this.rng() * (SPAWNER_MAX_DELAY_TICKS - SPAWNER_MIN_DELAY_TICKS));
+      this.spawnFromSpawner(entity.mob, x, y, z);
+    }
+  }
+
+  private spawnFromSpawner(mobType: string, x: number, y: number, z: number): void {
+    if (!isMobType(mobType) || !this.rules.mobsHostile) {
+      return;
+    }
+    let nearby = 0;
+    for (const e of this.entities.values()) {
+      if (e instanceof Mob && e.type === mobType && Math.hypot(e.x - x, e.y - y, e.z - z) <= SPAWNER_ACTIVATE_RANGE) {
+        nearby++;
+      }
+    }
+    if (nearby >= SPAWNER_NEARBY_LIMIT) {
+      return;
+    }
+    const count = SPAWNER_MIN_COUNT + Math.floor(this.rng() * (SPAWNER_MAX_COUNT - SPAWNER_MIN_COUNT + 1));
+    for (let i = 0; i < count; i++) {
+      const sx = x + Math.floor((this.rng() - 0.5) * 2 * SPAWNER_SPAWN_RANGE);
+      const sz = z + Math.floor((this.rng() - 0.5) * 2 * SPAWNER_SPAWN_RANGE);
+      const sy = y + Math.floor((this.rng() - 0.5) * 2);
+      if (
+        this.world.getBlock(sx, sy, sz) !== BlockId.AIR ||
+        this.world.getBlock(sx, sy + 1, sz) !== BlockId.AIR ||
+        !this.world.isSolidAt(sx, sy - 1, sz)
+      ) {
+        continue;
+      }
+      const mob = new Mob(mobType);
+      mob.setPosition(sx + 0.5, sy, sz + 0.5);
+      this.entities.set(mob.id, mob);
+    }
+  }
+
   /** 方块被破坏时清掉它的方块实体，并把里面的物品掉出来。 */
   private removeBlockEntity(x: number, y: number, z: number): void {
     const entity = this.blockEntities.remove(x, y, z);
     if (!entity) {
       return;
     }
-    const stacks =
+    const stacks: (ItemStack | null)[] =
       entity.type === BlockEntityType.FURNACE
         ? [entity.state.input, entity.state.fuel, entity.state.output]
-        : entity.items;
+        : entity.type === BlockEntityType.CHEST
+          ? entity.items
+          : [];
     for (const stack of stacks) {
       if (stack) {
         this.dropItem(x + 0.5, y + 0.5, z + 0.5, stack, 0.2);

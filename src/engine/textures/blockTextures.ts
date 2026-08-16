@@ -551,6 +551,34 @@ const sapling: Painter = saplingOf(hex('#3d7a24'));
 
 const lapisOre: Painter = ore(hex('#2b4fbb'), 9);
 
+/** 刷怪笼：黑色笼子里透出暗光的铁栅格。 */
+const mobSpawner: Painter = (c, rng) => {
+  c.noise(hex('#1b1b22'), 0.15, rng);
+  const bar = hex('#4a4a55');
+  for (let i = 0; i < 16; i += 4) {
+    c.rect(i, 0, 1, 16, bar);
+    c.rect(0, i, 16, 1, bar);
+  }
+};
+
+/** 蜘蛛网：白色细丝，其余透明。 */
+const cobweb: Painter = (c) => {
+  c.fill(TRANSPARENT);
+  const w = hex('#e8e8e8');
+  c.rect(0, 8, 16, 1, w);
+  c.rect(8, 0, 1, 16, w);
+  for (let i = 0; i < 16; i++) {
+    c.set(i, i, w);
+    c.set(15 - i, i, w);
+  }
+  for (const r of [3, 6]) {
+    c.rect(8 - r, 8 - r, r * 2, 1, w);
+    c.rect(8 - r, 8 + r, r * 2, 1, w);
+    c.rect(8 - r, 8 - r, 1, r * 2, w);
+    c.rect(8 + r, 8 - r, 1, r * 2 + 1, w);
+  }
+};
+
 /** 仙人掌：绿色底 + 竖刺；顶面是切面。 */
 const CACTUS_GREEN = hex('#5b8f3a');
 const cactusSide: Painter = (c, rng) => {
@@ -772,6 +800,8 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   ...stoneVariantTextures(),
   ...woolTextures(),
   lapis_ore: lapisOre,
+  mob_spawner: mobSpawner,
+  cobweb,
   cactus_side: cactusSide,
   cactus_top: cactusTop,
   sugar_cane: sugarCane,

@@ -57,6 +57,17 @@ export class ChunkSection {
   }
 }
 
+/** 世界生成留下的方块实体标记。 */
+export interface PendingBlockEntity {
+  x: number;
+  y: number;
+  z: number;
+  /** 战利品箱用：战利品表 id。 */
+  loot?: string;
+  /** 刷怪笼用：生物类型。 */
+  spawns?: string;
+}
+
 /** 一个 16×WORLD_SIZE_Y×16 的世界分块：按段存方块与光照，另有整块共用的高度图。 */
 export class Chunk {
   readonly key: number;
@@ -64,6 +75,11 @@ export class Chunk {
   readonly sections: (ChunkSection | null)[] = new Array(SECTION_COUNT).fill(null);
   /** 每列最高不透光方块之上的 y（0~WORLD_SIZE_Y，需要 16 位）。 */
   readonly heightMap = new Uint16Array(CHUNK_AREA);
+  /**
+   * 世界生成时留下的方块实体标记（战利品箱、刷怪笼）：
+   * chunk 加入世界时由 Game 补上对应的方块实体，已经有实体的位置不会被覆盖。
+   */
+  readonly pendingBlockEntities: PendingBlockEntity[] = [];
   /** 玩家 / 实体改动过 → 必须存档、不可卸载。 */
   isModified = false;
   /** 光照是否已计算。 */

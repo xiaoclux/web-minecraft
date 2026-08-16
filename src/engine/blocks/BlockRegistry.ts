@@ -173,6 +173,8 @@ export const BlockId = {
   BOOKSHELF: 47,
   MOSSY_COBBLESTONE: 48,
   OBSIDIAN: 49,
+  MOB_SPAWNER: 52,
+  COBWEB: 30,
   TORCH: 50,
   FIRE: 51,
   DIAMOND_ORE: 56,
@@ -493,6 +495,20 @@ export const BLOCK_DEFS: BlockDef[] = [
   cube(BlockId.OBSIDIAN, 'obsidian', '黑曜石', same('obsidian'), 50, ToolType.PICKAXE, {
     minTier: ToolTier.DIAMOND,
     isBlastResistant: true,
+  }),
+  cube(BlockId.MOB_SPAWNER, 'mob_spawner', '刷怪笼', same('mob_spawner'), 5, ToolType.PICKAXE, {
+    render: RenderType.CUTOUT,
+    opaque: false,
+    minTier: ToolTier.WOOD,
+    drops: [],
+    noItem: true,
+    xp: [15, 43],
+  }),
+  cross(BlockId.COBWEB, 'cobweb', '蜘蛛网', 'cobweb', {
+    needsSupport: false,
+    hardness: 4,
+    tool: ToolType.SWORD,
+    drops: [{ item: 'string', min: 1, max: 1 }],
   }),
   {
     id: BlockId.FIRE,

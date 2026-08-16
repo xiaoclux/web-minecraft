@@ -54,3 +54,14 @@ export const MOB_MATE_SEEK_RANGE = 12;
 /** 繁殖掉落的经验区间。 */
 export const MOB_BREED_XP_MIN = 1;
 export const MOB_BREED_XP_MAX = 7;
+
+/** 刷怪笼：玩家在这个距离内才工作，每轮生成 1~4 只，间隔 10~40 秒。 */
+export const SPAWNER_ACTIVATE_RANGE = 16;
+export const SPAWNER_MIN_DELAY_TICKS = 200;
+export const SPAWNER_MAX_DELAY_TICKS = 800;
+export const SPAWNER_MIN_COUNT = 1;
+export const SPAWNER_MAX_COUNT = 4;
+/** 生成点相对刷怪笼的最大偏移。 */
+export const SPAWNER_SPAWN_RANGE = 4;
+/** 附近同类生物超过这个数就不再生成。 */
+export const SPAWNER_NEARBY_LIMIT = 6;
