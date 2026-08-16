@@ -578,7 +578,10 @@ export const BLOCK_DEFS: BlockDef[] = [
   cube(BlockId.SNOW, 'snow', '雪块', same('snow'), 0.2, ToolType.SHOVEL, {
     drops: [{ item: 'snowball', min: 4, max: 4 }],
   }),
-  cube(BlockId.GLOWSTONE, 'glowstone', '萤石', same('glowstone'), 0.3, null, { light: 15 }),
+  cube(BlockId.GLOWSTONE, 'glowstone', '萤石', same('glowstone'), 0.3, null, {
+    light: 15,
+    drops: [{ item: 'glowstone_dust', min: 2, max: 4 }],
+  }),
   cube(BlockId.STONE_BRICKS, 'stone_bricks', '石砖', same('stone_bricks'), 1.5, ToolType.PICKAXE, {
     minTier: ToolTier.WOOD,
   }),

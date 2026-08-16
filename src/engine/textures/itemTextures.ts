@@ -1,4 +1,5 @@
 import { DYE_COLORS } from './blockTextures';
+import { POTION_DEFS, potionItemId } from '../items/potions';
 import { PixelCanvas, hex, shade, type Rgba } from './PixelCanvas';
 
 type Painter = (c: PixelCanvas) => void;
@@ -608,7 +609,72 @@ export const ITEM_ICON_PAINTERS: Record<string, Painter> = {
   ...HAND_DRAWN_ICONS,
   ...armorPainters(),
   ...dyePainters(),
+  ...potionPainters(),
+  ...brewingIngredientPainters(),
 };
+
+/** 药水瓶：玻璃轮廓 + 软木塞，瓶身按药水颜色填充；喷溅型瓶口有一圈"扔出去"的白边。 */
+const BOTTLE_GLASS = hex('#d6e6ee');
+const BOTTLE_CORK = hex('#8f6b3a');
+const BOTTLE_ROWS = [
+  '.....CCC........',
+  '.....CCC........',
+  '.....GGG........',
+  '.....GLG........',
+  '....GLLLG.......',
+  '...GLLLLLG......',
+  '..GLLLLLLLG.....',
+  '..GLLLLLLLG.....',
+  '..GLLLLLLLG.....',
+  '..GLLLLLLLG.....',
+  '...GLLLLLG......',
+  '....GGGGG.......',
+];
+const SPLASH_RING_ROWS = ['....W...W.......', '.....CCC........', '....W...W.......'];
+function potionPainters(): Record<string, Painter> {
+  const out: Record<string, Painter> = {};
+  for (const potion of Object.values(POTION_DEFS)) {
+    const liquid = hex(potion.color);
+    const palette = { C: BOTTLE_CORK, G: BOTTLE_GLASS, L: liquid, W: hex('#ffffff') };
+    out[potionItemId(potion.id, false)] = (c) => c.draw(BOTTLE_ROWS, palette, 2, 2);
+    out[potionItemId(potion.id, true)] = (c) => {
+      c.draw(BOTTLE_ROWS, palette, 2, 2);
+      c.draw(SPLASH_RING_ROWS, palette, 2, 1);
+    };
+  }
+  return out;
+}
+
+/** 酿造原料：小图形按物品各配一种颜色 / 形状。 */
+const BLOB_ROWS = ['..XXXX..', '.XXXXXX.', 'XXXXXXXX', 'XXXXXXXX', 'XXXXXXXX', '.XXXXXX.', '..XXXX..'];
+const NUGGET_ROWS = ['.XXX.', 'XXXXX', 'XXXXX', '.XXX.'];
+const ROD_ROWS = ['..X', '..X', '.X.', '.X.', 'X..', 'X..'];
+const WART_ROWS = ['.XX.', 'XXXX', 'XXXX', '.XX.'];
+const EYE_ROWS = ['.XXXX.', 'XXPPXX', 'XPPPPX', 'XXPPXX', '.XXXX.'];
+function brewingIngredientPainters(): Record<string, Painter> {
+  const blob = (color: string): Painter => (c) => c.draw(BLOB_ROWS, { X: hex(color) }, 4, 5);
+  return {
+    gold_nugget: (c) => c.draw(NUGGET_ROWS, { X: hex('#f0c040') }, 6, 6),
+    glass_bottle: (c) => c.draw(BOTTLE_ROWS, { C: BOTTLE_CORK, G: BOTTLE_GLASS, L: [0, 0, 0, 0] }, 2, 2),
+    nether_wart: (c) => {
+      c.draw(WART_ROWS, { X: hex('#8c1c1c') }, 3, 5);
+      c.draw(WART_ROWS, { X: hex('#a52a2a') }, 8, 3);
+      c.draw(WART_ROWS, { X: hex('#7a1414') }, 6, 8);
+    },
+    spider_eye: (c) => c.draw(EYE_ROWS, { X: hex('#7c1e1e'), P: hex('#2a0a0a') }, 5, 6),
+    fermented_spider_eye: (c) => c.draw(EYE_ROWS, { X: hex('#a06060'), P: hex('#5b3a3a') }, 5, 6),
+    glistering_melon: blob('#e0b040'),
+    ghast_tear: (c) => c.draw(['..X..', '.XXX.', 'XXXXX', 'XXXXX', '.XXX.'], { X: hex('#e6f2f2') }, 5, 5),
+    blaze_rod: (c) => c.draw(ROD_ROWS, { X: hex('#f0b030') }, 6, 5),
+    blaze_powder: blob('#f0a020'),
+    magma_cream: blob('#d07030'),
+    rabbit_foot: (c) => c.draw(['XX.', 'XX.', 'XXX', '.XX'], { X: hex('#c8b090') }, 6, 6),
+    redstone: (c) => c.draw(DYE_ROWS, { X: hex('#c81e1e') }, 5, 5),
+    glowstone_dust: (c) => c.draw(DYE_ROWS, { X: hex('#f2d17a') }, 5, 5),
+    golden_carrot: (c) =>
+      c.draw(['....G', '...GG', '..XX.', '.XX..', 'XX...'], { X: hex('#f0b030'), G: hex('#4caf50') }, 5, 5),
+  };
+}
 
 /** 染料 / 骨粉：一小撮彩色粉末。 */
 const DYE_ROWS = ['..XX..', '.XXXX.', 'XXXXXX', 'XXXXXX', '.XXXX.', '..XX..'];

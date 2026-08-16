@@ -1,5 +1,6 @@
 import { BLOCK_DEFS, BlockId, COLOR_VARIANTS, ToolTier, ToolType, type BlockDef } from '../blocks/BlockRegistry';
 import { FLINT_AND_STEEL_DURABILITY, MAX_STACK } from '../constants/game';
+import { POTION_DEFS, potionItemId } from './potions';
 
 /** 物品种类。 */
 export const ItemKind = {
@@ -71,6 +72,10 @@ export interface ItemDef {
   smeltsInto?: string;
   /** 非工具类物品的耐久（剪刀等）；工具的耐久在 tool.durability。 */
   durability?: number;
+  /** 药水种类 id（仅药水物品）。 */
+  potion?: string;
+  /** 喷溅药水：扔出去而不是喝。 */
+  splash?: boolean;
 }
 
 /** 工具材质：挖掘等级、速度、耐久与攻击加成都取自 1.8.9（金的挖掘等级同木、但快而脆）。 */
@@ -104,6 +109,8 @@ const FURNACE_ITEM_BURN_TICKS = 1600;
 const LOG_BURN_TICKS = 300;
 const PLANKS_BURN_TICKS = 300;
 const STICK_BURN_TICKS = 100;
+/** 烈焰棒在熔炉里能烧 2400 tick（1.8.9 同）。 */
+const BLAZE_ROD_BURN_TICKS = 2400;
 
 const tool = (type: ToolType, mat: ToolMaterialSpec): ItemDef => ({
   id: `${mat.id}_${type}`,
@@ -220,6 +227,30 @@ function blockItems(def: BlockDef): ItemDef[] {
 
 const TOOL_TYPES: ToolType[] = [ToolType.SWORD, ToolType.PICKAXE, ToolType.AXE, ToolType.SHOVEL, ToolType.HOE];
 
+/** 药水物品：每种药水一个普通版 + 一个喷溅版，只能单个堆叠（1.8.9 同）。 */
+const POTION_LABEL_LONG = '（延长）';
+const POTION_LABEL_STRONG = ' II';
+const SPLASH_LABEL_PREFIX = '喷溅型';
+function potionItems(): ItemDef[] {
+  const out: ItemDef[] = [];
+  for (const potion of Object.values(POTION_DEFS)) {
+    const tier = potion.amplifier > 0 ? POTION_LABEL_STRONG : potion.id.endsWith('_long') ? POTION_LABEL_LONG : '';
+    for (const splash of [false, true]) {
+      const id = potionItemId(potion.id, splash);
+      out.push({
+        id,
+        label: `${splash ? SPLASH_LABEL_PREFIX : ''}${potion.label}${tier}`,
+        kind: ItemKind.MATERIAL,
+        maxStack: 1,
+        icon: id,
+        potion: potion.id,
+        splash: splash || undefined,
+      });
+    }
+  }
+  return out;
+}
+
 /** 除骨粉与青金石之外的 14 种染料物品。 */
 const DYE_ITEMS: ItemDef[] = COLOR_VARIANTS.filter(
   (c) => c.id !== 'white' && c.id !== 'blue' && c.id !== 'black',
@@ -260,6 +291,20 @@ export const ITEM_DEFS: ItemDef[] = [
   material('flint', '燧石'),
   material('lapis_lazuli', '青金石'),
   material('sugar', '糖'),
+  material('gold_nugget', '金粒'),
+  material('glass_bottle', '玻璃瓶'),
+  material('nether_wart', '下界疣'),
+  material('spider_eye', '蜘蛛眼'),
+  material('fermented_spider_eye', '发酵蛛眼'),
+  material('glistering_melon', '闪烁的西瓜'),
+  material('ghast_tear', '恶魂之泪'),
+  material('blaze_rod', '烈焰棒', { burnTicks: BLAZE_ROD_BURN_TICKS }),
+  material('blaze_powder', '烈焰粉'),
+  material('magma_cream', '岩浆膏'),
+  material('rabbit_foot', '兔子脚'),
+  material('redstone', '红石'),
+  material('glowstone_dust', '萤石粉'),
+  ...potionItems(),
   ...DYE_ITEMS,
   material('flint_and_steel', '打火石', { maxStack: 1, durability: FLINT_AND_STEEL_DURABILITY }),
   material('bucket', '桶', { maxStack: 1 }),
@@ -280,6 +325,7 @@ export const ITEM_DEFS: ItemDef[] = [
   food('potato', '土豆', 1, 0.6, { smeltsInto: 'baked_potato' }),
   food('baked_potato', '烤土豆', 5, 6),
   food('golden_apple', '金苹果', 4, 9.6),
+  food('golden_carrot', '金胡萝卜', 6, 14.4),
   food('melon_slice', '西瓜片', 2, 1.2),
   food('rotten_flesh', '腐肉', 4, 0.8),
 ];

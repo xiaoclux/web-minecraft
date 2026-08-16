@@ -101,7 +101,10 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     speed: 3,
     hostile: true,
     attackDamage: 2,
-    drops: [{ item: 'string', min: 0, max: 2 }],
+    drops: [
+      { item: 'string', min: 0, max: 2 },
+      { item: 'spider_eye', min: 1, max: 1, chance: 1 / 3 },
+    ],
     xp: 5,
     burnsInSunlight: false,
     neutralInDaylight: true,
