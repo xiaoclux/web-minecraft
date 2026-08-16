@@ -69,6 +69,9 @@ import {
   SPAWNER_MIN_DELAY_TICKS,
   SPAWNER_NEARBY_LIMIT,
   SPAWNER_SPAWN_RANGE,
+  SPLASH_POTION_MIN_FACTOR,
+  SPLASH_POTION_RADIUS,
+  SPLASH_POTION_SPEED,
 } from './constants/mobs';
 import { CHEST_SLOT_COUNT } from './constants/ui';
 import { rollLoot } from './world/structures/LootTables';
@@ -86,6 +89,7 @@ import { RandomTickSystem } from './systems/RandomTickSystem';
 import { WeatherSystem } from './systems/WeatherSystem';
 import { biomeHasSnowfall, biomeLabel } from './world/biomes';
 import { ArrowEntity } from './entities/ArrowEntity';
+import { ThrownPotionEntity } from './entities/ThrownPotionEntity';
 import { Entity, allocateEntityId, resetEntityIds, type EntitySaveData } from './entities/Entity';
 import type { EntityContext } from './entities/EntityContext';
 import { ItemDropEntity } from './entities/ItemDropEntity';
@@ -178,6 +182,9 @@ const BREAK_PARTICLE_COUNT = 12;
 /** 爆炸粒子数量与取样贴图（用石头的灰色当烟）。 */
 const EXPLOSION_PARTICLE_COUNT = 40;
 const EXPLOSION_PARTICLE_TEXTURE = 'stone';
+/** 喷溅药水碎掉时的玻璃碎屑。 */
+const SPLASH_PARTICLE_TEXTURE = 'glass';
+const SPLASH_PARTICLE_COUNT = 10;
 
 /** 游戏主循环与全部玩法逻辑的编排者。 */
 export class Game implements EntityContext, ContainerHost {
@@ -551,6 +558,7 @@ export class Game implements EntityContext, ContainerHost {
         this.entities.delete(id);
       }
     }
+    this.resolveSplashImpacts();
     this.mergeItemDrops();
     this.spawner.tick(this, this.entities.values());
     this.tickTnt();
@@ -1212,8 +1220,12 @@ export class Game implements EntityContext, ContainerHost {
       }
       return;
     }
-    if (def.potion && !def.splash) {
-      this.drinkPotion(def.potion);
+    if (def.potion) {
+      if (def.splash) {
+        this.throwPotion(held);
+      } else {
+        this.drinkPotion(def.potion);
+      }
       return;
     }
     if (def.id === 'glass_bottle' && this.tryFillBottle()) {
@@ -1263,6 +1275,50 @@ export class Game implements EntityContext, ContainerHost {
     this.sound.play('eat');
     this.useCooldown = EAT_COOLDOWN_TICKS;
     this.renderer.hand.swing();
+  }
+
+  /** 扔出喷溅药水：从眼睛位置沿视线飞出。 */
+  private throwPotion(held: ItemStack): void {
+    const p = this.player;
+    const dir = this.lookDirection();
+    const potion = new ThrownPotionEntity({ id: held.id, count: 1 }, p.id);
+    potion.setPosition(p.x, p.eyeY, p.z);
+    potion.vx = dir.x * SPLASH_POTION_SPEED;
+    potion.vy = dir.y * SPLASH_POTION_SPEED;
+    potion.vz = dir.z * SPLASH_POTION_SPEED;
+    this.spawnEntity(potion);
+    if (!this.rules.infiniteItems) {
+      p.inventory.consume(p.selectedSlot, 1);
+    }
+    this.sound.play('bow');
+    this.renderer.hand.swing();
+  }
+
+  /** 已经碎掉的喷溅药水：给范围内的活体上效果，离得越远效果越短。 */
+  private resolveSplashImpacts(): void {
+    for (const e of this.entities.values()) {
+      if (!(e instanceof ThrownPotionEntity) || !e.impact || e.isDead) {
+        continue;
+      }
+      e.isDead = true;
+      const { x, y, z } = e.impact;
+      const potion = POTION_DEFS[getItem(e.stack.id)?.potion ?? ''];
+      this.renderer.particles.spawnBlockBreak(x - 0.5, y - 0.5, z - 0.5, SPLASH_PARTICLE_TEXTURE, SPLASH_PARTICLE_COUNT, 1);
+      this.sound.play('break', Math.hypot(x - this.player.x, y - this.player.y, z - this.player.z));
+      if (!potion) {
+        continue;
+      }
+      for (const target of this.livingEntitiesNear(x, y, z, SPLASH_POTION_RADIUS)) {
+        const factor = 1 - Math.sqrt(target.distanceSqToPoint(x, y, z)) / SPLASH_POTION_RADIUS;
+        if (potion.effect === undefined) {
+          // 水瓶：只灭火
+          target.fireTicks = 0;
+          continue;
+        }
+        const ticks = Math.floor(potion.ticks * Math.max(SPLASH_POTION_MIN_FACTOR, factor));
+        target.addEffect(potion.effect, ticks, potion.amplifier, this);
+      }
+    }
   }
 
   /** 玻璃瓶对着水右键装成水瓶（不消耗水源，1.8.9 同）。 */
@@ -2219,6 +2275,20 @@ export class Game implements EntityContext, ContainerHost {
 
   spawnEntity(entity: Entity): void {
     this.entities.set(entity.id, entity);
+  }
+
+  livingEntitiesNear(x: number, y: number, z: number, radius: number): LivingEntity[] {
+    const radiusSq = radius * radius;
+    const out: LivingEntity[] = [];
+    if (this.player.distanceSqToPoint(x, y, z) <= radiusSq) {
+      out.push(this.player);
+    }
+    for (const e of this.entities.values()) {
+      if (e instanceof LivingEntity && !e.isDead && e.distanceSqToPoint(x, y, z) <= radiusSq) {
+        out.push(e);
+      }
+    }
+    return out;
   }
 
   dropItem(x: number, y: number, z: number, stack: ItemStack, spread = 0.2): void {

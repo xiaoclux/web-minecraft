@@ -5,6 +5,8 @@ import { ArrowEntity } from '../entities/ArrowEntity';
 import { XpOrbEntity } from '../entities/XpOrbEntity';
 import type { Entity } from '../entities/Entity';
 import { ItemDropEntity } from '../entities/ItemDropEntity';
+import { ThrownPotionEntity } from '../entities/ThrownPotionEntity';
+import type { ItemStack } from '../items/ItemStack';
 import { Mob } from '../entities/Mob';
 import { getItem, ItemKind } from '../items/ItemRegistry';
 import { PixelCanvas, createRng, hashString, hex } from '../textures/PixelCanvas';
@@ -77,8 +79,9 @@ export class EntityRenderer {
     if (entity instanceof Mob) {
       return this.createMob(entity);
     }
-    if (entity instanceof ItemDropEntity) {
-      return this.createItem(entity);
+    if (entity instanceof ItemDropEntity || entity instanceof ThrownPotionEntity) {
+      // 飞行中的药水就用掉落物的旋转图标表现，像瓶子在空中翻滚
+      return this.createItem(entity.stack);
     }
     if (entity instanceof ArrowEntity) {
       return this.createArrow();
@@ -175,8 +178,8 @@ export class EntityRenderer {
     return { group, parts, materials, kind: 'mob' };
   }
 
-  private createItem(drop: ItemDropEntity): RenderedEntity {
-    const def = getItem(drop.stack.id);
+  private createItem(stack: ItemStack): RenderedEntity {
+    const def = getItem(stack.id);
     const group = new THREE.Group();
     const materials: THREE.MeshLambertMaterial[] = [];
     if (
@@ -209,7 +212,7 @@ export class EntityRenderer {
       const key =
         def?.kind === ItemKind.BLOCK && def.blockId !== undefined
           ? getBlock(def.blockId).textures.north
-          : (def?.icon ?? drop.stack.id);
+          : (def?.icon ?? stack.id);
       const isBlockTexture = def?.kind === ItemKind.BLOCK;
       const tex = isBlockTexture ? this.blockTexture(key) : this.itemTexture(key);
       const m = new THREE.MeshLambertMaterial({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide });

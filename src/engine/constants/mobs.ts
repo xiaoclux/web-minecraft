@@ -24,6 +24,13 @@ export const ARROW_SPEED = 24;
 export const ARROW_GRAVITY = 20;
 export const ARROW_DAMAGE = 3;
 export const ARROW_LIFETIME_TICKS = 200;
+/** 喷溅药水：出手速度（格/秒）、重力、最长飞行时间、炸开的作用半径。 */
+export const SPLASH_POTION_SPEED = 12;
+export const SPLASH_POTION_GRAVITY = 20;
+export const SPLASH_POTION_LIFETIME_TICKS = 200;
+export const SPLASH_POTION_RADIUS = 4;
+/** 离炸点越远效果越弱，但持续时间至少保留这个比例。 */
+export const SPLASH_POTION_MIN_FACTOR = 0.2;
 export const MOB_BURN_LIGHT_MIN = 12;
 export const MOB_BURN_DAMAGE_INTERVAL_TICKS = 20;
 export const MOB_BURN_DAMAGE = 1;
