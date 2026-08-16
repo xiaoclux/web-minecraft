@@ -10,6 +10,7 @@ import type { WorldType } from '../constants/world';
 import type { EntitySaveData } from '../entities/Entity';
 import type { FurnaceState } from '../items/Furnace';
 import type { PlayerSaveData } from '../player/Player';
+import type { WeatherSaveData } from '../systems/WeatherSystem';
 import type { BlockEntitySaveData } from '../world/BlockEntityStore';
 import { migrateLegacySave, type LegacyWorldSave } from './migrate';
 
@@ -53,6 +54,7 @@ export interface WorldSave {
   /** 旧存档字段：只有熔炉状态，读档时迁移到 blockEntities。 */
   furnaces?: Record<string, FurnaceState>;
   blockEntities?: BlockEntitySaveData[];
+  weather?: WeatherSaveData;
 }
 
 /** 基于 IndexedDB 的存档管理。 */

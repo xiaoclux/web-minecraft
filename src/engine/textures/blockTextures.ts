@@ -350,7 +350,7 @@ const bedHeadEnd: Painter = (c, rng) => {
 };
 
 /** 不挂在任何方块上、但需要进图集的贴图（粒子等）。 */
-export const EXTRA_TEXTURE_KEYS = ['particle_heart'] as const;
+export const EXTRA_TEXTURE_KEYS = ['particle_heart', 'particle_rain', 'particle_snow'] as const;
 
 /** 火：底部亮、顶部窄的橙黄火苗，其余透明。 */
 const fire: Painter = (c, rng) => {
@@ -378,6 +378,14 @@ const lava: Painter = (c, rng) => {
 /** 爱心粒子：粒子系统只取 2×2 像素，所以纯色即可。 */
 const particleHeart: Painter = (c, rng) => {
   c.noise(hex('#f04a6a'), 0.1, rng);
+};
+
+/** 雨滴与雪花粒子（同样只取 2×2 像素，纯色）。 */
+const particleRain: Painter = (c, rng) => {
+  c.noise(hex('#7ba7d8'), 0.12, rng);
+};
+const particleSnow: Painter = (c, rng) => {
+  c.noise(hex('#f2f8ff'), 0.06, rng);
 };
 
 /** 梯子：两根立柱 + 若干横档，其余透明。 */
@@ -816,6 +824,8 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   bed_foot_end: bedFootEnd,
   ladder,
   particle_heart: particleHeart,
+  particle_rain: particleRain,
+  particle_snow: particleSnow,
   lava,
   fire,
   door_lower: doorLower,

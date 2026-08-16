@@ -15,6 +15,10 @@ const CAMERA_FAR = 400;
 /** 像素比上限：Retina 屏按 1 渲染即可（贴图本就是像素风），否则 4 倍片元开销。 */
 const MAX_PIXEL_RATIO = 1;
 const AMBIENT_MIN = 0.35;
+/** 下雨时天光压暗的比例、雾色混入的灰色与比例。 */
+const RAIN_DARKEN = 0.35;
+const RAIN_FOG_COLOR = new THREE.Color(0x5a6472);
+const RAIN_FOG_MIX = 0.7;
 const SUN_INTENSITY = 1.2;
 
 /** three.js 场景装配。 */
@@ -80,11 +84,14 @@ export class Renderer {
   }
 
   /** 渲染一帧。 */
-  render(timeTick: number, isUnderwater: boolean): void {
+  render(timeTick: number, isUnderwater: boolean, rainLevel = 0): void {
     this.sky.update(timeTick, this.camera.position);
-    const skyLevel = this.sky.skyLevel;
+    // 下雨时天光整体压暗，云雾也更灰
+    const skyLevel = this.sky.skyLevel * (1 - RAIN_DARKEN * rainLevel);
     this.chunks.sharedUniforms.uSkyLevel.value = skyLevel;
-    const fogColor = isUnderwater ? new THREE.Color(0x1a3a8a) : this.sky.color;
+    const fogColor = isUnderwater
+      ? new THREE.Color(0x1a3a8a)
+      : this.sky.color.clone().lerp(RAIN_FOG_COLOR, rainLevel * RAIN_FOG_MIX);
     this.chunks.sharedUniforms.uFogColor.value.copy(fogColor);
     if (isUnderwater) {
       this.chunks.sharedUniforms.uFogNear.value = 2;

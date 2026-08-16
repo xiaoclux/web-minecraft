@@ -81,6 +81,7 @@ import {
 } from './constants/world';
 import { BlockEntityStore, BlockEntityType } from './world/BlockEntityStore';
 import { RandomTickSystem } from './systems/RandomTickSystem';
+import { WeatherSystem } from './systems/WeatherSystem';
 import { biomeLabel } from './world/biomes';
 import { ArrowEntity } from './entities/ArrowEntity';
 import { Entity, allocateEntityId, resetEntityIds, type EntitySaveData } from './entities/Entity';
@@ -142,6 +143,12 @@ const FACING_LABELS = ['南 (+Z)', '西 (-X)', '北 (-Z)', '东 (+X)'];
 const XP_PER_MOB_KILL_MULTIPLIER = 1;
 const SPAWN_PROTECTION_TICKS = 40;
 const REPLACEABLE_BLOCKS: ReadonlySet<number> = new Set<number>([BlockId.AIR, BlockId.WATER, BlockId.TALL_GRASS]);
+/** 下雨：每隔多少 tick 浇一次火、浇火的半径、每 tick 撒几滴雨、撒雨的半径与高度。 */
+const RAIN_EXTINGUISH_INTERVAL = 20;
+const RAIN_EXTINGUISH_RADIUS = 12;
+const RAIN_PARTICLES_PER_TICK = 8;
+const RAIN_PARTICLE_RADIUS = 10;
+const RAIN_PARTICLE_HEIGHT = 6;
 /** 战利品在箱子里的摆放间隔（散开一点，别都挤在开头）。 */
 const LOOT_SLOT_STRIDE = 4;
 /** 各种桶倒出来的流体方块（空桶为 AIR，表示"去装"）。 */
@@ -183,6 +190,8 @@ export class Game implements EntityContext, ContainerHost {
   private readonly generator: ChunkGenerator;
   private readonly chunkManager: ChunkManager;
   private readonly randomTicks = new RandomTickSystem(this);
+  /** 天气（构造函数里在 rng 就绪后创建）。 */
+  readonly weather: WeatherSystem;
   private readonly fluids: FluidSimulator;
   private readonly light: LightEngine;
   private readonly atlas: TextureAtlas;
@@ -231,6 +240,7 @@ export class Game implements EntityContext, ContainerHost {
     this.difficulty = this.rules.forcedDifficulty ?? options.meta.difficulty;
     this.rng = createRng(hashString(`${options.meta.seed}:${Date.now()}`));
     this.generator = createChunkGenerator(options.meta);
+    this.weather = new WeatherSystem(() => this.rng());
     this.light = new LightEngine(this.world);
     this.chunkManager = new ChunkManager(this.world, this.generator, this.light);
     this.fluids = new FluidSimulator(this.world);
@@ -359,6 +369,7 @@ export class Game implements EntityContext, ContainerHost {
         this.blockEntities.set(x, y, z, { type: BlockEntityType.FURNACE, state });
       }
     }
+    this.weather.load(save.weather);
     if (typeof save.timeTick === 'number') {
       this.timeTick = save.timeTick;
     }
@@ -403,6 +414,7 @@ export class Game implements EntityContext, ContainerHost {
       entities,
       nextEntityId: allocateEntityId(),
       blockEntities: this.blockEntities.serialize(),
+      weather: this.weather.serialize(),
     };
   }
 
@@ -491,7 +503,7 @@ export class Game implements EntityContext, ContainerHost {
     const brightness = this.brightnessAtPlayer();
     this.renderer.particles.update(dt);
     this.renderer.hand.update(this.player.heldItem?.id ?? null, brightness);
-    this.renderer.render(this.timeTick, this.isPlayerUnderwater());
+    this.renderer.render(this.timeTick, this.isPlayerUnderwater(), this.weather.rainLevel);
   }
 
   private logicTick(): void {
@@ -534,6 +546,8 @@ export class Game implements EntityContext, ContainerHost {
     this.tickSpawners();
     this.tickGravityBlocks();
     this.randomTicks.tick(this.player.x, this.player.z);
+    this.weather.tick();
+    this.tickWeatherEffects();
     this.tickBreeding();
     if (this.tick % WATER_TICK_INTERVAL === 0) {
       this.fluids.tick();
@@ -1836,6 +1850,62 @@ export class Game implements EntityContext, ContainerHost {
         });
       }
     }
+  }
+
+  /** 下雨时浇灭露天的火，并在玩家周围下雨滴 / 雪花粒子。 */
+  private tickWeatherEffects(): void {
+    if (!this.weather.isRaining) {
+      return;
+    }
+    if (this.tick % RAIN_EXTINGUISH_INTERVAL === 0) {
+      this.extinguishFiresNearPlayer();
+    }
+    this.spawnRainParticles();
+  }
+
+  /** 浇灭玩家附近露天的火。 */
+  private extinguishFiresNearPlayer(): void {
+    const px = Math.floor(this.player.x);
+    const pz = Math.floor(this.player.z);
+    for (let dz = -RAIN_EXTINGUISH_RADIUS; dz <= RAIN_EXTINGUISH_RADIUS; dz++) {
+      for (let dx = -RAIN_EXTINGUISH_RADIUS; dx <= RAIN_EXTINGUISH_RADIUS; dx++) {
+        const x = px + dx;
+        const z = pz + dz;
+        const y = this.world.getHeight(x, z);
+        if (this.world.getBlock(x, y, z) === BlockId.FIRE) {
+          this.world.setBlock(x, y, z, BlockId.AIR);
+        }
+      }
+    }
+  }
+
+  /** 在玩家头顶一圈随机撒雨滴；冷群系下的是雪。 */
+  private spawnRainParticles(): void {
+    const p = this.player;
+    const texture = this.isColdAtPlayer() ? 'particle_snow' : 'particle_rain';
+    const count = Math.round(RAIN_PARTICLES_PER_TICK * this.weather.rainLevel);
+    for (let i = 0; i < count; i++) {
+      const x = p.x + (this.rng() - 0.5) * 2 * RAIN_PARTICLE_RADIUS;
+      const z = p.z + (this.rng() - 0.5) * 2 * RAIN_PARTICLE_RADIUS;
+      const surface = this.world.getHeight(Math.floor(x), Math.floor(z));
+      // 只在露天的位置下雨：玩家头顶被挡住时不撒
+      if (surface > p.eyeY + RAIN_PARTICLE_HEIGHT) {
+        continue;
+      }
+      this.renderer.particles.spawn(x, p.y + RAIN_PARTICLE_HEIGHT, z, texture, {
+        speed: 0,
+        minLife: 0.5,
+        maxLife: 0.9,
+        size: 0.08,
+        brightness: 1,
+      });
+    }
+  }
+
+  /** 玩家所在群系是否寒冷（下雪而不是下雨）。 */
+  private isColdAtPlayer(): boolean {
+    const biome = this.generator.biomeAt(Math.floor(this.player.x), Math.floor(this.player.z));
+    return biome === 'snowy' || biome === 'taiga';
   }
 
   /** 刷怪笼：玩家靠近时倒计时，到点在周围生成几只生物。 */
