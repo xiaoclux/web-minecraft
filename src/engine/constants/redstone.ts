@@ -24,5 +24,15 @@ export const PISTON_MAX_PUSH = 12;
 export const PISTON_FACING_MASK = 3;
 /** 活塞伸缩的延迟（tick）。 */
 export const PISTON_DELAY_TICKS = 2;
+/** 漏斗多久搬一次物品（1.8.9 是 8 tick 搬一个）。 */
+export const HOPPER_TRANSFER_INTERVAL_TICKS = 8;
+/** 漏斗的槽位数。 */
+export const HOPPER_SLOT_COUNT = 5;
+/** 漏斗吸取掉落物的水平半径。 */
+export const HOPPER_PICKUP_RANGE = 0.8;
+/** 发射器 / 投掷器的槽位数。 */
+export const DISPENSER_SLOT_COUNT = 9;
+/** 发射器扔东西的速度（格/秒）。 */
+export const DISPENSER_LAUNCH_SPEED = 12;
 /** 压力板的触发范围（以方块中心为准的水平半径）。 */
 export const PRESSURE_PLATE_RANGE = 0.7;

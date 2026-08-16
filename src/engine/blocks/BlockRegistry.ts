@@ -151,6 +151,12 @@ export interface BlockDef {
     piston?: boolean;
     /** 粘性活塞：缩回时把前面那格拉回来。 */
     sticky?: boolean;
+    /** 发射器 / 投掷器：通电时吐出一样东西。 */
+    dispenser?: boolean;
+    /** 投掷器：只把物品丢出来，不发射（箭 / 药水也当普通物品丢）。 */
+    dropper?: boolean;
+    /** TNT：被充能就点着。 */
+    ignitesWhenPowered?: boolean;
   };
   /**
    * 变种：同一个方块 id 下按 meta 区分的若干种（木材、羊毛颜色、石头变种等），与 1.8.9 一致。
@@ -260,6 +266,9 @@ export const BlockId = {
   PISTON: 33,
   STICKY_PISTON: 29,
   PISTON_HEAD: 34,
+  HOPPER: 154,
+  DISPENSER: 23,
+  DROPPER: 158,
   LEVER: 69,
   STONE_BUTTON: 77,
   STONE_PRESSURE_PLATE: 70,
@@ -563,7 +572,11 @@ export const BLOCK_DEFS: BlockDef[] = [
   cross(BlockId.DANDELION, 'dandelion', '蒲公英', 'dandelion'),
   cross(BlockId.POPPY, 'poppy', '虞美人', 'poppy'),
   cube(BlockId.BRICKS, 'bricks', '砖块', same('bricks'), 2, ToolType.PICKAXE, { minTier: ToolTier.WOOD }),
-  cube(BlockId.TNT, 'tnt', 'TNT', topSide('tnt_top', 'tnt_side', 'tnt_bottom'), 0, null, { interactive: true }),
+  cube(BlockId.TNT, 'tnt', 'TNT', topSide('tnt_top', 'tnt_side', 'tnt_bottom'), 0, null, {
+    interactive: true,
+    // 被红石充能就点着
+    redstone: { ignitesWhenPowered: true },
+  }),
   cube(BlockId.BOOKSHELF, 'bookshelf', '书架', topSide('planks', 'bookshelf'), 1.5, ToolType.AXE, {
     flammable: true,
   }),
@@ -895,6 +908,24 @@ export const BLOCK_DEFS: BlockDef[] = [
     noItem: true,
     drops: [{ item: 'redstone_lamp', min: 1, max: 1 }],
     redstone: { unlitBlockId: BlockId.REDSTONE_LAMP },
+  }),
+  cube(BlockId.HOPPER, 'hopper', '漏斗', topSide('hopper_top', 'hopper_side'), 3, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+    opaque: false,
+    interactive: true,
+    hasFacing: true,
+  }),
+  cube(BlockId.DISPENSER, 'dispenser', '发射器', topSide('furnace_top', 'dispenser_front'), 3.5, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+    interactive: true,
+    hasFacing: true,
+    redstone: { dispenser: true },
+  }),
+  cube(BlockId.DROPPER, 'dropper', '投掷器', topSide('furnace_top', 'dropper_front'), 3.5, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+    interactive: true,
+    hasFacing: true,
+    redstone: { dispenser: true, dropper: true },
   }),
   cube(BlockId.PISTON, 'piston', '活塞', topSide('piston_top', 'piston_side'), 0.5, null, {
     hasFacing: true,

@@ -690,6 +690,28 @@ const redstoneTorchOff: Painter = (c) => {
   c.rect(6, 3, 4, 4, hex('#6a1a12'));
 };
 
+/** 漏斗：上宽下窄的深灰漏斗。 */
+const hopperTop: Painter = (c, rng) => {
+  c.noise(hex('#4a4a4a'), 0.08, rng);
+  c.rect(2, 2, 12, 12, hex('#2c2c2c'));
+};
+const hopperSide: Painter = (c, rng) => {
+  c.noise(hex('#4a4a4a'), 0.08, rng);
+  c.rect(0, 0, 16, 5, hex('#3a3a3a'));
+  c.rect(5, 10, 6, 6, hex('#2c2c2c'));
+};
+
+/** 发射器 / 投掷器的正面。 */
+const dispenserFront: Painter = (c, rng) => {
+  c.noise(hex('#6f6f6f'), 0.08, rng);
+  c.rect(4, 4, 8, 8, hex('#2c2c2c'));
+  c.rect(6, 6, 4, 4, hex('#111111'));
+};
+const dropperFront: Painter = (c, rng) => {
+  c.noise(hex('#6f6f6f'), 0.08, rng);
+  c.rect(5, 5, 6, 6, hex('#2c2c2c'));
+};
+
 /** 活塞：木质本体 + 侧面的金属条；粘性活塞顶面带一层粘液。 */
 const pistonSide: Painter = (c, rng) => {
   c.noise(hex('#9c8158'), 0.08, rng);
@@ -1068,6 +1090,10 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   redstone_block: redstoneBlock,
   redstone_torch: redstoneTorch,
   redstone_torch_off: redstoneTorchOff,
+  hopper_top: hopperTop,
+  hopper_side: hopperSide,
+  dispenser_front: dispenserFront,
+  dropper_front: dropperFront,
   piston_side: pistonSide,
   piston_top: pistonTop,
   sticky_piston_top: stickyPistonTop,

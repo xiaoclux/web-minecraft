@@ -82,7 +82,7 @@ import {
   NIGHT_START_TICK,
   SPAWN_PRELOAD_RADIUS,
 } from './constants/world';
-import { BlockEntityStore, BlockEntityType } from './world/BlockEntityStore';
+import { BlockEntityStore, BlockEntityType, type HopperBlockEntity } from './world/BlockEntityStore';
 import { RandomTickSystem } from './systems/RandomTickSystem';
 import { WeatherSystem } from './systems/WeatherSystem';
 import { DIMENSION_DEFS, Dimension, DimensionId, isDimensionId } from './world/Dimension';
@@ -105,6 +105,7 @@ import { EnderCrystalEntity } from './entities/EnderCrystalEntity';
 import { EnderDragonEntity } from './entities/EnderDragonEntity';
 import { WitherEntity } from './entities/WitherEntity';
 import { powerAt, repeaterInputPower, updateWires } from './systems/RedstoneSystem';
+import { containerSlots, extractOne, insertOne, isEmpty } from './systems/HopperSystem';
 import { extendPiston, pistonDirection, retractPiston } from './systems/PistonSystem';
 import {
   BUTTON_PRESS_TICKS,
@@ -117,6 +118,11 @@ import {
   TORCH_DELAY_TICKS,
   PISTON_DELAY_TICKS,
   PISTON_FACING_MASK,
+  DISPENSER_LAUNCH_SPEED,
+  DISPENSER_SLOT_COUNT,
+  HOPPER_PICKUP_RANGE,
+  HOPPER_SLOT_COUNT,
+  HOPPER_TRANSFER_INTERVAL_TICKS,
 } from './constants/redstone';
 import {
   BEACON_EFFECT_TICKS,
@@ -329,6 +335,17 @@ const NIGHT_VISION_MIN_LIGHT = 0.9;
 /** 喷溅药水碎掉时的玻璃碎屑。 */
 const SPLASH_PARTICLE_TEXTURE = 'glass';
 const SPLASH_PARTICLE_COUNT = 10;
+
+/**
+ * 漏斗朝向对应的目标格偏移。meta 0~3 是水平四向（同 FACINGS），其余值表示朝下。
+ */
+function hopperTargetOffset(meta: number): [number, number, number] {
+  if (meta >= FACINGS.length) {
+    return [0, -1, 0];
+  }
+  const [dx, dz] = FACINGS[meta & FACING_MASK];
+  return [dx, 0, dz];
+}
 
 /** 中继器 meta 对应的延迟 tick。 */
 function repeaterDelay(meta: number): number {
@@ -897,6 +914,7 @@ export class Game implements EntityContext, ContainerHost {
       });
     }
     this.tickRedstone();
+    this.tickHoppers();
     this.tickBeacons();
     this.tickPortal();
     this.tickFootsteps();
@@ -1241,11 +1259,147 @@ export class Game implements EntityContext, ContainerHost {
       this.applyPistonState(x, y, z, redstone.sticky === true);
       return;
     }
+    if (redstone.dispenser) {
+      this.applyDispenser(x, y, z, redstone.dropper === true);
+      return;
+    }
+    if (redstone.ignitesWhenPowered) {
+      if (powerAt(this.world, x, y, z) > 0) {
+        this.primeTnt(x, y, z);
+      }
+      return;
+    }
     // 火把：脚下方块被充能就灭，否则亮
     const target = this.torchTargetId(x, y, z, redstone);
     if (target !== null && target !== id) {
       this.world.setBlock(x, y, z, target, this.world.getMeta(x, y, z));
     }
+  }
+
+  /**
+   * 漏斗：每隔几 tick 从上方容器抽一件、往朝向的容器塞一件，并吸走落在上面的掉落物。
+   */
+  private tickHoppers(): void {
+    for (const [key, entity] of this.blockEntities.entries()) {
+      if (entity.type !== BlockEntityType.HOPPER) {
+        continue;
+      }
+      if (entity.cooldown > 0) {
+        entity.cooldown--;
+        continue;
+      }
+      const [x, y, z] = key.split(',').map(Number);
+      if (this.world.getBlock(x, y, z) !== BlockId.HOPPER) {
+        continue;
+      }
+      entity.cooldown = HOPPER_TRANSFER_INTERVAL_TICKS;
+      this.hopperPickupDrops(entity, x, y, z);
+      this.hopperPullFromAbove(entity, x, y, z);
+      this.hopperPushToTarget(entity, x, y, z);
+    }
+  }
+
+  /** 吸走落在漏斗上面的掉落物。 */
+  private hopperPickupDrops(entity: HopperBlockEntity, x: number, y: number, z: number): void {
+    for (const e of this.entities.values()) {
+      if (!(e instanceof ItemDropEntity) || e.isDead) {
+        continue;
+      }
+      if (
+        Math.abs(e.x - (x + 0.5)) > HOPPER_PICKUP_RANGE ||
+        Math.abs(e.z - (z + 0.5)) > HOPPER_PICKUP_RANGE ||
+        e.y < y ||
+        e.y > y + 1.5
+      ) {
+        continue;
+      }
+      while (e.stack.count > 0 && insertOne(entity.items, e.stack)) {
+        e.stack = { ...e.stack, count: e.stack.count - 1 };
+      }
+      if (e.stack.count <= 0) {
+        e.isDead = true;
+      }
+      this.notifyChanged();
+      return;
+    }
+  }
+
+  /** 从上方的容器里抽一件。 */
+  private hopperPullFromAbove(entity: HopperBlockEntity, x: number, y: number, z: number): void {
+    const above = containerSlots(this.blockEntities.get(x, y + 1, z));
+    if (!above || isEmpty(above)) {
+      return;
+    }
+    const taken = extractOne(above);
+    if (!taken) {
+      return;
+    }
+    if (!insertOne(entity.items, taken)) {
+      // 塞不下就放回去
+      insertOne(above, taken);
+      return;
+    }
+    this.syncFurnaceSlots(x, y + 1, z, above);
+    this.notifyChanged();
+  }
+
+  /** 往漏斗朝向的容器里塞一件。 */
+  private hopperPushToTarget(entity: HopperBlockEntity, x: number, y: number, z: number): void {
+    if (isEmpty(entity.items)) {
+      return;
+    }
+    const [dx, dy, dz] = hopperTargetOffset(this.world.getMeta(x, y, z));
+    const target = containerSlots(this.blockEntities.get(x + dx, y + dy, z + dz));
+    if (!target) {
+      return;
+    }
+    const taken = extractOne(entity.items);
+    if (!taken) {
+      return;
+    }
+    if (!insertOne(target, taken)) {
+      insertOne(entity.items, taken);
+      return;
+    }
+    this.syncFurnaceSlots(x + dx, y + dy, z + dz, target);
+    this.notifyChanged();
+  }
+
+  /** 熔炉的槽位是三个独立字段，改完要写回去。 */
+  private syncFurnaceSlots(x: number, y: number, z: number, slots: (ItemStack | null)[]): void {
+    const entity = this.blockEntities.get(x, y, z);
+    if (entity?.type !== BlockEntityType.FURNACE) {
+      return;
+    }
+    entity.state.input = slots[0];
+    entity.state.fuel = slots[1];
+    entity.state.output = slots[2];
+  }
+
+  /** 发射器 / 投掷器：通电时吐一样东西出来。 */
+  private applyDispenser(x: number, y: number, z: number, dropper: boolean): void {
+    if (powerAt(this.world, x, y, z) <= 0) {
+      return;
+    }
+    const entity = this.blockEntities.get(x, y, z);
+    if (entity?.type !== BlockEntityType.DISPENSER) {
+      return;
+    }
+    const stack = extractOne(entity.items);
+    if (!stack) {
+      return;
+    }
+    const [fx, fz] = FACINGS[this.world.getMeta(x, y, z) & FACING_MASK];
+    const cx = x + 0.5 + fx * 0.7;
+    const cy = y + 0.5;
+    const cz = z + 0.5 + fz * 0.7;
+    // 投掷器只是把东西丢出来；发射器同样丢，但速度更快（箭 / 药水的特殊行为留到以后）
+    const speed = dropper ? DISPENSER_LAUNCH_SPEED * 0.25 : DISPENSER_LAUNCH_SPEED;
+    const drop = this.dropItem(cx, cy, cz, stack, 0);
+    drop.vx = fx * speed;
+    drop.vz = fz * speed;
+    this.sound.play('bow', Math.hypot(x - this.player.x, y - this.player.y, z - this.player.z));
+    this.notifyChanged();
   }
 
   /** 活塞：按当前充能决定伸出还是缩回。 */
@@ -1382,6 +1536,8 @@ export class Game implements EntityContext, ContainerHost {
           if (redstone.repeater) {
             this.scheduleRedstoneUpdate(nx, ny, nz, repeaterDelay(this.world.getMeta(nx, ny, nz)));
           } else if (redstone.piston) {
+            this.scheduleRedstoneUpdate(nx, ny, nz, PISTON_DELAY_TICKS);
+          } else if (redstone.dispenser || redstone.ignitesWhenPowered) {
             this.scheduleRedstoneUpdate(nx, ny, nz, PISTON_DELAY_TICKS);
           } else if (redstone.invertedOffId !== undefined || redstone.invertedOnId !== undefined) {
             this.scheduleRedstoneUpdate(nx, ny, nz, TORCH_DELAY_TICKS);
@@ -2687,6 +2843,22 @@ export class Game implements EntityContext, ContainerHost {
       case BlockId.BEACON:
         this.openScreen(Screen.BEACON, { x: hit.x, y: hit.y, z: hit.z });
         return true;
+      case BlockId.HOPPER:
+        this.blockEntities.getOrCreate(hit.x, hit.y, hit.z, () => ({
+          type: BlockEntityType.HOPPER,
+          items: new Array<ItemStack | null>(HOPPER_SLOT_COUNT).fill(null),
+          cooldown: 0,
+        }));
+        this.openScreen(Screen.CHEST, { x: hit.x, y: hit.y, z: hit.z });
+        return true;
+      case BlockId.DISPENSER:
+      case BlockId.DROPPER:
+        this.blockEntities.getOrCreate(hit.x, hit.y, hit.z, () => ({
+          type: BlockEntityType.DISPENSER,
+          items: new Array<ItemStack | null>(DISPENSER_SLOT_COUNT).fill(null),
+        }));
+        this.openScreen(Screen.CHEST, { x: hit.x, y: hit.y, z: hit.z });
+        return true;
       case BlockId.LEVER:
         this.toggleLever(hit.x, hit.y, hit.z);
         return true;
@@ -3247,7 +3419,8 @@ export class Game implements EntityContext, ContainerHost {
       return null;
     }
     const entity = this.blockEntities.get(pos.x, pos.y, pos.z);
-    return entity?.type === BlockEntityType.CHEST ? entity.items : null;
+    // 漏斗与发射器复用箱子界面
+    return containerSlots(entity);
   }
 
   /** 收获作物：成熟掉主产物（外加种子），没长成只掉回一颗种子。 */
@@ -3626,13 +3799,14 @@ export class Game implements EntityContext, ContainerHost {
     return out;
   }
 
-  dropItem(x: number, y: number, z: number, stack: ItemStack, spread = 0.2): void {
+  dropItem(x: number, y: number, z: number, stack: ItemStack, spread = 0.2): ItemDropEntity {
     const drop = new ItemDropEntity({ ...stack });
     drop.setPosition(x, y, z);
     drop.vx = (this.rng() - 0.5) * ITEM_DROP_SPAWN_SPEED * spread * 4;
     drop.vy = ITEM_DROP_SPAWN_SPEED * (0.5 + this.rng() * 0.5);
     drop.vz = (this.rng() - 0.5) * ITEM_DROP_SPAWN_SPEED * spread * 4;
     this.spawnEntity(drop);
+    return drop;
   }
 
   explode(x: number, y: number, z: number, radius: number, sourceId: number): void {

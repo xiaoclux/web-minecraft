@@ -15,6 +15,8 @@ export const BlockEntityType = {
   SPAWNER: 'spawner',
   BREWING_STAND: 'brewing_stand',
   BEACON: 'beacon',
+  HOPPER: 'hopper',
+  DISPENSER: 'dispenser',
 } as const;
 export type BlockEntityType = (typeof BlockEntityType)[keyof typeof BlockEntityType];
 
@@ -55,7 +57,23 @@ export interface BeaconBlockEntity {
   effect?: string;
 }
 
+/** 漏斗：5 格物品 + 搬运计时。 */
+export interface HopperBlockEntity {
+  type: typeof BlockEntityType.HOPPER;
+  items: (ItemStack | null)[];
+  /** 距离下次搬运还有多少 tick。 */
+  cooldown: number;
+}
+
+/** 发射器 / 投掷器：9 格物品。 */
+export interface DispenserBlockEntity {
+  type: typeof BlockEntityType.DISPENSER;
+  items: (ItemStack | null)[];
+}
+
 export type BlockEntity =
+  | HopperBlockEntity
+  | DispenserBlockEntity
   | FurnaceBlockEntity
   | ChestBlockEntity
   | SpawnerBlockEntity
