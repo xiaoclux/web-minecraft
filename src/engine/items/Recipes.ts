@@ -201,6 +201,7 @@ export const RECIPES: Recipe[] = [
   shapeless(['stone'], 'stone_button'),
   shaped(['SS'], { S: 'stone' }, 'stone_pressure_plate'),
   shaped([' R ', 'RGR', ' R '], { R: 'redstone', G: 'glowstone' }, 'redstone_lamp'),
+  shaped(['TRT', 'SSS'], { T: 'redstone_torch', R: 'redstone', S: 'stone' }, 'repeater'),
   shaped(['QQ', 'QQ'], { Q: 'quartz' }, 'quartz_block'),
   shapeless(['blaze_powder', 'slimeball'], 'magma_cream'),
   // 1.8.9 还要一个棕色蘑菇；蘑菇没做之前先用蛛眼 + 糖

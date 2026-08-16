@@ -104,11 +104,16 @@ import { FireballEntity } from './entities/FireballEntity';
 import { EnderCrystalEntity } from './entities/EnderCrystalEntity';
 import { EnderDragonEntity } from './entities/EnderDragonEntity';
 import { WitherEntity } from './entities/WitherEntity';
-import { powerAt, updateWires } from './systems/RedstoneSystem';
+import { powerAt, repeaterInputPower, updateWires } from './systems/RedstoneSystem';
 import {
   BUTTON_PRESS_TICKS,
   PRESSURE_PLATE_RANGE,
   REDSTONE_POWERED_BIT,
+  REPEATER_DELAYS,
+  REPEATER_DELAY_MASK,
+  REPEATER_DELAY_SHIFT,
+  REPEATER_FACING_MASK,
+  TORCH_DELAY_TICKS,
 } from './constants/redstone';
 import {
   BEACON_EFFECT_TICKS,
@@ -322,6 +327,11 @@ const NIGHT_VISION_MIN_LIGHT = 0.9;
 const SPLASH_PARTICLE_TEXTURE = 'glass';
 const SPLASH_PARTICLE_COUNT = 10;
 
+/** 中继器 meta 对应的延迟 tick。 */
+function repeaterDelay(meta: number): number {
+  return REPEATER_DELAYS[(meta >> REPEATER_DELAY_SHIFT) & REPEATER_DELAY_MASK];
+}
+
 /** 把方向向量说成"东南"这样的方位词。 */
 function compassLabel(dx: number, dz: number): string {
   if (Math.abs(dz) > Math.abs(dx) * COMPASS_DOMINANCE) {
@@ -447,6 +457,8 @@ export class Game implements EntityContext, ContainerHost {
   readonly isTouch = isTouchDevice();
   private breakTarget: { x: number; y: number; z: number; id: number } | null = null;
   /** 脚步声：累计走过的水平距离与上一次采样点。 */
+  /** 排队中的延迟更新（红石火把 / 中继器）。 */
+  private scheduledUpdates: { x: number; y: number; z: number; ticks: number }[] = [];
   /** 按下的按钮（到时间弹回）。 */
   private pressedButtons: { x: number; y: number; z: number; ticks: number }[] = [];
   /** 世界里已知的压力板坐标（放置时登记）。 */
@@ -1161,10 +1173,85 @@ export class Game implements EntityContext, ContainerHost {
     this.renderer.hand.swing();
   }
 
-  /** 每 tick：按钮弹回、压力板感应、用电器跟随信号。 */
+  /** 右键中继器：在 2/4/6/8 tick 四挡延迟之间循环（1.8.9 同）。 */
+  private cycleRepeaterDelay(x: number, y: number, z: number): void {
+    const id = this.world.getBlock(x, y, z);
+    const meta = this.world.getMeta(x, y, z);
+    const tier = ((meta >> REPEATER_DELAY_SHIFT) + 1) & REPEATER_DELAY_MASK;
+    this.world.setBlock(x, y, z, id, (meta & REPEATER_FACING_MASK) | (tier << REPEATER_DELAY_SHIFT));
+    this.sound.play('door');
+    this.renderer.hand.swing();
+  }
+
+  /** 每 tick：按钮弹回、压力板感应、延迟更新（火把 / 中继器）。 */
   private tickRedstone(): void {
     this.tickButtons();
     this.tickPressurePlates();
+    this.tickScheduledUpdates();
+  }
+
+  /**
+   * 到点的延迟更新：红石火把与中继器都不是立刻翻转，而是等几 tick，
+   * 这样才有振荡器与延时电路（1.8.9 同）。
+   */
+  private tickScheduledUpdates(): void {
+    if (this.scheduledUpdates.length === 0) {
+      return;
+    }
+    const remaining: typeof this.scheduledUpdates = [];
+    const due: typeof this.scheduledUpdates = [];
+    for (const update of this.scheduledUpdates) {
+      update.ticks--;
+      (update.ticks <= 0 ? due : remaining).push(update);
+    }
+    this.scheduledUpdates = remaining;
+    for (const { x, y, z } of due) {
+      this.applyScheduledUpdate(x, y, z);
+    }
+  }
+
+  /** 排一个延迟更新（同一格已排队就不重复排）。 */
+  private scheduleRedstoneUpdate(x: number, y: number, z: number, ticks: number): void {
+    if (this.scheduledUpdates.some((u) => u.x === x && u.y === y && u.z === z)) {
+      return;
+    }
+    this.scheduledUpdates.push({ x, y, z, ticks });
+  }
+
+  /** 延迟到点：按当前输入决定火把 / 中继器的新状态。 */
+  private applyScheduledUpdate(x: number, y: number, z: number): void {
+    const id = this.world.getBlock(x, y, z);
+    const def = getBlock(id);
+    const redstone = def.redstone;
+    if (!redstone) {
+      return;
+    }
+    if (redstone.repeater) {
+      const powered = repeaterInputPower(this.world, x, y, z) > 0;
+      const isOn = id === BlockId.REPEATER_ON;
+      if (powered !== isOn) {
+        this.world.setBlock(x, y, z, powered ? BlockId.REPEATER_ON : BlockId.REPEATER, this.world.getMeta(x, y, z));
+      }
+      return;
+    }
+    // 火把：脚下方块被充能就灭，否则亮
+    const target = this.torchTargetId(x, y, z, redstone);
+    if (target !== null && target !== id) {
+      this.world.setBlock(x, y, z, target, this.world.getMeta(x, y, z));
+    }
+  }
+
+  /** 火把按脚下的充能情况该变成哪个 id；不是火把返回 null。 */
+  private torchTargetId(x: number, y: number, z: number, redstone: NonNullable<BlockDef['redstone']>): number | null {
+    if (redstone.invertedOffId === undefined && redstone.invertedOnId === undefined) {
+      return null;
+    }
+    // 判断脚下方块是否被充能时要排除火把自己，否则它会一直把自己关掉
+    const basePowered = powerAt(this.world, x, y - 1, z, [x, y, z]) > 0;
+    if (basePowered) {
+      return redstone.invertedOffId ?? BlockId.REDSTONE_TORCH_OFF;
+    }
+    return redstone.invertedOnId ?? BlockId.REDSTONE_TORCH;
   }
 
   private tickButtons(): void {
@@ -1244,11 +1331,35 @@ export class Game implements EntityContext, ContainerHost {
       // 线路可能一路延伸出去，所以用电器要围着"变了的那些粉"刷新，而不只是变更点
       const changed = updateWires(this.world, x, y, z);
       this.updateConsumers(x, y, z);
+      this.scheduleNearbyLogic(x, y, z);
       for (const [wx, wy, wz] of changed) {
         this.updateConsumers(wx, wy, wz);
+        this.scheduleNearbyLogic(wx, wy, wz);
       }
     } finally {
       this.redstoneUpdating = false;
+    }
+  }
+
+  /** 给变更点附近的火把与中继器排延迟更新。 */
+  private scheduleNearbyLogic(x: number, y: number, z: number): void {
+    for (let dy = -REDSTONE_CONSUMER_RADIUS; dy <= REDSTONE_CONSUMER_RADIUS; dy++) {
+      for (let dz = -REDSTONE_CONSUMER_RADIUS; dz <= REDSTONE_CONSUMER_RADIUS; dz++) {
+        for (let dx = -REDSTONE_CONSUMER_RADIUS; dx <= REDSTONE_CONSUMER_RADIUS; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          const nz = z + dz;
+          const redstone = getBlock(this.world.getBlock(nx, ny, nz)).redstone;
+          if (!redstone) {
+            continue;
+          }
+          if (redstone.repeater) {
+            this.scheduleRedstoneUpdate(nx, ny, nz, repeaterDelay(this.world.getMeta(nx, ny, nz)));
+          } else if (redstone.invertedOffId !== undefined || redstone.invertedOnId !== undefined) {
+            this.scheduleRedstoneUpdate(nx, ny, nz, TORCH_DELAY_TICKS);
+          }
+        }
+      }
     }
   }
 
@@ -1270,14 +1381,21 @@ export class Game implements EntityContext, ContainerHost {
     if (!redstone) {
       return;
     }
+    // 中继器有自己的延迟队列，不走这里
+    if (redstone.repeater) {
+      return;
+    }
     const powered = powerAt(this.world, x, y, z) > 0;
-    // 红石灯：亮 / 灭是两个方块 id
-    if (redstone.litBlockId !== undefined) {
-      const shouldBeLit = powered;
-      const isLit = id === BlockId.REDSTONE_LAMP_LIT;
-      if (shouldBeLit !== isLit) {
-        this.world.setBlock(x, y, z, shouldBeLit ? BlockId.REDSTONE_LAMP_LIT : BlockId.REDSTONE_LAMP);
-      }
+    // 通电 / 断电是两个方块 id 的用电器（红石灯）
+    if (powered && redstone.litBlockId !== undefined) {
+      this.world.setBlock(x, y, z, redstone.litBlockId, this.world.getMeta(x, y, z));
+      return;
+    }
+    if (!powered && redstone.unlitBlockId !== undefined) {
+      this.world.setBlock(x, y, z, redstone.unlitBlockId, this.world.getMeta(x, y, z));
+      return;
+    }
+    if (redstone.litBlockId !== undefined || redstone.unlitBlockId !== undefined) {
       return;
     }
     // 门与栅栏门：被充能就开
@@ -2546,6 +2664,10 @@ export class Game implements EntityContext, ContainerHost {
         return true;
       case BlockId.STONE_BUTTON:
         this.pressButton(hit.x, hit.y, hit.z);
+        return true;
+      case BlockId.REPEATER:
+      case BlockId.REPEATER_ON:
+        this.cycleRepeaterDelay(hit.x, hit.y, hit.z);
         return true;
       case BlockId.BED:
         this.useBed(hit.x, hit.y, hit.z);

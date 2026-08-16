@@ -10,7 +10,8 @@
  */
 
 import { BlockId, getBlock } from '../blocks/BlockRegistry';
-import { REDSTONE_MAX_POWER, REDSTONE_UPDATE_RADIUS } from '../constants/redstone';
+import { FACINGS } from '../blocks/blockShapes';
+import { REDSTONE_MAX_POWER, REDSTONE_UPDATE_RADIUS, REPEATER_FACING_MASK } from '../constants/redstone';
 import type { World } from '../world/World';
 
 /** 六个方向。 */
@@ -29,6 +30,34 @@ const HORIZONTAL: readonly (readonly [number, number, number])[] = [
   [0, 0, 1],
   [0, 0, -1],
 ];
+
+/**
+ * 一个方块朝某个方向输出多强的信号。
+ * @param toX,toY,toZ 要送电的目标格（中继器只朝正面输出，所以要看方向）
+ */
+export function sourcePowerTo(
+  world: World,
+  x: number,
+  y: number,
+  z: number,
+  toX: number,
+  toY: number,
+  toZ: number,
+): number {
+  const def = getBlock(world.getBlock(x, y, z));
+  if (def.redstone?.repeater) {
+    // 中继器只给正面那一格供电
+    const [fx, fz] = FACINGS[world.getMeta(x, y, z) & REPEATER_FACING_MASK];
+    if (toX !== x + fx || toZ !== z + fz || toY !== y) {
+      return 0;
+    }
+  }
+  // 红石火把不给自己脚下的附着方块供电（否则会自锁：石块有电 → 火把灭 → 石块没电…）
+  if (def.redstone?.invertedOffId !== undefined && toX === x && toY === y - 1 && toZ === z) {
+    return 0;
+  }
+  return sourcePower(world, x, y, z);
+}
 
 /** 一个方块作为电源时能提供多强的信号；不是电源返回 0。 */
 export function sourcePower(world: World, x: number, y: number, z: number): number {
@@ -62,14 +91,24 @@ export function wirePower(world: World, x: number, y: number, z: number): number
 /**
  * 某个位置受到的充能强度：取周围电源与红石粉能给到的最大值。
  * 用电器（红石灯、门等）用它决定开关。
+ * @param ignore 要跳过的邻居（红石火把判断脚下方块时要排除自己，否则会自锁）
  */
-export function powerAt(world: World, x: number, y: number, z: number): number {
+export function powerAt(
+  world: World,
+  x: number,
+  y: number,
+  z: number,
+  ignore?: readonly [number, number, number],
+): number {
   let power = 0;
   for (const [dx, dy, dz] of NEIGHBORS) {
     const nx = x + dx;
     const ny = y + dy;
     const nz = z + dz;
-    power = Math.max(power, sourcePower(world, nx, ny, nz));
+    if (ignore && nx === ignore[0] && ny === ignore[1] && nz === ignore[2]) {
+      continue;
+    }
+    power = Math.max(power, sourcePowerTo(world, nx, ny, nz, x, y, z));
     // 红石粉只向"它指着的"方块供能：上下不供，水平与正下方供
     if (dy <= 0) {
       power = Math.max(power, wirePower(world, nx, ny, nz));
@@ -100,7 +139,7 @@ function conductedPower(
     if (nx === fromX && ny === fromY && nz === fromZ) {
       continue;
     }
-    power = Math.max(power, sourcePower(world, nx, ny, nz));
+    power = Math.max(power, sourcePowerTo(world, nx, ny, nz, bx, by, bz));
     // 只有"指向该方块"的红石粉才算强充能，简化为：粉在方块旁边且强度 > 0
     if (dy === 0) {
       const wire = wirePower(world, nx, ny, nz);
@@ -110,6 +149,20 @@ function conductedPower(
     }
   }
   return power;
+}
+
+/**
+ * 中继器背面收到的信号（只有正对背面的那一格算数）。
+ */
+export function repeaterInputPower(world: World, x: number, y: number, z: number): number {
+  const [fx, fz] = FACINGS[world.getMeta(x, y, z) & REPEATER_FACING_MASK];
+  // 背面 = 正面的反方向
+  const bx = x - fx;
+  const bz = z - fz;
+  const wire = wirePower(world, bx, y, bz);
+  const source = sourcePowerTo(world, bx, y, bz, x, y, z);
+  const conducted = isConductive(world, bx, y, bz) ? strongPowerOf(world, bx, y, bz) : 0;
+  return Math.max(wire, source, conducted);
 }
 
 /**
@@ -129,7 +182,7 @@ export function updateWires(world: World, x: number, y: number, z: number): [num
     const [wx, wy, wz] = key.split(',').map(Number);
     let best = 0;
     for (const [dx, dy, dz] of NEIGHBORS) {
-      best = Math.max(best, sourcePower(world, wx + dx, wy + dy, wz + dz));
+      best = Math.max(best, sourcePowerTo(world, wx + dx, wy + dy, wz + dz, wx, wy, wz));
       if (isConductive(world, wx + dx, wy + dy, wz + dz)) {
         best = Math.max(best, strongPowerOf(world, wx + dx, wy + dy, wz + dz));
       }
@@ -178,7 +231,7 @@ export function updateWires(world: World, x: number, y: number, z: number): [num
 function strongPowerOf(world: World, x: number, y: number, z: number): number {
   let power = 0;
   for (const [dx, dy, dz] of NEIGHBORS) {
-    power = Math.max(power, sourcePower(world, x + dx, y + dy, z + dz));
+    power = Math.max(power, sourcePowerTo(world, x + dx, y + dy, z + dz, x, y, z));
   }
   return power;
 }

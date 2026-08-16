@@ -683,6 +683,24 @@ const redstoneTorch: Painter = (c) => {
   c.rect(6, 3, 4, 4, hex('#ff3a2a'));
 };
 
+/** 熄灭的红石火把。 */
+const redstoneTorchOff: Painter = (c) => {
+  c.fill(TRANSPARENT);
+  c.rect(7, 6, 2, 10, hex('#6b4a2a'));
+  c.rect(6, 3, 4, 4, hex('#6a1a12'));
+};
+
+/** 中继器：石板 + 两个火把点（关 / 开两张）。 */
+function repeater(lit: boolean): Painter {
+  return (c, rng) => {
+    c.noise(hex('#a8a8a8'), 0.06, rng);
+    const dot = lit ? hex('#ff3a2a') : hex('#7a1a12');
+    c.rect(7, 3, 2, 2, dot);
+    c.rect(7, 11, 2, 2, dot);
+    c.rect(0, 7, 16, 2, hex('#8a8a8a'));
+  };
+}
+
 /** 拉杆：石座 + 木柄。 */
 const lever: Painter = (c) => {
   c.fill(TRANSPARENT);
@@ -1034,6 +1052,9 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   redstone_dust_on: redstoneDust(true),
   redstone_block: redstoneBlock,
   redstone_torch: redstoneTorch,
+  redstone_torch_off: redstoneTorchOff,
+  repeater: repeater(false),
+  repeater_on: repeater(true),
   lever,
   stone_button: stoneButton,
   stone_pressure_plate: stonePressurePlate,

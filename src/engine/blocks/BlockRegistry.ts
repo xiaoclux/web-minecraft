@@ -135,10 +135,18 @@ export interface BlockDef {
     source?: number;
     /** meta 里表示"通电"的位（拉杆 / 按钮 / 压力板）；不填表示恒定输出。 */
     poweredBit?: number;
-    /** 用电器：被充能时换成这个方块 id（红石灯亮 / 灭）。 */
+    /** 用电器：被充能时换成这个"通电态"方块 id（红石灯灭 → 亮）。 */
     litBlockId?: number;
+    /** 用电器：断电时换回这个"断电态"方块 id（红石灯亮 → 灭）。 */
+    unlitBlockId?: number;
     /** 用电器：被充能时开门 / 开活板门。 */
     opensWhenPowered?: boolean;
+    /** 反相器（红石火把）：脚下被充能时切到这个"熄灭"方块 id。 */
+    invertedOffId?: number;
+    /** 反相器的熄灭态：脚下不再被充能时切回这个"点亮"方块 id。 */
+    invertedOnId?: number;
+    /** 中继器：只吃背后的信号、延迟后向正面输出满强度。 */
+    repeater?: boolean;
   };
   /**
    * 变种：同一个方块 id 下按 meta 区分的若干种（木材、羊毛颜色、石头变种等），与 1.8.9 一致。
@@ -242,6 +250,9 @@ export const BlockId = {
   REDSTONE_ORE: 73,
   REDSTONE_BLOCK: 152,
   REDSTONE_TORCH: 76,
+  REDSTONE_TORCH_OFF: 75,
+  REPEATER: 93,
+  REPEATER_ON: 94,
   LEVER: 69,
   STONE_BUTTON: 77,
   STONE_PRESSURE_PLATE: 70,
@@ -796,8 +807,41 @@ export const BLOCK_DEFS: BlockDef[] = [
     ...cross(BlockId.REDSTONE_TORCH, 'redstone_torch', '红石火把', 'redstone_torch', {
       needsSupport: true,
       light: 7,
-      redstone: { source: REDSTONE_MAX_POWER },
+      // 火把是反相器：脚下方块通电时它自己灭掉（切到熄灭态那个 id）
+      redstone: { source: REDSTONE_MAX_POWER, invertedOffId: BlockId.REDSTONE_TORCH_OFF },
     }),
+  },
+  {
+    ...cross(BlockId.REDSTONE_TORCH_OFF, 'redstone_torch_off', '红石火把（熄灭）', 'redstone_torch_off', {
+      needsSupport: true,
+      noItem: true,
+      drops: [{ item: 'redstone_torch', min: 1, max: 1 }],
+      redstone: { invertedOnId: BlockId.REDSTONE_TORCH },
+    }),
+  },
+  {
+    ...cube(BlockId.REPEATER, 'repeater', '红石中继器', same('repeater'), 0.5, null, {
+      solid: false,
+      opaque: false,
+      needsSupport: true,
+      interactive: true,
+      hasFacing: true,
+      redstone: { repeater: true, litBlockId: BlockId.REPEATER_ON },
+    }),
+    shape: BlockShape.PRESSURE_PLATE,
+  },
+  {
+    ...cube(BlockId.REPEATER_ON, 'repeater_on', '红石中继器（通电）', same('repeater_on'), 0.5, null, {
+      solid: false,
+      opaque: false,
+      needsSupport: true,
+      interactive: true,
+      hasFacing: true,
+      noItem: true,
+      drops: [{ item: 'repeater', min: 1, max: 1 }],
+      redstone: { repeater: true, source: REDSTONE_MAX_POWER, unlitBlockId: BlockId.REPEATER },
+    }),
+    shape: BlockShape.PRESSURE_PLATE,
   },
   {
     ...cube(BlockId.LEVER, 'lever', '拉杆', same('lever'), 0.5, null, {
@@ -843,7 +887,7 @@ export const BLOCK_DEFS: BlockDef[] = [
     light: 15,
     noItem: true,
     drops: [{ item: 'redstone_lamp', min: 1, max: 1 }],
-    redstone: { litBlockId: BlockId.REDSTONE_LAMP },
+    redstone: { unlitBlockId: BlockId.REDSTONE_LAMP },
   }),
   cube(BlockId.BEACON, 'beacon', '信标', same('beacon'), 3, null, {
     opaque: false,

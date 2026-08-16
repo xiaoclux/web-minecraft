@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
 import { REDSTONE_MAX_POWER, REDSTONE_POWERED_BIT } from '../src/engine/constants/redstone';
-import { powerAt, sourcePower, updateWires, wirePower } from '../src/engine/systems/RedstoneSystem';
+import { powerAt, repeaterInputPower, sourcePower, updateWires, wirePower } from '../src/engine/systems/RedstoneSystem';
 import { Chunk } from '../src/engine/world/Chunk';
 import { World } from '../src/engine/world/World';
 
@@ -88,5 +88,47 @@ describe('红石信号', () => {
     updateWires(world, 0, 10, 0);
     expect(wirePower(world, 1, 10, 0)).toBe(REDSTONE_MAX_POWER);
     expect(wirePower(world, 2, 11, 0)).toBe(REDSTONE_MAX_POWER - 1);
+  });
+});
+
+describe('红石火把与中继器', () => {
+  it('火把不给自己脚下的方块供电（否则会自锁）', () => {
+    const world = testWorld();
+    world.setBlock(2, 10, 0, BlockId.STONE);
+    world.setBlock(2, 11, 0, BlockId.REDSTONE_TORCH);
+    // 脚下方块（排除火把自己）不该有电
+    expect(powerAt(world, 2, 10, 0, [2, 11, 0])).toBe(0);
+    // 但火把仍然给旁边的格子供电
+    expect(powerAt(world, 3, 11, 0)).toBe(REDSTONE_MAX_POWER);
+  });
+
+  it('熄灭的火把不供电', () => {
+    const world = testWorld();
+    world.setBlock(2, 11, 0, BlockId.REDSTONE_TORCH_OFF);
+    expect(sourcePower(world, 2, 11, 0)).toBe(0);
+  });
+
+  it('中继器只吃背面的信号、只朝正面输出', () => {
+    const world = testWorld();
+    // 中继器朝 +X（FACINGS[0]）
+    world.setBlock(2, 10, 0, BlockId.REPEATER_ON, 0);
+    // 正面那格有电
+    expect(powerAt(world, 3, 10, 0)).toBe(REDSTONE_MAX_POWER);
+    // 背面与两侧没电
+    expect(powerAt(world, 1, 10, 0)).toBe(0);
+    expect(powerAt(world, 2, 10, 1)).toBe(0);
+  });
+
+  it('中继器的背面输入只认正对的那一格', () => {
+    const world = testWorld();
+    world.setBlock(2, 10, 0, BlockId.REPEATER, 0);
+    expect(repeaterInputPower(world, 2, 10, 0)).toBe(0);
+    // 背面（-X 侧）放红石块
+    world.setBlock(1, 10, 0, BlockId.REDSTONE_BLOCK);
+    expect(repeaterInputPower(world, 2, 10, 0)).toBe(REDSTONE_MAX_POWER);
+    // 侧面放红石块不算
+    world.setBlock(1, 10, 0, BlockId.AIR);
+    world.setBlock(2, 10, 1, BlockId.REDSTONE_BLOCK);
+    expect(repeaterInputPower(world, 2, 10, 0)).toBe(0);
   });
 });

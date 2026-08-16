@@ -10,5 +10,13 @@ export const REDSTONE_POWERED_BIT = 8;
 export const BUTTON_PRESS_TICKS = 20;
 /** 压力板在没人踩之后还保持通电的 tick 数。 */
 export const PRESSURE_PLATE_HOLD_TICKS = 20;
+/** 红石火把切换状态的延迟（1.8.9 是 2 tick）。 */
+export const TORCH_DELAY_TICKS = 2;
+/** 中继器的四挡延迟（tick），meta 高位存挡位。 */
+export const REPEATER_DELAYS = [2, 4, 6, 8] as const;
+/** 中继器 meta：低 2 位朝向，高 2 位延迟挡位。 */
+export const REPEATER_FACING_MASK = 3;
+export const REPEATER_DELAY_SHIFT = 2;
+export const REPEATER_DELAY_MASK = 3;
 /** 压力板的触发范围（以方块中心为准的水平半径）。 */
 export const PRESSURE_PLATE_RANGE = 0.7;
