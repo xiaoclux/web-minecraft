@@ -11,6 +11,7 @@ import { GameMode, HOTBAR_SIZE, INVENTORY_SIZE } from '../engine/constants/game'
 import { MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT } from '../engine/constants/keys';
 import { CHEST_COLUMNS, TOUCH_LONG_PRESS_MS } from '../engine/constants/ui';
 import { Screen, type GameUiState } from '../engine/events/GameState';
+import { BREW_TICKS } from '../engine/items/potions';
 import { SMELT_TICKS } from '../engine/items/Furnace';
 import { ITEM_DEFS, ItemKind } from '../engine/items/ItemRegistry';
 import type { ItemStack } from '../engine/items/ItemStack';
@@ -178,6 +179,32 @@ function FurnaceArea({ game }: { game: Game }) {
   );
 }
 
+const BREWING_BOTTLE_INDICES = [0, 1, 2] as const;
+
+function BrewingArea({ game }: { game: Game }) {
+  const stand = game.openBrewingStand;
+  if (!stand) {
+    return null;
+  }
+  const brewRatio = stand.brewTicks / BREW_TICKS;
+  return (
+    <div className="brewing-area">
+      <div className="section-title">酿造台</div>
+      <div className="brewing-column">
+        <Slot game={game} refer={{ kind: 'brewIngredient', index: 0 }} stack={stand.ingredient} />
+        <div className="brew-progress">
+          <div className="brew-progress-fill" style={{ height: `${Math.round(brewRatio * 100)}%` }} />
+        </div>
+        <div className="brewing-bottles">
+          {BREWING_BOTTLE_INDICES.map((i) => (
+            <Slot key={i} game={game} refer={{ kind: 'brewBottle', index: i }} stack={stand.bottles[i]} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ChestArea({ game }: { game: Game }) {
   const items = game.openChestItems;
   const indices = useMemo(() => (items ? Array.from({ length: items.length }, (_, i) => i) : []), [items]);
@@ -257,6 +284,7 @@ export function InventoryScreen({ game, state }: InventoryScreenProps) {
           {state.screen === Screen.INVENTORY && !isCreative && <CraftingArea game={game} size={2} />}
           {state.screen === Screen.CRAFTING && <CraftingArea game={game} size={3} />}
           {state.screen === Screen.FURNACE && <FurnaceArea game={game} />}
+          {state.screen === Screen.BREWING && <BrewingArea game={game} />}
           {state.screen === Screen.CHEST && <ChestArea game={game} />}
           <div className="section-title">物品栏</div>
           <InventoryGrid game={game} />

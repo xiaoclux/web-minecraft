@@ -1,3 +1,4 @@
+import { createBrewingStand } from '../src/engine/items/Brewing';
 import { describe, expect, it } from 'vitest';
 import { ContainerController, type ContainerHost } from '../src/engine/items/ContainerController';
 import { createFurnace, type FurnaceState } from '../src/engine/items/Furnace';
@@ -9,10 +10,11 @@ const LEFT = 0;
 const RIGHT = 2;
 const INVENTORY_SLOTS = 36;
 
-function setup(screen: 'inventory' | 'crafting' | 'furnace' | 'chest' = 'inventory', isCreative = false) {
+function setup(screen: 'inventory' | 'crafting' | 'furnace' | 'chest' | 'brewing' = 'inventory', isCreative = false) {
   const inventory = new Inventory();
   const craftingGrid: (ItemStack | null)[] = new Array<ItemStack | null>(9).fill(null);
   const furnace: FurnaceState = createFurnace();
+  const brewing = createBrewingStand();
   const chestItems: (ItemStack | null)[] = new Array<ItemStack | null>(CHEST_SLOT_COUNT).fill(null);
   let changes = 0;
   const host: ContainerHost = {
@@ -20,13 +22,14 @@ function setup(screen: 'inventory' | 'crafting' | 'furnace' | 'chest' = 'invento
     craftingGrid,
     craftGridSize: screen === 'crafting' ? 3 : 2,
     openFurnace: screen === 'furnace' ? furnace : null,
+    openBrewingStand: screen === 'brewing' ? brewing : null,
     openChestItems: screen === 'chest' ? chestItems : null,
     currentScreen: screen,
     isCreative,
     notifyChanged: () => changes++,
   };
   const ctrl = new ContainerController(host);
-  return { inventory, craftingGrid, furnace, chestItems, ctrl, changes: () => changes };
+  return { inventory, craftingGrid, furnace, brewing, chestItems, ctrl, changes: () => changes };
 }
 
 describe('ContainerController', () => {
@@ -195,5 +198,22 @@ describe('装备栏', () => {
     ctrl.handleSlotClick({ kind: 'inventory', index: 5 }, LEFT, true);
     expect(inventory.get(5)).toBeNull();
     expect(inventory.getArmor(1)).toEqual({ id: 'diamond_chestplate', count: 1 });
+  });
+
+  it('酿造台：瓶位只收药水、原料格只收原料，shift 自动分格', () => {
+    const { inventory, brewing, ctrl } = setup('brewing');
+    inventory.set(0, { id: 'sugar', count: 3 });
+    inventory.set(1, { id: 'potion_water', count: 1 });
+    inventory.set(2, { id: 'stick', count: 1 });
+    ctrl.handleSlotClick({ kind: 'inventory', index: 2 }, 0, false);
+    ctrl.handleSlotClick({ kind: 'brewBottle', index: 0 }, 0, false);
+    expect(brewing.bottles[0]).toBeNull();
+    expect(ctrl.cursor?.id).toBe('stick');
+    ctrl.handleSlotClick({ kind: 'inventory', index: 2 }, 0, false);
+    ctrl.handleSlotClick({ kind: 'inventory', index: 0 }, 0, true);
+    ctrl.handleSlotClick({ kind: 'inventory', index: 1 }, 0, true);
+    expect(brewing.ingredient?.id).toBe('sugar');
+    expect(brewing.bottles[0]?.id).toBe('potion_water');
+    expect(inventory.get(0)).toBeNull();
   });
 });

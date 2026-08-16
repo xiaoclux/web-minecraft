@@ -192,6 +192,7 @@ export const BlockId = {
   FURNACE: 61,
   SNOW: 80,
   CACTUS: 81,
+  BREWING_STAND: 117,
   SUGAR_CANE: 83,
   GLOWSTONE: 89,
   STONE_BRICKS: 98,
@@ -609,6 +610,14 @@ export const BLOCK_DEFS: BlockDef[] = [
       needsSupport: true,
     }),
     shape: BlockShape.CACTUS,
+  },
+  {
+    ...cube(BlockId.BREWING_STAND, 'brewing_stand', '酿造台', same('brewing_stand'), 0.5, ToolType.PICKAXE, {
+      opaque: false,
+      interactive: true,
+      light: 1,
+    }),
+    shape: BlockShape.BREWING_STAND,
   },
   cross(BlockId.SUGAR_CANE, 'sugar_cane', '甘蔗', 'sugar_cane', {
     drops: [{ item: 'sugar_cane', min: 1, max: 1 }],

@@ -604,15 +604,6 @@ function armorPainters(): Record<string, Painter> {
   return out;
 }
 
-/** 全部物品图标。 */
-export const ITEM_ICON_PAINTERS: Record<string, Painter> = {
-  ...HAND_DRAWN_ICONS,
-  ...armorPainters(),
-  ...dyePainters(),
-  ...potionPainters(),
-  ...brewingIngredientPainters(),
-};
-
 /** 药水瓶：玻璃轮廓 + 软木塞，瓶身按药水颜色填充；喷溅型瓶口有一圈"扔出去"的白边。 */
 const BOTTLE_GLASS = hex('#d6e6ee');
 const BOTTLE_CORK = hex('#8f6b3a');
@@ -708,6 +699,15 @@ function bucketPainter(fill: Rgba | null): Painter {
     );
   };
 }
+
+/** 全部物品图标。 */
+export const ITEM_ICON_PAINTERS: Record<string, Painter> = {
+  ...HAND_DRAWN_ICONS,
+  ...armorPainters(),
+  ...dyePainters(),
+  ...potionPainters(),
+  ...brewingIngredientPainters(),
+};
 
 /** 生成物品图标；未知 key 返回品红方块。 */
 export function paintItemIcon(key: string): PixelCanvas {

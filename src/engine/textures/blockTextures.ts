@@ -604,6 +604,13 @@ const cactusTop: Painter = (c, rng) => {
   c.rect(2, 2, 12, 12, shade(CACTUS_GREEN, 0.85));
 };
 
+/** 酿造台：深灰石底座 + 金色的杆（同一张贴图贴在底座与杆上）。 */
+const brewingStand: Painter = (c, rng) => {
+  c.noise(hex('#4a4a4a'), 0.08, rng);
+  c.rect(6, 0, 4, 16, hex('#c9a227'));
+  c.rect(7, 0, 2, 16, hex('#e0c060'));
+};
+
 /** 甘蔗：细长的浅绿叶片。 */
 const sugarCane: Painter = (c) => {
   c.fill(TRANSPARENT);
@@ -812,6 +819,7 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   cobweb,
   cactus_side: cactusSide,
   cactus_top: cactusTop,
+  brewing_stand: brewingStand,
   sugar_cane: sugarCane,
   chest_top: chestTop,
   chest_front: chestFront,

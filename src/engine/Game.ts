@@ -99,6 +99,8 @@ import { Screen, isContainerScreen, type DebugInfo, type GameUiState } from './e
 import { Store } from './events/Store';
 import { ContainerController, type ContainerHost, type SlotRef } from './items/ContainerController';
 import { createFurnace, tickFurnace, type FurnaceState } from './items/Furnace';
+import { createBrewingStand, tickBrewing, type BrewingState } from './items/Brewing';
+import { POTION_DEFS, PotionBase, potionItemId } from './items/potions';
 export type { SlotRef } from './items/ContainerController';
 import { getAttackDamage, getItem, ItemKind } from './items/ItemRegistry';
 import type { ItemStack } from './items/ItemStack';
@@ -1210,6 +1212,13 @@ export class Game implements EntityContext, ContainerHost {
       }
       return;
     }
+    if (def.potion && !def.splash) {
+      this.drinkPotion(def.potion);
+      return;
+    }
+    if (def.id === 'glass_bottle' && this.tryFillBottle()) {
+      return;
+    }
     if (def.id === 'shears' && this.tryShearMob()) {
       return;
     }
@@ -1242,6 +1251,31 @@ export class Game implements EntityContext, ContainerHost {
     if (def.kind === ItemKind.BLOCK && def.blockId !== undefined && hit) {
       this.tryPlaceBlock(def.blockId, hit, def.blockMeta ?? 0);
     }
+  }
+
+  /** 喝药水：给自己挂上效果，瓶子变回玻璃瓶（水瓶喝了什么也不发生）。 */
+  private drinkPotion(potionId: string): void {
+    const potion = POTION_DEFS[potionId];
+    if (potion?.effect) {
+      this.player.addEffect(potion.effect, potion.ticks, potion.amplifier, this);
+    }
+    this.replaceHeldItem('glass_bottle');
+    this.sound.play('eat');
+    this.useCooldown = EAT_COOLDOWN_TICKS;
+    this.renderer.hand.swing();
+  }
+
+  /** 玻璃瓶对着水右键装成水瓶（不消耗水源，1.8.9 同）。 */
+  private tryFillBottle(): boolean {
+    const p = this.player;
+    const dir = this.lookDirection();
+    const fluidHit = raycastBlocks(this.world, p.x, p.eyeY, p.z, dir.x, dir.y, dir.z, this.rules.reach, true);
+    if (!fluidHit || this.world.getBlock(fluidHit.x, fluidHit.y, fluidHit.z) !== BlockId.WATER) {
+      return false;
+    }
+    this.replaceHeldItem(potionItemId(PotionBase.WATER));
+    this.renderer.hand.swing();
+    return true;
   }
 
   /** 打火石：在命中面外侧点一团火。 */
@@ -1490,6 +1524,13 @@ export class Game implements EntityContext, ContainerHost {
           state: createFurnace(),
         }));
         this.openScreen(Screen.FURNACE, { x: hit.x, y: hit.y, z: hit.z });
+        return true;
+      case BlockId.BREWING_STAND:
+        this.blockEntities.getOrCreate(hit.x, hit.y, hit.z, () => ({
+          type: BlockEntityType.BREWING_STAND,
+          state: createBrewingStand(),
+        }));
+        this.openScreen(Screen.BREWING, { x: hit.x, y: hit.y, z: hit.z });
         return true;
       case BlockId.BED:
         this.useBed(hit.x, hit.y, hit.z);
@@ -1810,14 +1851,18 @@ export class Game implements EntityContext, ContainerHost {
     this.primedTnt = remaining;
   }
 
+  /** 熔炉与酿造台各自推进一格；有变化且正打开着对应界面时刷新 UI。 */
   private tickFurnaces(): void {
     let changed = false;
     for (const entity of this.blockEntities.values()) {
       if (entity.type === BlockEntityType.FURNACE && tickFurnace(entity.state)) {
         changed = true;
+      } else if (entity.type === BlockEntityType.BREWING_STAND && tickBrewing(entity.state)) {
+        changed = true;
       }
     }
-    if (changed && this.store.get().screen === Screen.FURNACE) {
+    const screen = this.store.get().screen;
+    if (changed && (screen === Screen.FURNACE || screen === Screen.BREWING)) {
       this.store.patch({ inventoryVersion: this.store.get().inventoryVersion + 1 });
     }
   }
@@ -1830,6 +1875,16 @@ export class Game implements EntityContext, ContainerHost {
     }
     const entity = this.blockEntities.get(pos.x, pos.y, pos.z);
     return entity?.type === BlockEntityType.FURNACE ? entity.state : null;
+  }
+
+  /** 当前打开的酿造台状态。 */
+  get openBrewingStand(): BrewingState | null {
+    const pos = this.store.get().openBlock;
+    if (!pos) {
+      return null;
+    }
+    const entity = this.blockEntities.get(pos.x, pos.y, pos.z);
+    return entity?.type === BlockEntityType.BREWING_STAND ? entity.state : null;
   }
 
   /** 当前打开的箱子内容。 */
@@ -1966,7 +2021,11 @@ export class Game implements EntityContext, ContainerHost {
       return;
     }
     const stacks: (ItemStack | null)[] =
-      entity.type === BlockEntityType.FURNACE ? [entity.state.input, entity.state.fuel, entity.state.output] : entity.items;
+      entity.type === BlockEntityType.FURNACE
+        ? [entity.state.input, entity.state.fuel, entity.state.output]
+        : entity.type === BlockEntityType.BREWING_STAND
+          ? [entity.state.ingredient, ...entity.state.bottles]
+          : entity.items;
     for (const stack of stacks) {
       if (stack) {
         this.dropItem(x + 0.5, y + 0.5, z + 0.5, stack, 0.2);

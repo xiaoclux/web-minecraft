@@ -39,6 +39,8 @@ export const BlockShape = {
   FARMLAND: 'farmland',
   /** 仙人掌：比整格细一圈。 */
   CACTUS: 'cactus',
+  /** 酿造台：一层薄底座 + 中间一根细杆。 */
+  BREWING_STAND: 'brewing_stand',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -118,6 +120,14 @@ const FARMLAND_BOXES: readonly BlockBox[] = [box(0, 0, 0, 1, FARMLAND_HEIGHT, 1)
 const CACTUS_INSET = 1 / 16;
 const CACTUS_BOXES: readonly BlockBox[] = [
   box(CACTUS_INSET, 0, CACTUS_INSET, 1 - CACTUS_INSET, 1, 1 - CACTUS_INSET),
+];
+/** 酿造台：底座 2/16 高，中杆 2/16 粗、14/16 高。 */
+const BREWING_BASE_HEIGHT = 2 / 16;
+const BREWING_ROD_HALF = 1 / 16;
+const BREWING_ROD_HEIGHT = 14 / 16;
+const BREWING_STAND_BOXES: readonly BlockBox[] = [
+  box(0, 0, 0, 1, BREWING_BASE_HEIGHT, 1),
+  box(0.5 - BREWING_ROD_HALF, 0, 0.5 - BREWING_ROD_HALF, 0.5 + BREWING_ROD_HALF, BREWING_ROD_HEIGHT, 0.5 + BREWING_ROD_HALF),
 ];
 /** 贴在格子某一侧面的薄板（厚度 t，方向 (dx,dz) 指向该侧面）。 */
 function panelBox(dx: number, dz: number, t: number): BlockBox {
@@ -260,6 +270,8 @@ export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readon
       return FARMLAND_BOXES;
     case BlockShape.CACTUS:
       return CACTUS_BOXES;
+    case BlockShape.BREWING_STAND:
+      return BREWING_STAND_BOXES;
     case BlockShape.LADDER:
       return LADDER_BOXES[meta & FACING_MASK];
     case BlockShape.DOOR:

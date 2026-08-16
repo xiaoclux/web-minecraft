@@ -200,6 +200,7 @@ export const RECIPES: Recipe[] = [
   // 1.8.9 还要一个棕色蘑菇；蘑菇没做之前先用蛛眼 + 糖
   shapeless(['spider_eye', 'sugar'], 'fermented_spider_eye'),
   shaped(['GG', 'GG'], { G: 'glowstone_dust' }, 'glowstone'),
+  shaped([' B ', 'CCC'], { B: 'blaze_rod', C: 'cobblestone' }, 'brewing_stand'),
   shapeless(['pumpkin'], 'wheat_seeds', 4),
   shapeless(['melon_slice'], 'wheat_seeds'),
   shaped(['MMM', 'MMM', 'MMM'], { M: 'melon_slice' }, 'melon'),

@@ -1,9 +1,11 @@
 import { MOUSE_RIGHT } from '../constants/keys';
 import type { Screen } from '../events/GameState';
+import type { BrewingState } from './Brewing';
 import type { FurnaceState } from './Furnace';
 import { Inventory } from './Inventory';
 import { getItem } from './ItemRegistry';
 import { canMerge, maxStackOf, type ItemStack } from './ItemStack';
+import { isBrewingIngredient, potionOfItem } from './potions';
 import { matchRecipe } from './Recipes';
 
 /** 容器格引用。 */
@@ -15,6 +17,8 @@ export interface SlotRef {
     | 'furnaceInput'
     | 'furnaceFuel'
     | 'furnaceOutput'
+    | 'brewIngredient'
+    | 'brewBottle'
     | 'chest'
     | 'armor'
     | 'creative';
@@ -29,6 +33,8 @@ export interface ContainerHost {
   readonly craftingGrid: (ItemStack | null)[];
   readonly craftGridSize: number;
   readonly openFurnace: FurnaceState | null;
+  /** 打开中的酿造台（未打开时为 null）。 */
+  readonly openBrewingStand: BrewingState | null;
   /** 打开中的箱子内容（未打开箱子时为 null）。 */
   readonly openChestItems: (ItemStack | null)[] | null;
   readonly currentScreen: Screen;
@@ -83,6 +89,10 @@ export class ContainerController {
         return this.host.openFurnace?.fuel ?? null;
       case 'furnaceOutput':
         return this.host.openFurnace?.output ?? null;
+      case 'brewIngredient':
+        return this.host.openBrewingStand?.ingredient ?? null;
+      case 'brewBottle':
+        return this.host.openBrewingStand?.bottles[ref.index] ?? null;
       case 'chest':
         return this.host.openChestItems?.[ref.index] ?? null;
       case 'armor':
@@ -121,6 +131,20 @@ export class ContainerController {
         const f = this.host.openFurnace;
         if (f) {
           f.output = value;
+        }
+        break;
+      }
+      case 'brewIngredient': {
+        const b = this.host.openBrewingStand;
+        if (b) {
+          b.ingredient = value;
+        }
+        break;
+      }
+      case 'brewBottle': {
+        const b = this.host.openBrewingStand;
+        if (b) {
+          b.bottles[ref.index] = value;
         }
         break;
       }
@@ -171,10 +195,7 @@ export class ContainerController {
       this.quickMove(ref, slot);
       return;
     }
-    if (ref.kind === 'furnaceFuel' && this.cursorStack && !getItem(this.cursorStack.id)?.burnTicks) {
-      return;
-    }
-    if (ref.kind === 'armor' && this.cursorStack && getItem(this.cursorStack.id)?.armor?.slot !== ref.index) {
+    if (this.cursorStack && !this.acceptsStack(ref, this.cursorStack)) {
       return;
     }
     if (!this.cursorStack) {
@@ -218,6 +239,22 @@ export class ContainerController {
     this.setSlot(ref, cursor);
     this.cursorStack = slot;
     this.host.notifyChanged();
+  }
+
+  /** 有格子类型限制的容器格能不能放下该物品（燃料格只收燃料、瓶位只收药水……）。 */
+  private acceptsStack(ref: SlotRef, stack: ItemStack): boolean {
+    switch (ref.kind) {
+      case 'furnaceFuel':
+        return getItem(stack.id)?.burnTicks !== undefined;
+      case 'armor':
+        return getItem(stack.id)?.armor?.slot === ref.index;
+      case 'brewIngredient':
+        return isBrewingIngredient(stack.id);
+      case 'brewBottle':
+        return potionOfItem(stack.id) !== null;
+      default:
+        return true;
+    }
   }
 
   private handleCreativeClick(ref: SlotRef, shift: boolean): void {
@@ -305,26 +342,25 @@ export class ContainerController {
     }
     if (ref.kind === 'inventory') {
       const screen = this.host.currentScreen;
-      if (screen === 'furnace') {
-        const f = this.host.openFurnace;
-        if (f) {
-          const def = getItem(slot.id);
-          const target: SlotRef | null = def?.smeltsInto
-            ? { kind: 'furnaceInput', index: 0 }
-            : def?.burnTicks
-              ? { kind: 'furnaceFuel', index: 0 }
-              : null;
-          if (target) {
-            const existing = this.getSlot(target);
-            if (!existing) {
-              this.setSlot(target, slot);
-              this.setSlot(ref, null);
-              return;
-            }
-            if (canMerge(existing, slot)) {
-              const move = Math.min(slot.count, maxStackOf(slot.id) - existing.count);
-              this.setSlot(target, { ...existing, count: existing.count + move });
-              this.setSlot(ref, { ...slot, count: slot.count - move });
+      if (screen === 'furnace' && this.host.openFurnace) {
+        const def = getItem(slot.id);
+        const target: SlotRef | null = def?.smeltsInto
+          ? { kind: 'furnaceInput', index: 0 }
+          : def?.burnTicks
+            ? { kind: 'furnaceFuel', index: 0 }
+            : null;
+        if (target && this.moveIntoSlot(ref, slot, target)) {
+          return;
+        }
+      }
+      if (screen === 'brewing' && this.host.openBrewingStand) {
+        if (isBrewingIngredient(slot.id) && this.moveIntoSlot(ref, slot, { kind: 'brewIngredient', index: 0 })) {
+          return;
+        }
+        if (potionOfItem(slot.id)) {
+          const bottles = this.host.openBrewingStand.bottles;
+          for (let i = 0; i < bottles.length; i++) {
+            if (!bottles[i] && this.moveIntoSlot(ref, slot, { kind: 'brewBottle', index: i })) {
               return;
             }
           }
@@ -355,6 +391,26 @@ export class ContainerController {
     // 从容器/合成格移回背包
     const remaining = this.host.inventory.add(slot);
     this.setSlot(ref, remaining > 0 ? { ...slot, count: remaining } : null);
+  }
+
+  /** shift 点击：把 ref 格里的物品搬到 target 格（空则整组放入，同类则合并）。返回是否搬动了。 */
+  private moveIntoSlot(ref: SlotRef, slot: ItemStack, target: SlotRef): boolean {
+    const existing = this.getSlot(target);
+    if (!existing) {
+      this.setSlot(target, slot);
+      this.setSlot(ref, null);
+      return true;
+    }
+    if (!canMerge(existing, slot)) {
+      return false;
+    }
+    const move = Math.min(slot.count, maxStackOf(slot.id) - existing.count);
+    if (move <= 0) {
+      return false;
+    }
+    this.setSlot(target, { ...existing, count: existing.count + move });
+    this.setSlot(ref, { ...slot, count: slot.count - move });
+    return true;
   }
 
   /** 把物品塞进打开中的箱子；返回剩下的部分（没有箱子或塞不下时原样返回）。 */

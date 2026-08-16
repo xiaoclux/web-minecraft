@@ -3,6 +3,7 @@
  * 统一存放并随存档序列化，方块被破坏时由 Game 负责取走内容并删除。
  */
 
+import type { BrewingState } from '../items/Brewing';
 import type { FurnaceState } from '../items/Furnace';
 import type { ItemStack } from '../items/ItemStack';
 import type { MobType } from '../entities/MobDefs';
@@ -12,6 +13,7 @@ export const BlockEntityType = {
   FURNACE: 'furnace',
   CHEST: 'chest',
   SPAWNER: 'spawner',
+  BREWING_STAND: 'brewing_stand',
 } as const;
 export type BlockEntityType = (typeof BlockEntityType)[keyof typeof BlockEntityType];
 
@@ -40,7 +42,13 @@ export interface SpawnerBlockEntity {
   delay: number;
 }
 
-export type BlockEntity = FurnaceBlockEntity | ChestBlockEntity | SpawnerBlockEntity;
+/** 酿造台。 */
+export interface BrewingStandBlockEntity {
+  type: typeof BlockEntityType.BREWING_STAND;
+  state: BrewingState;
+}
+
+export type BlockEntity = FurnaceBlockEntity | ChestBlockEntity | SpawnerBlockEntity | BrewingStandBlockEntity;
 
 /** 存档中的一条方块实体记录。 */
 export interface BlockEntitySaveData {
