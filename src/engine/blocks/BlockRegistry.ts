@@ -112,6 +112,15 @@ export interface BlockDef {
   connectGroup?: string;
   /** 可燃：会被相邻的火点着并烧掉。 */
   flammable?: boolean;
+  /** 作物：种子物品、成熟产物与额外掉落的种子数。 */
+  crop?: {
+    /** 用来播种的物品 id（也是未成熟时的掉落）。 */
+    seedItem: string;
+    /** 成熟时的主要产物。 */
+    produce: { item: string; min: number; max: number };
+    /** 成熟时额外掉的种子数量区间。 */
+    extraSeeds?: { min: number; max: number };
+  };
 }
 
 export const BlockId = {
@@ -148,6 +157,8 @@ export const BlockId = {
   DIAMOND_ORE: 56,
   BED: 26,
   WHEAT: 59,
+  CARROTS: 141,
+  POTATOES: 142,
   FARMLAND: 60,
   FENCE: 85,
   FENCE_GATE: 107,
@@ -480,8 +491,29 @@ export const BLOCK_DEFS: BlockDef[] = [
     ...cross(BlockId.WHEAT, 'wheat_crop', '小麦', 'wheat_stage_0', {
       noItem: true,
       drops: [],
+      crop: {
+        seedItem: 'wheat_seeds',
+        produce: { item: 'wheat', min: 1, max: 1 },
+        extraSeeds: { min: 0, max: 3 },
+      },
     }),
     texturesForMeta: (meta: number) => same(`wheat_stage_${Math.min(CROP_MAX_STAGE, meta)}`),
+  },
+  {
+    ...cross(BlockId.CARROTS, 'carrots', '胡萝卜', 'carrots_stage_0', {
+      noItem: true,
+      drops: [],
+      crop: { seedItem: 'carrot', produce: { item: 'carrot', min: 1, max: 4 } },
+    }),
+    texturesForMeta: (meta: number) => same(`carrots_stage_${Math.min(CROP_MAX_STAGE, meta)}`),
+  },
+  {
+    ...cross(BlockId.POTATOES, 'potatoes', '土豆', 'potatoes_stage_0', {
+      noItem: true,
+      drops: [],
+      crop: { seedItem: 'potato', produce: { item: 'potato', min: 1, max: 4 } },
+    }),
+    texturesForMeta: (meta: number) => same(`potatoes_stage_${Math.min(CROP_MAX_STAGE, meta)}`),
   },
   {
     ...cube(BlockId.FENCE, 'fence', '橡木栅栏', same('planks'), 2, ToolType.AXE, {
@@ -607,9 +639,19 @@ export const BLOCK_DEFS: BlockDef[] = [
 
 const BLOCKS_BY_ID: (BlockDef | undefined)[] = [];
 const BLOCKS_BY_NAME = new Map<string, BlockDef>();
+/** 播种物品 id → 作物方块 id。 */
+const CROP_BY_SEED = new Map<string, number>();
 for (const def of BLOCK_DEFS) {
   BLOCKS_BY_ID[def.id] = def;
   BLOCKS_BY_NAME.set(def.name, def);
+  if (def.crop) {
+    CROP_BY_SEED.set(def.crop.seedItem, def.id);
+  }
+}
+
+/** 该物品能种出哪种作物；不能播种返回 null。 */
+export function cropBlockForSeed(itemId: string): number | null {
+  return CROP_BY_SEED.get(itemId) ?? null;
 }
 const AIR_DEF = BLOCKS_BY_ID[BlockId.AIR] as BlockDef;
 

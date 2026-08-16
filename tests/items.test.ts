@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getBlockByName } from '../src/engine/blocks/BlockRegistry';
+import { cropBlockForSeed, getBlockByName } from '../src/engine/blocks/BlockRegistry';
 import { breakTicks, canHarvest } from '../src/engine/blocks/blockBreaking';
 import { Inventory } from '../src/engine/items/Inventory';
 import { ITEM_DEFS, TOOL_MATERIALS, getItem } from '../src/engine/items/ItemRegistry';
@@ -160,5 +160,18 @@ describe('工具材质', () => {
   it('金镐挖不到钻石（挖掘等级不够）', () => {
     expect(canHarvest(getBlockByName('diamond_ore')!, s('golden_pickaxe'))).toBe(false);
     expect(canHarvest(getBlockByName('diamond_ore')!, s('iron_pickaxe'))).toBe(true);
+  });
+});
+
+describe('作物', () => {
+  it('每种作物都能用自己的种子物品种出来', () => {
+    expect(cropBlockForSeed('wheat_seeds')).toBe(getBlockByName('wheat_crop')?.id);
+    expect(cropBlockForSeed('carrot')).toBe(getBlockByName('carrots')?.id);
+    expect(cropBlockForSeed('potato')).toBe(getBlockByName('potatoes')?.id);
+    expect(cropBlockForSeed('stone')).toBeNull();
+  });
+
+  it('土豆能烧成烤土豆', () => {
+    expect(getItem('potato')?.smeltsInto).toBe('baked_potato');
   });
 });

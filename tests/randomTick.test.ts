@@ -90,6 +90,16 @@ describe('随机 tick', () => {
     expect(world.getMeta(0, 11, 0)).toBe(CROP_MAX_STAGE);
   });
 
+  it('胡萝卜与土豆和小麦一样会生长', () => {
+    for (const crop of [BlockId.CARROTS, BlockId.POTATOES]) {
+      const world = emptyWorld(0);
+      world.setBlock(0, 10, 0, BlockId.FARMLAND, FARMLAND_MAX_MOISTURE);
+      world.setBlock(0, 11, 0, crop, 0);
+      const system = new RandomTickSystem(host(world));
+      expect(runUntil(system, [0, 11, 0], () => world.getMeta(0, 11, 0) === CROP_MAX_STAGE)).toBe(true);
+    }
+  });
+
   it('太暗的小麦不会生长', () => {
     const world = emptyWorld(0);
     world.setBlock(0, 10, 0, BlockId.FARMLAND, FARMLAND_MAX_MOISTURE);

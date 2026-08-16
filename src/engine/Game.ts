@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BlockId, ToolType, getBlock, type BlockDef } from './blocks/BlockRegistry';
+import { BlockId, ToolType, cropBlockForSeed, getBlock, type BlockDef } from './blocks/BlockRegistry';
 import { breakTicks, rollDrops, rollXp } from './blocks/blockBreaking';
 import {
   BED_HEAD_BIT,
@@ -138,8 +138,6 @@ const FILLED_BUCKETS: Record<number, string> = {
 /** 求爱 / 繁殖时冒出的爱心粒子数量与取样贴图。 */
 const HEART_PARTICLE_COUNT = 7;
 const HEART_PARTICLE_TEXTURE = 'particle_heart';
-/** 成熟小麦额外掉落的种子上限。 */
-const WHEAT_MAX_SEED_DROP = 3;
 /** 破坏一个方块炸出的碎屑数量。 */
 const BREAK_PARTICLE_COUNT = 12;
 /** 爆炸粒子数量与取样贴图（用石头的灰色当烟）。 */
@@ -1014,18 +1012,8 @@ export class Game implements EntityContext, ContainerHost {
     }
     this.sound.play('break');
     this.renderer.hand.swing();
-    if (withDrops && !this.rules.infiniteItems && id === BlockId.WHEAT) {
-      // 成熟的小麦掉 1 小麦 + 0~3 种子，没长成只掉回 1 颗种子
-      const mature = this.world.getMeta(x, y, z) >= CROP_MAX_STAGE;
-      if (mature) {
-        this.dropItem(x + 0.5, y + 0.5, z + 0.5, { id: 'wheat', count: 1 }, 0.2);
-        const seeds = Math.floor(this.rng() * (WHEAT_MAX_SEED_DROP + 1));
-        if (seeds > 0) {
-          this.dropItem(x + 0.5, y + 0.5, z + 0.5, { id: 'wheat_seeds', count: seeds }, 0.2);
-        }
-      } else {
-        this.dropItem(x + 0.5, y + 0.5, z + 0.5, { id: 'wheat_seeds', count: 1 }, 0.2);
-      }
+    if (withDrops && !this.rules.infiniteItems && def.crop) {
+      this.dropCrop(x, y, z, def.crop);
       this.player.onBlockBroken();
     } else if (withDrops && !this.rules.infiniteItems) {
       const held = this.player.heldItem;
@@ -1173,7 +1161,7 @@ export class Game implements EntityContext, ContainerHost {
     if (def.tool?.type === ToolType.HOE && hit && this.tryTill(hit)) {
       return;
     }
-    if (def.id === 'wheat_seeds' && hit && this.tryPlantSeeds(hit)) {
+    if (hit && this.tryPlantSeeds(def.id, hit)) {
       return;
     }
     if (def.kind === ItemKind.BLOCK && def.blockId !== undefined && hit) {
@@ -1388,9 +1376,10 @@ export class Game implements EntityContext, ContainerHost {
     return true;
   }
 
-  /** 播种：对着耕地顶面撒小麦种子。 */
-  private tryPlantSeeds(hit: RayHit): boolean {
-    if (!this.rules.canModifyBlocks || hit.ny !== 1) {
+  /** 播种：对着耕地顶面用种子 / 胡萝卜 / 土豆。 */
+  private tryPlantSeeds(itemId: string, hit: RayHit): boolean {
+    const cropBlock = cropBlockForSeed(itemId);
+    if (cropBlock === null || !this.rules.canModifyBlocks || hit.ny !== 1) {
       return false;
     }
     if (this.world.getBlock(hit.x, hit.y, hit.z) !== BlockId.FARMLAND) {
@@ -1399,7 +1388,7 @@ export class Game implements EntityContext, ContainerHost {
     if (this.world.getBlock(hit.x, hit.y + 1, hit.z) !== BlockId.AIR) {
       return false;
     }
-    this.world.setBlock(hit.x, hit.y + 1, hit.z, BlockId.WHEAT, 0);
+    this.world.setBlock(hit.x, hit.y + 1, hit.z, cropBlock, 0);
     this.sound.play('place');
     this.renderer.hand.swing();
     if (!this.rules.infiniteItems) {
@@ -1772,6 +1761,28 @@ export class Game implements EntityContext, ContainerHost {
     }
     const entity = this.blockEntities.get(pos.x, pos.y, pos.z);
     return entity?.type === BlockEntityType.CHEST ? entity.items : null;
+  }
+
+  /** 收获作物：成熟掉主产物（外加种子），没长成只掉回一颗种子。 */
+  private dropCrop(x: number, y: number, z: number, crop: NonNullable<BlockDef['crop']>): void {
+    const cx = x + 0.5;
+    const cy = y + 0.5;
+    const cz = z + 0.5;
+    if (this.world.getMeta(x, y, z) < CROP_MAX_STAGE) {
+      this.dropItem(cx, cy, cz, { id: crop.seedItem, count: 1 }, 0.2);
+      return;
+    }
+    const { item, min, max } = crop.produce;
+    const count = min + Math.floor(this.rng() * (max - min + 1));
+    if (count > 0) {
+      this.dropItem(cx, cy, cz, { id: item, count }, 0.2);
+    }
+    if (crop.extraSeeds) {
+      const seeds = crop.extraSeeds.min + Math.floor(this.rng() * (crop.extraSeeds.max - crop.extraSeeds.min + 1));
+      if (seeds > 0) {
+        this.dropItem(cx, cy, cz, { id: crop.seedItem, count: seeds }, 0.2);
+      }
+    }
   }
 
   /** 方块被破坏时清掉它的方块实体，并把里面的物品掉出来。 */

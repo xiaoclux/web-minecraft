@@ -121,7 +121,12 @@ export class RandomTickSystem {
 
   /** 对单个方块跑一次随机 tick 的逻辑（骨粉催熟、测试等也可直接调用）。 */
   tickBlock(x: number, y: number, z: number): void {
-    switch (this.host.world.getBlock(x, y, z)) {
+    const id = this.host.world.getBlock(x, y, z);
+    if (getBlock(id).crop) {
+      this.tickCrop(x, y, z);
+      return;
+    }
+    switch (id) {
       case BlockId.GRASS:
         this.tickGrass(x, y, z);
         break;
@@ -133,9 +138,6 @@ export class RandomTickSystem {
         break;
       case BlockId.FARMLAND:
         this.tickFarmland(x, y, z);
-        break;
-      case BlockId.WHEAT:
-        this.tickCrop(x, y, z);
         break;
       case BlockId.FIRE:
         this.tickFire(x, y, z);

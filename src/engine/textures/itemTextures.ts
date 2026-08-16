@@ -408,6 +408,52 @@ const HAND_DRAWN_ICONS: Record<string, Painter> = {
       1,
       3,
     ),
+  carrot: (c) => {
+    c.draw(['..XX..', '.XXXX.', '.XXXX.', '..XX..', '..XX..', '...X..'], { X: hex('#e07a1c') }, 5, 7);
+    c.draw(['.X.X.', 'XXXXX', '.XXX.'], { X: hex('#4f8f2a') }, 5, 3);
+  },
+  potato: blob(hex('#d8a860'), [
+    '................',
+    '................',
+    '................',
+    '....XXXXXX......',
+    '...XXDXXXXX.....',
+    '..XXXXXXXXX.....',
+    '..XXXXXDXXX.....',
+    '...XXXXXXX......',
+    '....XXXXX.......',
+    '................',
+  ]),
+  baked_potato: blob(hex('#b07830'), [
+    '................',
+    '................',
+    '................',
+    '....XXXXXX......',
+    '...XXDXXXXX.....',
+    '..XXXXXXXXX.....',
+    '..XXXXXDXXX.....',
+    '...XXXXXXX......',
+    '....XXXXX.......',
+    '................',
+  ]),
+  golden_apple: (c) =>
+    c.draw(
+      [
+        '......S.........',
+        '.....SS.........',
+        '..XXXXXXXX......',
+        '.XXXXXXXXXX.....',
+        'XXXXXXXXXXXX....',
+        'XXXXXXXXXXXX....',
+        'XXXXXXXXXXXX....',
+        'XXXXXXXXXXXX....',
+        '.XXXXXXXXXX.....',
+        '..XXXX.XXX......',
+      ],
+      { X: hex('#f0c040'), S: hex('#5b4326') },
+      2,
+      3,
+    ),
   bread: blob(hex('#c98f4a'), [
     '................',
     '................',

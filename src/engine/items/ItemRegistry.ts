@@ -238,6 +238,10 @@ export const ITEM_DEFS: ItemDef[] = [
   food('cooked_chicken', '熟鸡肉', 6, 7.2),
   food('mutton', '生羊肉', 2, 1.2, { smeltsInto: 'cooked_mutton' }),
   food('cooked_mutton', '熟羊肉', 6, 9.6),
+  food('carrot', '胡萝卜', 3, 3.6),
+  food('potato', '土豆', 1, 0.6, { smeltsInto: 'baked_potato' }),
+  food('baked_potato', '烤土豆', 5, 6),
+  food('golden_apple', '金苹果', 4, 9.6),
   food('melon_slice', '西瓜片', 2, 1.2),
   food('rotten_flesh', '腐肉', 4, 0.8),
 ];
