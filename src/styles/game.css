@@ -1042,6 +1042,15 @@ button:disabled {
   background: #eee;
 }
 
+.creative-search {
+  margin: 4px 0;
+  padding: 4px 6px;
+  border: 2px solid #555;
+  background: #2b2b2b;
+  color: #eee;
+  font: inherit;
+}
+
 .creative-list {
   display: flex;
   flex-direction: column;

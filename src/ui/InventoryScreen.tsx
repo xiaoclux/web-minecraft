@@ -16,8 +16,9 @@ import { ENCHANTMENT_DEFS, type EnchantmentId } from '../engine/items/enchantmen
 import { ENCHANT_ITEM_SLOT, ENCHANT_LAPIS_SLOT, LAPIS_PER_OPTION } from '../engine/items/EnchantingTable';
 import { ANVIL_LEFT_SLOT, ANVIL_MAX_COST, ANVIL_RIGHT_SLOT, MAX_ITEM_NAME_LENGTH } from '../engine/items/Anvil';
 import { BEACON_MAX_LEVEL } from '../engine/systems/BeaconSystem';
+import { CREATIVE_TAB_DEFS, CreativeTab, creativeItems } from '../engine/items/creativeTabs';
 import { SMELT_TICKS } from '../engine/items/Furnace';
-import { ITEM_DEFS, ItemKind } from '../engine/items/ItemRegistry';
+import { ITEM_DEFS } from '../engine/items/ItemRegistry';
 import type { ItemStack } from '../engine/items/ItemStack';
 import { ItemIcon } from './ItemIcon';
 
@@ -25,14 +26,6 @@ interface InventoryScreenProps {
   game: Game;
   state: GameUiState;
 }
-
-const CREATIVE_TABS = [
-  { key: 'blocks', label: '方块', filter: (kind: string) => kind === ItemKind.BLOCK },
-  { key: 'tools', label: '工具', filter: (kind: string) => kind === ItemKind.TOOL },
-  { key: 'armor', label: '盔甲', filter: (kind: string) => kind === ItemKind.ARMOR },
-  { key: 'food', label: '食物', filter: (kind: string) => kind === ItemKind.FOOD },
-  { key: 'materials', label: '材料', filter: (kind: string) => kind === ItemKind.MATERIAL },
-] as const;
 
 function Slot({
   game,
@@ -326,20 +319,27 @@ function ChestArea({ game }: { game: Game }) {
 }
 
 function CreativeList({ game }: { game: Game }) {
-  const [tab, setTab] = useState<(typeof CREATIVE_TABS)[number]['key']>('blocks');
-  const items = useMemo(() => {
-    const t = CREATIVE_TABS.find((c) => c.key === tab) ?? CREATIVE_TABS[0];
-    return ITEM_DEFS.filter((d) => t.filter(d.kind));
-  }, [tab]);
+  const [tab, setTab] = useState<CreativeTab>(CreativeTab.BUILDING);
+  const [search, setSearch] = useState('');
+  const items = useMemo(() => creativeItems(ITEM_DEFS, tab, search), [tab, search]);
   return (
     <div className="creative-list">
       <div className="tabs">
-        {CREATIVE_TABS.map((t) => (
-          <button key={t.key} className={`tab${t.key === tab ? ' active' : ''}`} onClick={() => setTab(t.key)}>
+        {CREATIVE_TAB_DEFS.map((t) => (
+          <button key={t.id} className={`tab${t.id === tab ? ' active' : ''}`} onClick={() => setTab(t.id)}>
             {t.label}
           </button>
         ))}
       </div>
+      {tab === CreativeTab.SEARCH && (
+        <input
+          className="creative-search"
+          type="text"
+          value={search}
+          placeholder="搜索物品名或 id"
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      )}
       <div className="slot-grid cols-9 creative-grid">
         {items.map((d) => (
           <Slot
