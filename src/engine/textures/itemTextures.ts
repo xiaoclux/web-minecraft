@@ -674,6 +674,13 @@ function brewingIngredientPainters(): Record<string, Painter> {
     gold_nugget: (c) => c.draw(NUGGET_ROWS, { X: hex('#f0c040') }, 6, 6),
     quartz: (c) => c.draw(NUGGET_ROWS, { X: hex('#ece7e0') }, 6, 6),
     ender_eye: (c) => c.draw(EYE_ROWS, { X: hex('#0f7a5a'), P: hex('#c8f0d8') }, 5, 6),
+    minecart: (c) =>
+      c.draw(
+        ['X....X', 'X....X', 'XXXXXX', '.X..X.'],
+        { X: hex('#8a8a8a') },
+        5,
+        6,
+      ),
     nether_star: (c) =>
       c.draw(
         ['..X..', '.XXX.', 'XXXXX', '.XXX.', '..X..'],

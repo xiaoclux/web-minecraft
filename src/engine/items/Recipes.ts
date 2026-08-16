@@ -207,6 +207,9 @@ export const RECIPES: Recipe[] = [
   shaped(['I I', 'ICI', ' I '], { I: 'iron_ingot', C: 'chest' }, 'hopper'),
   shaped(['CCC', 'CBC', 'CRC'], { C: 'cobblestone', B: 'bow', R: 'redstone' }, 'dispenser'),
   shaped(['CCC', 'C C', 'CRC'], { C: 'cobblestone', R: 'redstone' }, 'dropper'),
+  shaped(['I I', 'ISI', 'I I'], { I: 'iron_ingot', S: 'stick' }, 'rail', 16),
+  shaped(['G G', 'GSG', 'GRG'], { G: 'gold_ingot', S: 'stick', R: 'redstone' }, 'powered_rail', 6),
+  shaped(['I I', 'III'], { I: 'iron_ingot' }, 'minecart'),
   shaped(['QQ', 'QQ'], { Q: 'quartz' }, 'quartz_block'),
   shapeless(['blaze_powder', 'slimeball'], 'magma_cream'),
   // 1.8.9 还要一个棕色蘑菇；蘑菇没做之前先用蛛眼 + 糖

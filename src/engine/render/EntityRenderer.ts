@@ -11,6 +11,7 @@ import { EnderCrystalEntity } from '../entities/EnderCrystalEntity';
 import { EnderDragonEntity } from '../entities/EnderDragonEntity';
 import { WitherEntity } from '../entities/WitherEntity';
 import { WitherSkullEntity } from '../entities/WitherSkullEntity';
+import { MinecartEntity } from '../entities/MinecartEntity';
 import type { ItemStack } from '../items/ItemStack';
 import { Mob } from '../entities/Mob';
 import { getItem, ItemKind } from '../items/ItemRegistry';
@@ -45,7 +46,7 @@ interface RenderedEntity {
   group: THREE.Group;
   parts: { mesh: THREE.Mesh; spec: PartSpec }[];
   materials: THREE.MeshLambertMaterial[];
-  kind: 'mob' | 'item' | 'arrow' | 'xp' | 'fireball' | 'crystal' | 'dragon' | 'wither';
+  kind: 'mob' | 'item' | 'arrow' | 'xp' | 'fireball' | 'crystal' | 'dragon' | 'wither' | 'minecart';
 }
 
 /** 负责实体的 three.js 表现：模型、动画、受伤闪烁、光照。 */
@@ -128,6 +129,9 @@ export class EntityRenderer {
     }
     if (entity instanceof WitherSkullEntity) {
       return this.createWitherSkull();
+    }
+    if (entity instanceof MinecartEntity) {
+      return this.createMinecart();
     }
     if (entity instanceof XpOrbEntity) {
       return this.createXpOrb();
@@ -325,6 +329,26 @@ export class EntityRenderer {
     return { group, parts: [], materials: [m], kind: 'fireball' };
   }
 
+  /** 矿车：一个没有盖子的铁盒子。 */
+  private createMinecart(): RenderedEntity {
+    const group = new THREE.Group();
+    const m = new THREE.MeshLambertMaterial({ color: 0x9a9a9a });
+    const bottom = new THREE.Mesh(this.boxGeometry(0.98, 0.12, 0.98), m);
+    bottom.position.y = 0.06;
+    group.add(bottom);
+    for (const [dx, dz, w, d] of [
+      [0.45, 0, 0.08, 0.98],
+      [-0.45, 0, 0.08, 0.98],
+      [0, 0.45, 0.98, 0.08],
+      [0, -0.45, 0.98, 0.08],
+    ]) {
+      const wall = new THREE.Mesh(this.boxGeometry(w, 0.45, d), m);
+      wall.position.set(dx, 0.32, dz);
+      group.add(wall);
+    }
+    return { group, parts: [], materials: [m], kind: 'minecart' };
+  }
+
   private createArrow(): RenderedEntity {
     const group = new THREE.Group();
     const m = new THREE.MeshLambertMaterial({ color: 0x8f6b3a });
@@ -403,6 +427,13 @@ export class EntityRenderer {
       // 水晶自转 + 上下浮动，且自发光不受环境亮度影响
       r.group.rotation.y = time;
       r.group.position.y = entity.y + Math.sin(time * 2) * 0.15;
+      return;
+    }
+    if (r.kind === 'minecart') {
+      r.group.rotation.set(0, entity.yaw, 0);
+      for (const m of r.materials) {
+        m.color.setScalar(brightness);
+      }
       return;
     }
     if (r.kind === 'wither') {

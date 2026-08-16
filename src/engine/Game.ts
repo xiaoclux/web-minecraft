@@ -83,6 +83,7 @@ import {
   SPAWN_PRELOAD_RADIUS,
 } from './constants/world';
 import { BlockEntityStore, BlockEntityType, type HopperBlockEntity } from './world/BlockEntityStore';
+import { POWERED_RAIL_LIT_BIT } from './blocks/BlockRegistry';
 import { RandomTickSystem } from './systems/RandomTickSystem';
 import { WeatherSystem } from './systems/WeatherSystem';
 import { DIMENSION_DEFS, Dimension, DimensionId, isDimensionId } from './world/Dimension';
@@ -104,7 +105,8 @@ import { FireballEntity } from './entities/FireballEntity';
 import { EnderCrystalEntity } from './entities/EnderCrystalEntity';
 import { EnderDragonEntity } from './entities/EnderDragonEntity';
 import { WitherEntity } from './entities/WitherEntity';
-import { powerAt, repeaterInputPower, updateWires } from './systems/RedstoneSystem';
+import { MinecartEntity } from './entities/MinecartEntity';
+import { isPoweredRailOn, powerAt, repeaterInputPower, updateWires } from './systems/RedstoneSystem';
 import { containerSlots, extractOne, insertOne, isEmpty } from './systems/HopperSystem';
 import { extendPiston, pistonDirection, retractPiston } from './systems/PistonSystem';
 import {
@@ -123,6 +125,7 @@ import {
   HOPPER_PICKUP_RANGE,
   HOPPER_SLOT_COUNT,
   HOPPER_TRANSFER_INTERVAL_TICKS,
+  RailShape,
 } from './constants/redstone';
 import {
   BEACON_EFFECT_TICKS,
@@ -285,6 +288,10 @@ const CRYSTAL_HIT_TOLERANCE = 1.5;
 const CRYSTAL_EXTRA_REACH = 3;
 /** 末影水晶治疗末影龙的距离平方。 */
 const CRYSTAL_HEAL_RANGE_SQ = ENDER_CRYSTAL_HEAL_RANGE * ENDER_CRYSTAL_HEAL_RANGE;
+/** 矿车物品 id、点中矿车的准星容差与骑乘时玩家相对车的高度。 */
+const MINECART_ITEM = 'minecart';
+const MINECART_HIT_TOLERANCE = 1;
+const RIDE_EYE_OFFSET = 0.3;
 /** 压力板多久检查一次。 */
 const PRESSURE_PLATE_CHECK_TICKS = 5;
 /** 方块变更后重算用电器的半径。 */
@@ -477,6 +484,8 @@ export class Game implements EntityContext, ContainerHost {
   readonly isTouch = isTouchDevice();
   private breakTarget: { x: number; y: number; z: number; id: number } | null = null;
   /** 脚步声：累计走过的水平距离与上一次采样点。 */
+  /** 正在骑的矿车 id（没骑为 null）。 */
+  private ridingCartId: number | null = null;
   /** 排队中的延迟更新（红石火把 / 中继器）。 */
   private scheduledUpdates: { x: number; y: number; z: number; ticks: number }[] = [];
   /** 按下的按钮（到时间弹回）。 */
@@ -702,6 +711,9 @@ export class Game implements EntityContext, ContainerHost {
     if (data.type === 'xp_orb') {
       return XpOrbEntity.deserialize(data);
     }
+    if (data.type === 'minecart') {
+      return MinecartEntity.deserialize(data);
+    }
     if (isMobType(data.type)) {
       return Mob.deserialize(data);
     }
@@ -743,7 +755,10 @@ export class Game implements EntityContext, ContainerHost {
       if (e.isDead) {
         continue;
       }
-      const data = e instanceof Mob || e instanceof ItemDropEntity || e instanceof XpOrbEntity ? e.serialize() : null;
+      const data =
+        e instanceof Mob || e instanceof ItemDropEntity || e instanceof XpOrbEntity || e instanceof MinecartEntity
+          ? e.serialize()
+          : null;
       if (data) {
         entities.push(data);
       }
@@ -819,7 +834,10 @@ export class Game implements EntityContext, ContainerHost {
       if (ticks === MAX_TICKS_PER_FRAME) {
         this.accumulator = 0;
       }
-      this.updatePlayerMovement(dt);
+      // 骑矿车时玩家由车带着走，不自己移动
+      if (!this.isRiding) {
+        this.updatePlayerMovement(dt);
+      }
       for (const e of this.entities.values()) {
         if (this.isEntityChunkLoaded(e)) {
           e.move(this, dt);
@@ -915,6 +933,7 @@ export class Game implements EntityContext, ContainerHost {
     }
     this.tickRedstone();
     this.tickHoppers();
+    this.tickRiding();
     this.tickBeacons();
     this.tickPortal();
     this.tickFootsteps();
@@ -1172,6 +1191,87 @@ export class Game implements EntityContext, ContainerHost {
     return this.current.id;
   }
 
+  // ---------------------------------------------------------------- 矿车
+
+  /** 把矿车放到瞄准的铁轨上。 */
+  private tryPlaceMinecart(hit: RayHit): boolean {
+    const id = this.world.getBlock(hit.x, hit.y, hit.z);
+    if (id !== BlockId.RAIL && id !== BlockId.POWERED_RAIL) {
+      return false;
+    }
+    const cart = new MinecartEntity();
+    cart.setPosition(hit.x + 0.5, hit.y + 0.1, hit.z + 0.5);
+    this.spawnEntity(cart);
+    if (!this.rules.infiniteItems) {
+      this.player.inventory.consume(this.player.selectedSlot, 1);
+    }
+    this.sound.play('place');
+    this.renderer.hand.swing();
+    return true;
+  }
+
+  /**
+   * 右键上 / 下矿车。
+   * @returns 是否处理了（处理了就不再走放置逻辑）
+   */
+  private tryToggleRide(): boolean {
+    if (this.ridingCartId !== null) {
+      this.ridingCartId = null;
+      this.showToast('下车');
+      return true;
+    }
+    const cart = this.cartInCrosshair();
+    if (!cart) {
+      return false;
+    }
+    this.ridingCartId = cart.id;
+    cart.riderId = this.player.id;
+    this.showToast('上车');
+    return true;
+  }
+
+  /** 准星附近的矿车。 */
+  private cartInCrosshair(): MinecartEntity | null {
+    const dir = this.lookDirection();
+    const p = this.player;
+    const origin = new THREE.Vector3(p.x, p.eyeY, p.z);
+    const ray = new THREE.Ray(origin, dir);
+    for (const e of this.entities.values()) {
+      if (!(e instanceof MinecartEntity) || e.isDead) {
+        continue;
+      }
+      const center = new THREE.Vector3(e.x, e.y + e.height / 2, e.z);
+      if (origin.distanceTo(center) > this.rules.reach + 1) {
+        continue;
+      }
+      if (ray.distanceToPoint(center) <= MINECART_HIT_TOLERANCE) {
+        return e;
+      }
+    }
+    return null;
+  }
+
+  /** 骑乘中：把玩家钉在车上；车没了就自动下车。 */
+  private tickRiding(): void {
+    if (this.ridingCartId === null) {
+      return;
+    }
+    const cart = this.entities.get(this.ridingCartId);
+    if (!(cart instanceof MinecartEntity) || cart.isDead) {
+      this.ridingCartId = null;
+      return;
+    }
+    this.player.setPosition(cart.x, cart.y + RIDE_EYE_OFFSET, cart.z);
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.player.vz = 0;
+  }
+
+  /** 玩家是不是在矿车上（移动逻辑要跳过自己走路）。 */
+  get isRiding(): boolean {
+    return this.ridingCartId !== null;
+  }
+
   // ---------------------------------------------------------------- 红石
 
   /** 拉杆：开关一下并重算线路。 */
@@ -1261,6 +1361,15 @@ export class Game implements EntityContext, ContainerHost {
     }
     if (redstone.dispenser) {
       this.applyDispenser(x, y, z, redstone.dropper === true);
+      return;
+    }
+    if (redstone.poweredRail) {
+      const meta = this.world.getMeta(x, y, z);
+      const powered = isPoweredRailOn(this.world, x, y, z);
+      const isOn = (meta & POWERED_RAIL_LIT_BIT) !== 0;
+      if (powered !== isOn) {
+        this.world.setBlock(x, y, z, id, powered ? meta | POWERED_RAIL_LIT_BIT : meta & ~POWERED_RAIL_LIT_BIT);
+      }
       return;
     }
     if (redstone.ignitesWhenPowered) {
@@ -1537,7 +1646,7 @@ export class Game implements EntityContext, ContainerHost {
             this.scheduleRedstoneUpdate(nx, ny, nz, repeaterDelay(this.world.getMeta(nx, ny, nz)));
           } else if (redstone.piston) {
             this.scheduleRedstoneUpdate(nx, ny, nz, PISTON_DELAY_TICKS);
-          } else if (redstone.dispenser || redstone.ignitesWhenPowered) {
+          } else if (redstone.dispenser || redstone.ignitesWhenPowered || redstone.poweredRail) {
             this.scheduleRedstoneUpdate(nx, ny, nz, PISTON_DELAY_TICKS);
           } else if (redstone.invertedOffId !== undefined || redstone.invertedOnId !== undefined) {
             this.scheduleRedstoneUpdate(nx, ny, nz, TORCH_DELAY_TICKS);
@@ -2321,6 +2430,9 @@ export class Game implements EntityContext, ContainerHost {
   }
 
   private useItem(): void {
+    if (this.tryToggleRide()) {
+      return;
+    }
     const hit = this.currentHit;
     const held = this.player.heldItem;
     const p = this.player;
@@ -2362,6 +2474,9 @@ export class Game implements EntityContext, ContainerHost {
       return;
     }
     if (def.id === ENDER_EYE_ITEM && this.useEnderEye(hit)) {
+      return;
+    }
+    if (def.id === MINECART_ITEM && hit && this.tryPlaceMinecart(hit)) {
       return;
     }
     if (def.id === 'shears' && this.tryShearMob()) {
@@ -2889,6 +3004,11 @@ export class Game implements EntityContext, ContainerHost {
    * 半砖分上下半，楼梯的高侧朝玩家视线方向、点在上半则上下颠倒。
    */
   private placementMeta(def: BlockDef, hit: RayHit): number {
+    if (def.id === BlockId.RAIL || def.id === BlockId.POWERED_RAIL) {
+      // 铁轨按玩家面朝的轴铺：看得更偏 X 就铺东西向，否则南北向
+      const [dx, dz] = this.lookHorizontal();
+      return Math.abs(dx) >= Math.abs(dz) ? RailShape.EAST_WEST : RailShape.NORTH_SOUTH;
+    }
     if (def.shape === BlockShape.BED || def.shape === BlockShape.FENCE_GATE) {
       // 床头朝视线方向（放在玩家前方）；栅栏门的门板横在视线方向上
       return this.lookFacingIndex();

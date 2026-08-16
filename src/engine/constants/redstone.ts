@@ -34,5 +34,21 @@ export const HOPPER_PICKUP_RANGE = 0.8;
 export const DISPENSER_SLOT_COUNT = 9;
 /** 发射器扔东西的速度（格/秒）。 */
 export const DISPENSER_LAUNCH_SPEED = 12;
+/** 铁轨形状：meta 低位存走向。 */
+export const RailShape = {
+  /** 沿 X 轴（东西向）。 */
+  EAST_WEST: 0,
+  /** 沿 Z 轴（南北向）。 */
+  NORTH_SOUTH: 1,
+} as const;
+export type RailShape = (typeof RailShape)[keyof typeof RailShape];
+export const RAIL_SHAPE_MASK = 1;
+/** 动力铁轨最多能沿轨连锁传导多少格（1.8.9 是 8）。 */
+export const POWERED_RAIL_CHAIN = 8;
+/** 矿车：最高速度、阻力、动力轨加速度与断电动力轨的刹车系数。 */
+export const MINECART_MAX_SPEED = 8;
+export const MINECART_DRAG = 0.4;
+export const MINECART_POWERED_ACCEL = 6;
+export const MINECART_BRAKE_FACTOR = 0.5;
 /** 压力板的触发范围（以方块中心为准的水平半径）。 */
 export const PRESSURE_PLATE_RANGE = 0.7;

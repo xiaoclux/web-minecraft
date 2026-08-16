@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
 import { REDSTONE_MAX_POWER, REDSTONE_POWERED_BIT } from '../src/engine/constants/redstone';
-import { powerAt, repeaterInputPower, sourcePower, updateWires, wirePower } from '../src/engine/systems/RedstoneSystem';
+import {
+  isPoweredRailOn,
+  powerAt,
+  repeaterInputPower,
+  sourcePower,
+  updateWires,
+  wirePower,
+} from '../src/engine/systems/RedstoneSystem';
 import {
   PISTON_DOWN,
   PISTON_UP,
@@ -11,7 +18,8 @@ import {
   pistonDirection,
   retractPiston,
 } from '../src/engine/systems/PistonSystem';
-import { PISTON_MAX_PUSH } from '../src/engine/constants/redstone';
+import { PISTON_MAX_PUSH, POWERED_RAIL_CHAIN, RailShape } from '../src/engine/constants/redstone';
+import { railAxis } from '../src/engine/entities/MinecartEntity';
 import { Chunk } from '../src/engine/world/Chunk';
 import { World } from '../src/engine/world/World';
 
@@ -202,5 +210,37 @@ describe('活塞', () => {
     expect(pistonDirection(PISTON_UP)).toEqual([0, 1, 0]);
     expect(pistonDirection(PISTON_DOWN)).toEqual([0, -1, 0]);
     expect(pistonDirection(0)).toEqual([1, 0, 0]);
+  });
+});
+
+describe('铁轨与矿车', () => {
+  it('动力铁轨沿轨最多连锁 8 格传电', () => {
+    const world = testWorld();
+    // 一条东西向的动力轨
+    for (let i = 0; i <= 12; i++) {
+      world.setBlock(i, 10, 0, BlockId.POWERED_RAIL, RailShape.EAST_WEST);
+    }
+    // 只在最左边接一个电源
+    world.setBlock(0, 11, 0, BlockId.REDSTONE_BLOCK);
+    expect(isPoweredRailOn(world, 0, 10, 0)).toBe(true);
+    expect(isPoweredRailOn(world, POWERED_RAIL_CHAIN, 10, 0)).toBe(true);
+    // 超出连锁范围
+    expect(isPoweredRailOn(world, POWERED_RAIL_CHAIN + 1, 10, 0)).toBe(false);
+  });
+
+  it('中间断开的动力轨不再往后传', () => {
+    const world = testWorld();
+    for (let i = 0; i <= 6; i++) {
+      world.setBlock(i, 10, 0, BlockId.POWERED_RAIL, RailShape.EAST_WEST);
+    }
+    world.setBlock(3, 10, 0, BlockId.RAIL, RailShape.EAST_WEST);
+    world.setBlock(0, 11, 0, BlockId.REDSTONE_BLOCK);
+    expect(isPoweredRailOn(world, 2, 10, 0)).toBe(true);
+    expect(isPoweredRailOn(world, 4, 10, 0)).toBe(false);
+  });
+
+  it('轨道走向决定矿车的行进轴', () => {
+    expect(railAxis(RailShape.EAST_WEST)).toEqual([1, 0]);
+    expect(railAxis(RailShape.NORTH_SOUTH)).toEqual([0, 1]);
   });
 });

@@ -11,7 +11,14 @@
 
 import { BlockId, getBlock } from '../blocks/BlockRegistry';
 import { FACINGS } from '../blocks/blockShapes';
-import { REDSTONE_MAX_POWER, REDSTONE_UPDATE_RADIUS, REPEATER_FACING_MASK } from '../constants/redstone';
+import {
+  POWERED_RAIL_CHAIN,
+  RAIL_SHAPE_MASK,
+  REDSTONE_MAX_POWER,
+  REDSTONE_UPDATE_RADIUS,
+  REPEATER_FACING_MASK,
+  RailShape,
+} from '../constants/redstone';
 import type { World } from '../world/World';
 
 /** 六个方向。 */
@@ -149,6 +156,29 @@ function conductedPower(
     }
   }
   return power;
+}
+
+/**
+ * 动力铁轨是否通电：自己被充能，或沿着轨道方向连着的动力轨里有被充能的（最多传 8 格）。
+ */
+export function isPoweredRailOn(world: World, x: number, y: number, z: number): boolean {
+  if (powerAt(world, x, y, z) > 0) {
+    return true;
+  }
+  const [ax, az] = (world.getMeta(x, y, z) & RAIL_SHAPE_MASK) === RailShape.NORTH_SOUTH ? [0, 1] : [1, 0];
+  for (const sign of [1, -1]) {
+    for (let i = 1; i <= POWERED_RAIL_CHAIN; i++) {
+      const nx = x + ax * i * sign;
+      const nz = z + az * i * sign;
+      if (world.getBlock(nx, y, nz) !== BlockId.POWERED_RAIL) {
+        break;
+      }
+      if (powerAt(world, nx, y, nz) > 0) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**

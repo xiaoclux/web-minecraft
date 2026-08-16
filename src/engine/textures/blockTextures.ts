@@ -690,6 +690,30 @@ const redstoneTorchOff: Painter = (c) => {
   c.rect(6, 3, 4, 4, hex('#6a1a12'));
 };
 
+/** 铁轨：两根枕木 + 两条钢轨（东西 / 南北两张，通电的动力轨更亮）。 */
+function railTexture(northSouth: boolean, powered: boolean, lit: boolean): Painter {
+  return (c) => {
+    c.fill(TRANSPARENT);
+    const tie = powered ? hex(lit ? '#d8a03a' : '#8a6a2a') : hex('#6b4a2a');
+    const metal = hex(lit ? '#e8e0c0' : '#b9b9b9');
+    // 先画枕木（横向），再画两条钢轨（纵向）
+    for (let i = 1; i < 16; i += 5) {
+      if (northSouth) {
+        c.rect(1, i, 14, 3, tie);
+      } else {
+        c.rect(i, 1, 3, 14, tie);
+      }
+    }
+    if (northSouth) {
+      c.rect(3, 0, 2, 16, metal);
+      c.rect(11, 0, 2, 16, metal);
+    } else {
+      c.rect(0, 3, 16, 2, metal);
+      c.rect(0, 11, 16, 2, metal);
+    }
+  };
+}
+
 /** 漏斗：上宽下窄的深灰漏斗。 */
 const hopperTop: Painter = (c, rng) => {
   c.noise(hex('#4a4a4a'), 0.08, rng);
@@ -1090,6 +1114,12 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   redstone_block: redstoneBlock,
   redstone_torch: redstoneTorch,
   redstone_torch_off: redstoneTorchOff,
+  rail: railTexture(false, false, false),
+  rail_ns: railTexture(true, false, false),
+  powered_rail: railTexture(false, true, false),
+  powered_rail_ns: railTexture(true, true, false),
+  powered_rail_on: railTexture(false, true, true),
+  powered_rail_on_ns: railTexture(true, true, true),
   hopper_top: hopperTop,
   hopper_side: hopperSide,
   dispenser_front: dispenserFront,

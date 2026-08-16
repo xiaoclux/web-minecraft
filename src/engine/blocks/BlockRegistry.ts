@@ -39,7 +39,7 @@ export const RenderType = {
 export type RenderType = (typeof RenderType)[keyof typeof RenderType];
 
 import { SoundGroup } from './blockSounds';
-import { REDSTONE_MAX_POWER, REDSTONE_POWERED_BIT } from '../constants/redstone';
+import { RAIL_SHAPE_MASK, REDSTONE_MAX_POWER, REDSTONE_POWERED_BIT, RailShape } from '../constants/redstone';
 import { BED_HEAD_BIT, BlockShape, CROP_MAX_STAGE, DOOR_UPPER_BIT } from './blockShapes';
 
 /** 六个面各自的贴图 key。 */
@@ -157,6 +157,8 @@ export interface BlockDef {
     dropper?: boolean;
     /** TNT：被充能就点着。 */
     ignitesWhenPowered?: boolean;
+    /** 动力铁轨：被充能时给矿车加速。 */
+    poweredRail?: boolean;
   };
   /**
    * 变种：同一个方块 id 下按 meta 区分的若干种（木材、羊毛颜色、石头变种等），与 1.8.9 一致。
@@ -181,6 +183,9 @@ export interface BlockDef {
     needsLight?: boolean;
   };
 }
+
+/** 动力铁轨 meta 里"通电"的位（与矿车代码共用）。 */
+export const POWERED_RAIL_LIT_BIT = 8;
 
 /** 末地传送门框架 meta 里"已镶末影之眼"的位。 */
 export const END_PORTAL_FRAME_EYE_BIT = 4;
@@ -267,6 +272,8 @@ export const BlockId = {
   STICKY_PISTON: 29,
   PISTON_HEAD: 34,
   HOPPER: 154,
+  RAIL: 66,
+  POWERED_RAIL: 27,
   DISPENSER: 23,
   DROPPER: 158,
   LEVER: 69,
@@ -909,6 +916,31 @@ export const BLOCK_DEFS: BlockDef[] = [
     drops: [{ item: 'redstone_lamp', min: 1, max: 1 }],
     redstone: { unlitBlockId: BlockId.REDSTONE_LAMP },
   }),
+  {
+    ...cube(BlockId.RAIL, 'rail', '铁轨', same('rail'), 0.7, ToolType.PICKAXE, {
+      solid: false,
+      opaque: false,
+      needsSupport: true,
+      render: RenderType.CUTOUT,
+      texturesForMeta: (meta: number) => same((meta & RAIL_SHAPE_MASK) === RailShape.NORTH_SOUTH ? 'rail_ns' : 'rail'),
+    }),
+    shape: BlockShape.WIRE,
+  },
+  {
+    ...cube(BlockId.POWERED_RAIL, 'powered_rail', '动力铁轨', same('powered_rail'), 0.7, ToolType.PICKAXE, {
+      solid: false,
+      opaque: false,
+      needsSupport: true,
+      render: RenderType.CUTOUT,
+      texturesForMeta: (meta: number) => {
+        const ns = (meta & RAIL_SHAPE_MASK) === RailShape.NORTH_SOUTH;
+        const on = (meta & POWERED_RAIL_LIT_BIT) !== 0;
+        return same(`powered_rail${on ? '_on' : ''}${ns ? '_ns' : ''}`);
+      },
+      redstone: { poweredRail: true },
+    }),
+    shape: BlockShape.WIRE,
+  },
   cube(BlockId.HOPPER, 'hopper', '漏斗', topSide('hopper_top', 'hopper_side'), 3, ToolType.PICKAXE, {
     minTier: ToolTier.WOOD,
     opaque: false,
