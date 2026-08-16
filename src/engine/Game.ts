@@ -78,6 +78,7 @@ import {
   DAY_LENGTH_TICKS,
   DEFAULT_RENDER_DISTANCE,
   WORLD_SIZE_Y,
+  WorldType,
   MAX_LIGHT,
   NIGHT_END_TICK,
   NIGHT_START_TICK,
@@ -108,8 +109,18 @@ import { EnderDragonEntity } from './entities/EnderDragonEntity';
 import { WitherEntity } from './entities/WitherEntity';
 import { MinecartEntity } from './entities/MinecartEntity';
 import { COMMAND_DAY_LENGTH, FILL_LIMIT, runCommand, type CommandHost } from './systems/Commands';
-import { MOVE_REPORT_INTERVAL_TICKS, NetClient, connectToServer, type RemotePlayer } from '../net/NetClient';
+import {
+  MOVE_REPORT_INTERVAL_TICKS,
+  NetClient,
+  connectToServer,
+  type ClientTransport,
+  type NetClientHandlers,
+  type RemotePlayer,
+} from '../net/NetClient';
 import { RemoteGenerator } from '../net/RemoteGenerator';
+import { ServerCore } from '../net/ServerCore';
+import { MessageType } from '../net/protocol';
+import { RtcInvite } from '../net/webrtc';
 import type { WelcomeMessage } from '../net/protocol';
 import { KEY_CHAT, KEY_COMMAND } from './constants/keys';
 import { getBlockByName } from './blocks/BlockRegistry';
@@ -218,6 +229,8 @@ export interface GameOptions {
   onExit: () => void;
   /** 联机：要连的服务端地址与玩家名；单机时不填。 */
   server?: { url: string; playerName: string };
+  /** 用房间码加入：地形同样来自远端，通道由外部在 start() 后交进来。 */
+  joinByCode?: boolean;
 }
 
 const INITIAL_TIME_TICK = 1000;
@@ -300,6 +313,8 @@ const CRYSTAL_HIT_TOLERANCE = 1.5;
 const CRYSTAL_EXTRA_REACH = 3;
 /** 末影水晶治疗末影龙的距离平方。 */
 const CRYSTAL_HEAL_RANGE_SQ = ENDER_CRYSTAL_HEAL_RANGE * ENDER_CRYSTAL_HEAL_RANGE;
+/** 作为主机时多久给客人同步一次时间。 */
+const HOST_TIME_SYNC_TICKS = 100;
 /** 聊天栏最多保留多少行与多少条历史输入。 */
 const CHAT_MESSAGE_LIMIT = 60;
 const CHAT_HISTORY_LIMIT = 30;
@@ -470,7 +485,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       return existing;
     }
     const generator =
-      this.serverOptions && id === DimensionId.OVERWORLD
+      this.isNetworkClient && id === DimensionId.OVERWORLD
         ? new RemoteGenerator(this.meta.seed, (cx, cz) => this.requestChunkFromServer(cx, cz), this.player)
         : createDimensionGenerator(id, this.meta);
     const dimension = new Dimension(DIMENSION_DEFS[id], generator, this);
@@ -510,12 +525,18 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   /** 脚步声：累计走过的水平距离与上一次采样点。 */
   /** 联机客户端（单机为 null）。 */
   private net: NetClient | null = null;
+  /** 作为主机时跑的服务端（没开放时为 null）。 */
+  private hostServer: ServerCore | null = null;
+  /** 正在等待回应码的那次邀请。 */
+  private pendingInvite: RtcInvite | null = null;
   /** 连接建立前攒下的 chunk 请求。 */
   private readonly pendingChunkRequests: [number, number][] = [];
   /** 正在应用服务端下发的方块变更（避免又把它当成本地意图发回去）。 */
   private applyingRemoteChange = false;
-  /** 启动时传入的联机参数。 */
+  /** 启动时传入的联机参数（有值表示这局是联机客户端）。 */
   private readonly serverOptions: { url: string; playerName: string } | undefined;
+  /** 是否以"联机客户端"的方式开局（地形来自服务端）。 */
+  private readonly isNetworkClient: boolean;
   /** 聊天记录里的下一个 id 与打开聊天栏时的初始文本。 */
   private nextChatId = 1;
   private chatDraft = '';
@@ -570,6 +591,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.saveManager = options.saveManager;
     this.onExit = options.onExit;
     this.serverOptions = options.server;
+    this.isNetworkClient = options.server !== undefined || options.joinByCode === true;
     this.rules = getRules(options.meta.mode);
     this.difficulty = this.rules.forcedDifficulty ?? options.meta.difficulty;
     this.rng = createRng(hashString(`${options.meta.seed}:${Date.now()}`));
@@ -673,6 +695,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     cancelAnimationFrame(this.rafId);
     this.controls.exitLock();
     this.controls.detach();
+    this.closeLanQuietly();
     this.unsubscribeSettings();
     this.renderer.dispose();
   }
@@ -986,6 +1009,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.tickHoppers();
     this.tickRiding();
     this.tickNetwork();
+    this.tickHosting();
     this.tickBeacons();
     this.tickPortal();
     this.tickFootsteps();
@@ -1250,34 +1274,50 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     return this.net !== null;
   }
 
-  /** 其他玩家（渲染用）。 */
+  /** 其他玩家（渲染用）：既包括自己作为客户端看到的，也包括自己作为主机接进来的。 */
   get remotePlayers(): readonly RemotePlayer[] {
-    return this.net?.remotePlayers ?? [];
+    if (this.net) {
+      return this.net.remotePlayers;
+    }
+    return this.hostGuestsAsRemotePlayers();
   }
 
   /** 连接服务端；失败会在聊天栏提示。 */
   async connectToServer(url: string, playerName: string): Promise<void> {
     try {
-      this.net = await connectToServer(url, playerName, {
-        onWelcome: (message) => this.onNetWelcome(message),
-        onChunkData: (cx, cz, blocks, meta) => this.onNetChunkData(cx, cz, blocks, meta),
-        onBlockChange: (x, y, z, blockId, meta) => this.onNetBlockChange(x, y, z, blockId, meta),
-        onChat: (text) => this.reply(text),
-        onTimeSync: (timeTick) => {
-          this.timeTick = timeTick;
-        },
-        onPlayersChanged: () => {
-          /* 渲染时直接读 remotePlayers，这里不用做别的 */
-        },
-        onDisconnect: () => {
-          this.net = null;
-          this.reply('与服务端的连接已断开');
-        },
-      });
+      this.net = await connectToServer(url, playerName, this.netHandlers());
       this.reply(`已连接到 ${url}`);
     } catch (error) {
       this.reply(`连接失败：${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /**
+   * 用已经建立好的传输通道加入（房间码方式）：与连 WebSocket 服务端走同一套客户端逻辑。
+   */
+  joinWithTransport(transport: ClientTransport, playerName: string): void {
+    this.net = new NetClient(transport, this.netHandlers(), playerName);
+    this.reply('已通过房间码加入');
+  }
+
+  /** 客户端事件的处理器（连 WebSocket 与连房间码共用）。 */
+  private netHandlers(): NetClientHandlers {
+    return {
+      onWelcome: (message) => this.onNetWelcome(message),
+      onChunkData: (cx, cz, blocks, meta) => this.onNetChunkData(cx, cz, blocks, meta),
+      onBlockChange: (x, y, z, blockId, meta) => this.onNetBlockChange(x, y, z, blockId, meta),
+      onChat: (text) => this.reply(text),
+      onTimeSync: (timeTick) => {
+        this.timeTick = timeTick;
+      },
+      onPlayersChanged: () => {
+        /* 渲染时直接读 remotePlayers，这里不用做别的 */
+      },
+      onDisconnect: () => {
+        this.net = null;
+        this.reply('与服务端的连接已断开');
+      },
+    };
   }
 
   /**
@@ -1333,6 +1373,13 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     net.reportMove(p.x, p.y, p.z, p.yaw, p.pitch);
   }
 
+  /** 作为主机时定期给客人同步时间。 */
+  private tickHosting(): void {
+    if (this.hostServer && this.tick % HOST_TIME_SYNC_TICKS === 0) {
+      this.hostServer.syncTime();
+    }
+  }
+
   /**
    * 联机时把改方块的意图发给服务端，本地先不动手。
    * @returns 是否已交给服务端（true 表示调用方不要再改本地世界）
@@ -1347,6 +1394,104 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       this.net.requestPlace(x, y, z, blockId, meta);
     }
     return true;
+  }
+
+  // ---------------------------------------------------------------- 作为主机开放局域网
+
+  /** 是否已经对局域网开放。 */
+  get isHosting(): boolean {
+    return this.hostServer !== null;
+  }
+
+  /** 通过房间码连进来的客人数。 */
+  get guestCount(): number {
+    return this.hostServer?.playerCount ?? 0;
+  }
+
+  /**
+   * 对局域网开放：在自己这局游戏上跑一个服务端，别人用房间码接进来。
+   * @returns 要交给客人的房间码
+   */
+  async openToLan(): Promise<string> {
+    this.hostServer ??= new ServerCore({
+      world: this.world,
+      chunkManager: this.chunkManager,
+      seed: this.meta.seed,
+      worldType: this.meta.worldType ?? WorldType.DEFAULT,
+      currentTime: () => this.timeTick,
+      spawnPoint: () => ({ x: this.player.x, y: this.player.y, z: this.player.z }),
+      onBroadcast: (message) => {
+        // 主机自己不在服务端的玩家表里，聊天要单独显示一份
+        if (message.type === MessageType.CHAT_BROADCAST) {
+          this.addChatMessage(message.text);
+        }
+      },
+    });
+    const invite = new RtcInvite();
+    this.pendingInvite = invite;
+    const code = await invite.createCode();
+    this.reply('已生成房间码，把它发给朋友，再把对方的回应码填回来');
+    return code;
+  }
+
+  /**
+   * 填入客人的回应码，完成连接。
+   * @returns 是否连上了
+   */
+  async acceptGuest(answerCode: string): Promise<boolean> {
+    const invite = this.pendingInvite;
+    const server = this.hostServer;
+    if (!invite || !server) {
+      return false;
+    }
+    try {
+      const guest = await invite.acceptAnswer(answerCode);
+      const playerId = server.addConnection(guest.connection);
+      guest.onMessage((bytes) => server.handleMessage(playerId, bytes));
+      guest.onClose(() => server.removeConnection(playerId));
+      this.pendingInvite = null;
+      this.reply('有玩家加入了你的世界');
+      return true;
+    } catch (error) {
+      this.reply(`加入失败：${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  }
+
+  /** 退出游戏时静默关掉（不往聊天栏写东西）。 */
+  private closeLanQuietly(): void {
+    this.pendingInvite?.close();
+    this.pendingInvite = null;
+    this.hostServer?.dispose();
+    this.hostServer = null;
+    this.net?.dispose();
+    this.net = null;
+  }
+
+  /** 关闭局域网开放。 */
+  closeLan(): void {
+    this.pendingInvite?.close();
+    this.pendingInvite = null;
+    this.hostServer?.dispose();
+    this.hostServer = null;
+    this.reply('已关闭局域网开放');
+  }
+
+  /** 作为主机时，把在线客人的位置也画出来。 */
+  private hostGuestsAsRemotePlayers(): RemotePlayer[] {
+    const server = this.hostServer;
+    if (!server) {
+      return [];
+    }
+    return server.onlinePlayers.map((p) => ({
+      id: p.id,
+      name: p.name,
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      yaw: p.yaw,
+      pitch: p.pitch,
+    }));
   }
 
   // ---------------------------------------------------------------- 聊天与指令
@@ -1384,12 +1529,17 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       this.chatHistory.shift();
     }
     if (!trimmed.startsWith('/')) {
-      // 联机时交给服务端广播（自己也会收到回声），单机才直接显示
+      // 作为客户端：交给服务端广播（自己也会收到回声）
       if (this.net) {
         this.net.sendChat(trimmed);
-      } else {
-        this.addChatMessage(`<玩家> ${trimmed}`);
+        return;
       }
+      // 作为主机：直接广播给客人（onBroadcast 会让自己也看到一份）
+      if (this.hostServer) {
+        this.hostServer.broadcast({ type: MessageType.CHAT_BROADCAST, text: `<房主> ${trimmed}` });
+        return;
+      }
+      this.addChatMessage(`<玩家> ${trimmed}`);
       return;
     }
     const reply = runCommand(this, trimmed);

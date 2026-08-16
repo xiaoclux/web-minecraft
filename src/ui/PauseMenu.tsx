@@ -4,6 +4,7 @@ import { Screen } from '../engine/events/GameState';
 import { GAME_MODE_LABELS } from '../engine/constants/game';
 import { settingsStore } from '../engine/settings/Settings';
 import { keyLabel } from './keyLabels';
+import { LanPanel } from './LanPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { SliderRow } from './SliderRow';
 import { useStore } from './useGameStore';
@@ -19,6 +20,7 @@ const MAX_RENDER_DISTANCE = 16;
 export function PauseMenu({ game }: PauseMenuProps) {
   const settings = useStore(settingsStore);
   const [showSettings, setShowSettings] = useState(false);
+  const [showLan, setShowLan] = useState(false);
   const [distance, setDistance] = useState(game.currentRenderDistance);
   const [isSaving, setIsSaving] = useState(false);
   const handleSave = async (): Promise<void> => {
@@ -34,8 +36,15 @@ export function PauseMenu({ game }: PauseMenuProps) {
   const handleExit = (): void => {
     void game.saveAndExit();
   };
+  if (showLan) {
+    return <LanPanel game={game} onBack={() => setShowLan(false)} />;
+  }
+
   if (showSettings) {
     return <SettingsPanel onClose={() => setShowSettings(false)} />;
+  }
+  if (showLan) {
+    return <LanPanel game={game} onBack={() => setShowLan(false)} />;
   }
   const key = (action: keyof typeof settings.keys): string => keyLabel(settings.keys[action]);
   return (
@@ -64,6 +73,9 @@ export function PauseMenu({ game }: PauseMenuProps) {
         </button>
         <button className="menu-button" onClick={() => game.openScreen(Screen.STATS)}>
           成就与统计
+        </button>
+        <button className="menu-button" onClick={() => setShowLan(true)}>
+          对局域网开放
         </button>
         <button className="menu-button" onClick={() => void handleSave()} disabled={isSaving}>
           {isSaving ? '保存中…' : '保存游戏'}

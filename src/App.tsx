@@ -1,3 +1,7 @@
+import type { ClientTransport } from './net/NetClient';
+import { createWorldId } from './engine/save/SaveManager';
+import { Difficulty, GameMode } from './engine/constants/game';
+import { WorldType } from './engine/constants/world';
 import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
 import { SaveManager, type WorldMeta, type WorldSave } from './engine/save/SaveManager';
 import { MainMenu } from './ui/MainMenu';
@@ -21,6 +25,8 @@ interface Session {
   save: WorldSave | null;
   /** 联机：要连的服务端地址与玩家名；单机时不填。 */
   server?: { url: string; playerName: string };
+  /** 用房间码加入时已建立的通道。 */
+  joinTransport?: { transport: ClientTransport; playerName: string };
 }
 
 /** 应用根：启动页 → 主菜单 ↔ 游戏。 */
@@ -35,6 +41,25 @@ export function App() {
       setSession({ meta, save, server }),
     [],
   );
+  const handleJoinByCode = useCallback((transport: ClientTransport, playerName: string) => {
+    const now = Date.now();
+    setSession({
+      meta: {
+        id: createWorldId(),
+        name: '联机：房间码',
+        seed: 'multiplayer',
+        mode: GameMode.SURVIVAL,
+        difficulty: Difficulty.NORMAL,
+        createdAt: now,
+        lastPlayed: now,
+        worldType: WorldType.DEFAULT,
+        generateStructures: true,
+      },
+      save: null,
+      joinTransport: { transport, playerName },
+    });
+  }, []);
+
   let content = <BootScreen onReady={handleBooted} />;
   if (booted && session) {
     content = (
@@ -46,11 +71,12 @@ export function App() {
           saveManager={saveManager}
           onExit={handleExit}
           server={session.server}
+          joinTransport={session.joinTransport}
         />
       </Suspense>
     );
   } else if (booted) {
-    content = <MainMenu saveManager={saveManager} onStart={handleStart} />;
+    content = <MainMenu saveManager={saveManager} onStart={handleStart} onJoinByCode={handleJoinByCode} />;
   }
   return <OrientationGate>{content}</OrientationGate>;
 }

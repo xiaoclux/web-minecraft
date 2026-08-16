@@ -1,3 +1,4 @@
+import type { ClientTransport } from '../net/NetClient';
 import { useEffect, useRef, useState } from 'react';
 import { Game } from '../engine/Game';
 import { isContainerScreen, Screen } from '../engine/events/GameState';
@@ -16,6 +17,8 @@ import { settingsStore } from '../engine/settings/Settings';
 interface GameViewProps {
   /** 联机：要连的服务端地址与玩家名；单机时不填。 */
   server?: { url: string; playerName: string };
+  /** 用房间码加入时已经建立好的通道。 */
+  joinTransport?: { transport: ClientTransport; playerName: string };
   meta: WorldMeta;
   save: WorldSave | null;
   saveManager: SaveManager;
@@ -26,7 +29,7 @@ interface GameViewProps {
 const START_DELAY_MS = 30;
 
 /** 游戏画面容器：创建 Game 实例并挂载 UI 覆盖层。 */
-export function GameView({ meta, save, saveManager, onExit, server }: GameViewProps) {
+export function GameView({ meta, save, saveManager, onExit, server, joinTransport }: GameViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [game, setGame] = useState<Game | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,8 +46,11 @@ export function GameView({ meta, save, saveManager, onExit, server }: GameViewPr
         return;
       }
       try {
-        instance = new Game({ meta, save, canvas, saveManager, onExit, server });
+        instance = new Game({ meta, save, canvas, saveManager, onExit, server, joinByCode: !!joinTransport });
         instance.start();
+        if (joinTransport) {
+          instance.joinWithTransport(joinTransport.transport, joinTransport.playerName);
+        }
         if (import.meta.env.DEV) {
           // 开发模式下暴露实例，便于在控制台/自动化脚本中调试
           (window as Window & { __mcGame?: Game }).__mcGame = instance;
@@ -59,7 +65,7 @@ export function GameView({ meta, save, saveManager, onExit, server }: GameViewPr
       window.clearTimeout(timer);
       instance?.dispose();
     };
-  }, [meta, save, saveManager, onExit, server]);
+  }, [meta, save, saveManager, onExit, server, joinTransport]);
 
   return (
     <div className="game-root">

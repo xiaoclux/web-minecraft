@@ -45,6 +45,11 @@ export interface ServerWorldSource {
   currentTime(): number;
   /** 出生点。 */
   spawnPoint(): { x: number; y: number; z: number };
+  /**
+   * 广播时同时通知宿主。浏览器主机自己并不是服务端里的一名"玩家"，
+   * 没有这个回调的话主机看不到客人的聊天。
+   */
+  onBroadcast?(message: NetMessage): void;
 }
 
 /** 服务端每隔多少毫秒同步一次时间。 */
@@ -227,6 +232,7 @@ export class ServerCore {
 
   /** 给所有人发一条消息。 */
   broadcast(message: NetMessage): void {
+    this.source.onBroadcast?.(message);
     const bytes = encodeMessage(message);
     for (const player of this.players.values()) {
       player.connection.send(bytes);

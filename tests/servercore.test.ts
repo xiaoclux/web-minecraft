@@ -167,3 +167,30 @@ describe('联机服务端', () => {
     expect(server.playerCount).toBe(0);
   });
 });
+
+describe('浏览器主机', () => {
+  it('广播会同时通知宿主（主机自己不在玩家表里）', () => {
+    const world = new World(true);
+    const generator = new FlatGenerator('host-seed', false);
+    const light = new LightEngine(world);
+    const chunkManager = new ChunkManager(world, generator, light);
+    const seen: string[] = [];
+    const server = new ServerCore({
+      world,
+      chunkManager,
+      seed: 'host-seed',
+      worldType: 'flat',
+      currentTime: () => 0,
+      spawnPoint: () => ({ x: 0, y: 5, z: 0 }),
+      onBroadcast: (message) => {
+        if (message.type === MessageType.CHAT_BROADCAST) {
+          seen.push(message.text);
+        }
+      },
+    });
+    const guest = join(server, '客人');
+    server.handleMessage(guest.id, encodeMessage({ type: MessageType.CHAT, text: '你好' }));
+    expect(seen).toContain('客人 加入了游戏');
+    expect(seen).toContain('<客人> 你好');
+  });
+});

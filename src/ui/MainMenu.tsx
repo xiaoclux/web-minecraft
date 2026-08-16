@@ -1,3 +1,5 @@
+import type { ClientTransport } from '../net/NetClient';
+import { JoinByCodePanel } from './JoinByCodePanel';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Difficulty, GAME_MODE_LABELS, GameMode } from '../engine/constants/game';
 import { MAX_SEED_LENGTH, MAX_WORLD_NAME_LENGTH } from '../engine/constants/save';
@@ -8,6 +10,8 @@ import { SettingsPanel } from './SettingsPanel';
 interface MainMenuProps {
   saveManager: SaveManager;
   onStart: (meta: WorldMeta, save: WorldSave | null, server?: { url: string; playerName: string }) => void;
+  /** 用房间码连上后回调（世界数据全来自主机）。 */
+  onJoinByCode: (transport: ClientTransport, playerName: string) => void;
 }
 
 const MODE_DESCRIPTIONS: Record<GameMode, string> = {
@@ -39,7 +43,7 @@ function formatDate(ts: number): string {
 }
 
 /** 主菜单：新建世界 / 读取存档。 */
-export function MainMenu({ saveManager, onStart }: MainMenuProps) {
+export function MainMenu({ saveManager, onStart, onJoinByCode }: MainMenuProps) {
   const [worlds, setWorlds] = useState<WorldMeta[]>([]);
   const [name, setName] = useState('新的世界');
   const [seed, setSeed] = useState(randomSeed);
@@ -48,6 +52,7 @@ export function MainMenu({ saveManager, onStart }: MainMenuProps) {
   const [worldType, setWorldType] = useState<WorldType>(WorldType.DEFAULT);
   const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER_URL);
   const [playerName, setPlayerName] = useState('玩家');
+  const [showJoinByCode, setShowJoinByCode] = useState(false);
   const [generateStructures, setGenerateStructures] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -140,6 +145,10 @@ export function MainMenu({ saveManager, onStart }: MainMenuProps) {
   if (showSettings) {
     return <SettingsPanel onClose={() => setShowSettings(false)} />;
   }
+  if (showJoinByCode) {
+    return <JoinByCodePanel onConnected={onJoinByCode} onBack={() => setShowJoinByCode(false)} />;
+  }
+
   return (
     <div className="main-menu">
       <div className="menu-title">
@@ -237,6 +246,10 @@ export function MainMenu({ saveManager, onStart }: MainMenuProps) {
           </label>
           <button type="submit" className="menu-button primary" disabled={isBusy}>
             加入服务器
+          </button>
+          <p className="muted">朋友用浏览器开的房间，则用房间码加入：</p>
+          <button type="button" className="menu-button" onClick={() => setShowJoinByCode(true)}>
+            用房间码加入
           </button>
         </form>
         <div className="panel menu-panel">
