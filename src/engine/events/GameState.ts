@@ -2,6 +2,15 @@ import type { GameMode } from '../constants/game';
 import type { ActiveEffect } from '../entities/effects';
 import type { ItemStack } from '../items/ItemStack';
 
+/** 一条聊天 / 指令消息。 */
+export interface ChatMessage {
+  /** 递增 id，React 列表 key 用。 */
+  id: number;
+  text: string;
+  /** 发出时的游戏 tick（用来算淡出）。 */
+  tick: number;
+}
+
 /** UI 屏幕。 */
 export const Screen = {
   NONE: 'none',
@@ -68,6 +77,10 @@ export interface GameUiState {
   achievementVersion: number;
   /** Boss 血条：没有 Boss 时为 null。 */
   boss: { label: string; ratio: number } | null;
+  /** 聊天记录（最新的在最后）。 */
+  chat: readonly ChatMessage[];
+  /** 聊天栏是否打开。 */
+  isChatOpen: boolean;
   debug: DebugInfo | null;
   isLoading: boolean;
   loadingText: string;

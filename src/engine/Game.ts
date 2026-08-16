@@ -77,6 +77,7 @@ import { WATER_SOURCE_META, WATER_TICK_INTERVAL } from './constants/fluids';
 import {
   DAY_LENGTH_TICKS,
   DEFAULT_RENDER_DISTANCE,
+  WORLD_SIZE_Y,
   MAX_LIGHT,
   NIGHT_END_TICK,
   NIGHT_START_TICK,
@@ -106,6 +107,12 @@ import { EnderCrystalEntity } from './entities/EnderCrystalEntity';
 import { EnderDragonEntity } from './entities/EnderDragonEntity';
 import { WitherEntity } from './entities/WitherEntity';
 import { MinecartEntity } from './entities/MinecartEntity';
+import { COMMAND_DAY_LENGTH, FILL_LIMIT, runCommand, type CommandHost } from './systems/Commands';
+import { KEY_CHAT, KEY_COMMAND } from './constants/keys';
+import { getBlockByName } from './blocks/BlockRegistry';
+import { ENCHANTMENT_DEFS, canEnchant, isEnchantmentId } from './items/enchantments';
+import { EFFECT_DEFS } from './entities/effects';
+import type { Weather } from './systems/WeatherSystem';
 import { isPoweredRailOn, powerAt, repeaterInputPower, updateWires } from './systems/RedstoneSystem';
 import { containerSlots, extractOne, insertOne, isEmpty } from './systems/HopperSystem';
 import { extendPiston, pistonDirection, retractPiston } from './systems/PistonSystem';
@@ -288,6 +295,9 @@ const CRYSTAL_HIT_TOLERANCE = 1.5;
 const CRYSTAL_EXTRA_REACH = 3;
 /** 末影水晶治疗末影龙的距离平方。 */
 const CRYSTAL_HEAL_RANGE_SQ = ENDER_CRYSTAL_HEAL_RANGE * ENDER_CRYSTAL_HEAL_RANGE;
+/** 聊天栏最多保留多少行与多少条历史输入。 */
+const CHAT_MESSAGE_LIMIT = 60;
+const CHAT_HISTORY_LIMIT = 30;
 /** 矿车物品 id、点中矿车的准星容差与骑乘时玩家相对车的高度。 */
 const MINECART_ITEM = 'minecart';
 const MINECART_HIT_TOLERANCE = 1;
@@ -374,12 +384,17 @@ function compassLabel(dx: number, dz: number): string {
 }
 
 /** 游戏主循环与全部玩法逻辑的编排者。 */
-export class Game implements EntityContext, ContainerHost {
+/** 可改的游戏规则名。 */
+export type GameRuleName = 'keepInventory' | 'doDaylightCycle' | 'doMobSpawning' | 'mobGriefing';
+
+export class Game implements EntityContext, ContainerHost, CommandHost {
   readonly player = new Player();
   readonly store: Store<GameUiState>;
   readonly meta: WorldMeta;
-  readonly rules: GameModeRules;
-  readonly difficulty: Difficulty;
+  /** 当前模式规则（/gamemode 可改）。 */
+  rules: GameModeRules;
+  /** 当前难度（/difficulty 可改）。 */
+  difficulty: Difficulty;
   /** 各维度的世界数据；只有玩家所在的维度会 tick 与渲染。 */
   private readonly dimensions = new Map<DimensionId, Dimension>();
   /** 玩家当前所在维度。 */
@@ -484,6 +499,17 @@ export class Game implements EntityContext, ContainerHost {
   readonly isTouch = isTouchDevice();
   private breakTarget: { x: number; y: number; z: number; id: number } | null = null;
   /** 脚步声：累计走过的水平距离与上一次采样点。 */
+  /** 聊天记录里的下一个 id 与打开聊天栏时的初始文本。 */
+  private nextChatId = 1;
+  private chatDraft = '';
+  private readonly chatHistory: string[] = [];
+  /** 游戏规则（/gamerule 可改）。 */
+  private readonly gameRules: Record<GameRuleName, boolean> = {
+    keepInventory: false,
+    doDaylightCycle: true,
+    doMobSpawning: true,
+    mobGriefing: true,
+  };
   /** 正在骑的矿车 id（没骑为 null）。 */
   private ridingCartId: number | null = null;
   /** 排队中的延迟更新（红石火把 / 中继器）。 */
@@ -562,6 +588,8 @@ export class Game implements EntityContext, ContainerHost {
       achievementVersion: 0,
       boss: null,
       toastVersion: 0,
+      chat: [],
+      isChatOpen: false,
       debug: null,
       isLoading: true,
       loadingText: '生成世界中…',
@@ -1189,6 +1217,242 @@ export class Game implements EntityContext, ContainerHost {
   /** 当前维度 id（存档与调试面板用）。 */
   get dimensionId(): DimensionId {
     return this.current.id;
+  }
+
+  // ---------------------------------------------------------------- 聊天与指令
+
+  /** 打开聊天栏（带一个初始文本，如 "/"）。 */
+  openChat(initial = ''): void {
+    this.chatDraft = initial;
+    this.isPaused = false;
+    this.controls.exitLock();
+    this.store.patch({ isChatOpen: true });
+  }
+
+  /** 关闭聊天栏。 */
+  closeChat(): void {
+    this.store.patch({ isChatOpen: false });
+    this.requestPointerLock();
+  }
+
+  /** 聊天栏里的初始文本（打开时用）。 */
+  get chatInitialText(): string {
+    const draft = this.chatDraft;
+    this.chatDraft = '';
+    return draft;
+  }
+
+  /** 提交一条聊天 / 指令。 */
+  submitChat(text: string): void {
+    const trimmed = text.trim();
+    this.closeChat();
+    if (!trimmed) {
+      return;
+    }
+    this.chatHistory.push(trimmed);
+    if (this.chatHistory.length > CHAT_HISTORY_LIMIT) {
+      this.chatHistory.shift();
+    }
+    if (!trimmed.startsWith('/')) {
+      this.addChatMessage(`<玩家> ${trimmed}`);
+      return;
+    }
+    const reply = runCommand(this, trimmed);
+    if (reply) {
+      this.addChatMessage(reply);
+    }
+  }
+
+  /** 之前输入过的聊天 / 指令（聊天栏按上下键翻）。 */
+  get chatHistoryList(): readonly string[] {
+    return this.chatHistory;
+  }
+
+  /** 往聊天栏加一行。 */
+  private addChatMessage(text: string): void {
+    const chat = [...this.store.get().chat, { id: this.nextChatId++, text, tick: this.tick }];
+    if (chat.length > CHAT_MESSAGE_LIMIT) {
+      chat.splice(0, chat.length - CHAT_MESSAGE_LIMIT);
+    }
+    this.store.patch({ chat });
+  }
+
+  // ---- CommandHost 实现
+
+  reply(message: string): void {
+    this.addChatMessage(message);
+  }
+
+  playerPosition(): { x: number; y: number; z: number } {
+    return { x: Math.floor(this.player.x), y: Math.floor(this.player.y), z: Math.floor(this.player.z) };
+  }
+
+  teleport(x: number, y: number, z: number): void {
+    this.chunkManager.ensureLoaded(x, z, PORTAL_LOAD_RADIUS);
+    this.player.setPosition(x + 0.5, y, z + 0.5);
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.player.vz = 0;
+  }
+
+  setGameMode(mode: GameMode): void {
+    this.rules = getRules(mode);
+    this.difficulty = this.rules.forcedDifficulty ?? this.difficulty;
+    this.spawner.hostileEnabled = this.rules.mobsHostile && this.difficulty !== Difficulty.PEACEFUL;
+    this.store.patch({ mode });
+  }
+
+  setDifficulty(difficulty: Difficulty): void {
+    this.difficulty = difficulty;
+    this.spawner.hostileEnabled = this.rules.mobsHostile && difficulty !== Difficulty.PEACEFUL;
+  }
+
+  setTime(tick: number): void {
+    // 保留已经过去的天数，只改一天之内的时刻
+    const days = Math.floor(this.timeTick / COMMAND_DAY_LENGTH);
+    this.timeTick = days * COMMAND_DAY_LENGTH + tick;
+  }
+
+  addTime(tick: number): void {
+    this.timeTick += tick;
+  }
+
+  currentTime(): number {
+    return this.timeTick;
+  }
+
+  setWeather(weather: Weather, ticks?: number): void {
+    this.weather.set(weather, ticks);
+  }
+
+  giveItem(stack: ItemStack): void {
+    const remaining = this.player.inventory.add(stack);
+    if (remaining > 0) {
+      this.dropItem(this.player.x, this.player.y + 1, this.player.z, { ...stack, count: remaining });
+    }
+    this.notifyChanged();
+  }
+
+  clearInventory(): void {
+    this.player.inventory.drainAll();
+    this.notifyChanged();
+  }
+
+  killMobs(): number {
+    let count = 0;
+    for (const e of this.entities.values()) {
+      if (e instanceof Mob && !e.isDead) {
+        e.isDead = true;
+        count++;
+      }
+    }
+    return count;
+  }
+
+  addXpLevels(levels: number): void {
+    this.player.xpLevel = Math.max(0, this.player.xpLevel + levels);
+  }
+
+  applyEffect(effect: EffectId, seconds: number, amplifier: number): void {
+    if (!isEffectId(effect)) {
+      this.addChatMessage(`未知效果：${effect}`);
+      return;
+    }
+    this.player.addEffect(effect, seconds * TICKS_PER_SECOND, amplifier, this);
+    this.addChatMessage(`已获得效果 ${EFFECT_DEFS[effect].label} ${amplifier + 1} 级，${seconds} 秒`);
+  }
+
+  clearEffects(): void {
+    this.player.clearEffects();
+  }
+
+  setBlockAt(x: number, y: number, z: number, blockName: string): boolean {
+    const def = getBlockByName(blockName);
+    if (!def) {
+      return false;
+    }
+    this.world.setBlock(x, y, z, def.id, 0);
+    return true;
+  }
+
+  fillBlocks(x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, blockName: string): number {
+    const def = getBlockByName(blockName);
+    if (!def) {
+      return -1;
+    }
+    const minX = Math.min(x1, x2);
+    const maxX = Math.max(x1, x2);
+    const minY = Math.max(0, Math.min(y1, y2));
+    const maxY = Math.min(WORLD_SIZE_Y - 1, Math.max(y1, y2));
+    const minZ = Math.min(z1, z2);
+    const maxZ = Math.max(z1, z2);
+    const volume = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+    if (volume > FILL_LIMIT) {
+      this.addChatMessage(`区域太大（${volume} > ${FILL_LIMIT}）`);
+      return 0;
+    }
+    let count = 0;
+    this.world.batch(() => {
+      for (let y = minY; y <= maxY; y++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          for (let x = minX; x <= maxX; x++) {
+            this.world.setBlock(x, y, z, def.id, 0);
+            count++;
+          }
+        }
+      }
+    });
+    return count;
+  }
+
+  summonMob(type: string, x: number, y: number, z: number): boolean {
+    if (!isMobType(type)) {
+      return false;
+    }
+    const mob = new Mob(type);
+    mob.setPosition(x + 0.5, y, z + 0.5);
+    this.spawnEntity(mob);
+    return true;
+  }
+
+  enchantHeldItem(enchantId: string, level: number): boolean {
+    const held = this.player.heldItem;
+    if (!held || !isEnchantmentId(enchantId)) {
+      return false;
+    }
+    const def = getItem(held.id);
+    if (!def || !canEnchant(def, ENCHANTMENT_DEFS[enchantId])) {
+      return false;
+    }
+    const capped = Math.min(level, ENCHANTMENT_DEFS[enchantId].maxLevel);
+    this.player.inventory.set(this.player.selectedSlot, {
+      ...held,
+      enchants: { ...(held.enchants ?? {}), [enchantId]: capped },
+    });
+    this.notifyChanged();
+    return true;
+  }
+
+  setSpawnPoint(x: number, y: number, z: number): void {
+    this.player.spawnX = x + 0.5;
+    this.player.spawnY = y;
+    this.player.spawnZ = z + 0.5;
+  }
+
+  worldSeed(): string {
+    return this.meta.seed;
+  }
+
+  setGameRule(rule: string, value: boolean): boolean {
+    if (!(rule in this.gameRules)) {
+      return false;
+    }
+    this.gameRules[rule as GameRuleName] = value;
+    return true;
+  }
+
+  listGameRules(): string[] {
+    return Object.entries(this.gameRules).map(([name, value]) => `${name} = ${value}`);
   }
 
   // ---------------------------------------------------------------- 矿车
@@ -1932,6 +2196,10 @@ export class Game implements EntityContext, ContainerHost {
       return;
     }
     if (screen !== Screen.NONE) {
+      return;
+    }
+    if (code === KEY_CHAT || code === KEY_COMMAND) {
+      this.openChat(code === KEY_COMMAND ? '/' : '');
       return;
     }
     if (code.startsWith(KEY_HOTBAR_PREFIX)) {

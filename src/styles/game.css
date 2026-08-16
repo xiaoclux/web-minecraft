@@ -633,6 +633,50 @@ button:disabled {
 }
 
 /* Boss 血条：屏幕顶部居中 */
+/* 聊天栏：左下角的消息列表 + 打开时的输入框 */
+.chat-overlay {
+  position: absolute;
+  left: 8px;
+  bottom: 64px;
+  width: min(520px, 60vw);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-overlay.open {
+  pointer-events: auto;
+  bottom: 8px;
+}
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.chat-line {
+  background: rgba(0, 0, 0, 0.45);
+  color: #eee;
+  padding: 1px 4px;
+  font-size: 13px;
+  text-shadow: 1px 1px 0 #000;
+  width: fit-content;
+  max-width: 100%;
+  word-break: break-all;
+}
+
+.chat-input {
+  margin-top: 4px;
+  padding: 4px 6px;
+  border: 2px solid #555;
+  background: rgba(0, 0, 0, 0.7);
+  color: #eee;
+  font: inherit;
+  font-size: 13px;
+}
+
 .boss-bar {
   position: absolute;
   top: 12px;

@@ -11,6 +11,9 @@ export const KEY_DROP = 'KeyQ';
 export const KEY_DEBUG = 'F3';
 export const KEY_ESCAPE = 'Escape';
 export const KEY_HOTBAR_PREFIX = 'Digit';
+/** 打开聊天栏 / 直接开始输入指令。 */
+export const KEY_CHAT = 'KeyT';
+export const KEY_COMMAND = 'Slash';
 export const MOUSE_LEFT = 0;
 export const MOUSE_MIDDLE = 1;
 export const MOUSE_RIGHT = 2;

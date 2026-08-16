@@ -6,6 +6,7 @@ import { DeathScreen } from './DeathScreen';
 import { DebugOverlay } from './DebugOverlay';
 import { Hud } from './Hud';
 import { InventoryScreen } from './InventoryScreen';
+import { ChatOverlay } from './ChatOverlay';
 import { PauseMenu } from './PauseMenu';
 import { StatsScreen } from './StatsScreen';
 import { TouchControls } from './TouchControls';
@@ -94,6 +95,7 @@ function GameOverlays({ game }: { game: Game }) {
       {showTouchControls && state.screen === Screen.NONE && <TouchControls game={game} />}
       {state.debug && <DebugOverlay info={state.debug} />}
       {showInventory && <InventoryScreen game={game} state={state} />}
+      <ChatOverlay game={game} state={state} />
       {state.screen === Screen.PAUSE && <PauseMenu game={game} />}
       {state.screen === Screen.STATS && <StatsScreen game={game} state={state} />}
       {state.screen === Screen.DEATH && <DeathScreen game={game} state={state} />}
