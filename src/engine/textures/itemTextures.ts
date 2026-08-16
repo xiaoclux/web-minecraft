@@ -318,6 +318,10 @@ const HAND_DRAWN_ICONS: Record<string, Painter> = {
     '................',
     '................',
   ]),
+  bucket: bucketPainter(null),
+  water_bucket: bucketPainter(hex('#3f60d6')),
+  lava_bucket: bucketPainter(hex('#d45a12')),
+  milk_bucket: bucketPainter(hex('#f2f2f2')),
   shears: (c) =>
     c.draw(
       [
@@ -516,6 +520,28 @@ function armorPainters(): Record<string, Painter> {
 
 /** 全部物品图标。 */
 export const ITEM_ICON_PAINTERS: Record<string, Painter> = { ...HAND_DRAWN_ICONS, ...armorPainters() };
+
+/** 桶：铁皮轮廓，装了东西就在桶身里填色。 */
+const BUCKET_METAL = hex('#b0b0b0');
+const BUCKET_DARK = hex('#7a7a7a');
+function bucketPainter(fill: Rgba | null): Painter {
+  return (c) => {
+    c.draw(
+      [
+        'X......X',
+        'X......X',
+        '.X....X.',
+        '.XFFFFX.',
+        '.XFFFFX.',
+        '.XFFFFX.',
+        '..XXXX..',
+      ],
+      { X: BUCKET_METAL, F: fill ?? BUCKET_DARK },
+      4,
+      5,
+    );
+  };
+}
 
 /** 生成物品图标；未知 key 返回品红方块。 */
 export function paintItemIcon(key: string): PixelCanvas {

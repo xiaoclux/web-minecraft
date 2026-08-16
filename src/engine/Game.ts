@@ -54,7 +54,7 @@ import {
   MOB_BREED_XP_MIN,
 } from './constants/mobs';
 import { CHEST_SLOT_COUNT } from './constants/ui';
-import { WATER_TICK_INTERVAL } from './constants/fluids';
+import { WATER_SOURCE_META, WATER_TICK_INTERVAL } from './constants/fluids';
 import {
   DAY_LENGTH_TICKS,
   DEFAULT_RENDER_DISTANCE,
@@ -71,7 +71,7 @@ import type { EntityContext } from './entities/EntityContext';
 import { ItemDropEntity } from './entities/ItemDropEntity';
 import { LivingEntity } from './entities/LivingEntity';
 import { Mob } from './entities/Mob';
-import { isMobType } from './entities/MobDefs';
+import { MobType, isMobType } from './entities/MobDefs';
 import { MobSpawner } from './entities/MobSpawner';
 import { Screen, isContainerScreen, type DebugInfo, type GameUiState } from './events/GameState';
 import { Store } from './events/Store';
@@ -124,6 +124,17 @@ const FACING_LABELS = ['南 (+Z)', '西 (-X)', '北 (-Z)', '东 (+X)'];
 const XP_PER_MOB_KILL_MULTIPLIER = 1;
 const SPAWN_PROTECTION_TICKS = 40;
 const REPLACEABLE_BLOCKS: ReadonlySet<number> = new Set<number>([BlockId.AIR, BlockId.WATER, BlockId.TALL_GRASS]);
+/** 各种桶倒出来的流体方块（空桶为 AIR，表示"去装"）。 */
+const BUCKET_FLUIDS: Record<string, number> = {
+  bucket: BlockId.AIR,
+  water_bucket: BlockId.WATER,
+  lava_bucket: BlockId.LAVA,
+};
+/** 流体方块 → 装满后的桶。 */
+const FILLED_BUCKETS: Record<number, string> = {
+  [BlockId.WATER]: 'water_bucket',
+  [BlockId.LAVA]: 'lava_bucket',
+};
 /** 求爱 / 繁殖时冒出的爱心粒子数量与取样贴图。 */
 const HEART_PARTICLE_COUNT = 7;
 const HEART_PARTICLE_TEXTURE = 'particle_heart';
@@ -1141,6 +1152,18 @@ export class Game implements EntityContext, ContainerHost {
     if (def.id === 'shears' && this.tryShearMob()) {
       return;
     }
+    if (def.id === 'bucket' && this.tryMilkCow()) {
+      return;
+    }
+    if (def.id === 'milk_bucket') {
+      this.replaceHeldItem('bucket');
+      this.sound.play('eat');
+      this.renderer.hand.swing();
+      return;
+    }
+    if (BUCKET_FLUIDS[def.id] !== undefined && this.tryUseBucket(def.id, hit)) {
+      return;
+    }
     if (this.tryFeedMob(def.id)) {
       return;
     }
@@ -1153,6 +1176,84 @@ export class Game implements EntityContext, ContainerHost {
     if (def.kind === ItemKind.BLOCK && def.blockId !== undefined && hit) {
       this.tryPlaceBlock(def.blockId, hit);
     }
+  }
+
+  /** 空桶对着牛右键挤奶。 */
+  private tryMilkCow(): boolean {
+    const target = this.findEntityInCrosshair();
+    if (!(target instanceof Mob) || target.type !== MobType.COW || target.isBaby) {
+      return false;
+    }
+    this.replaceHeldItem('milk_bucket');
+    this.renderer.hand.swing();
+    return true;
+  }
+
+  /**
+   * 桶：空桶装起流体源、装满的桶把流体倒出来。
+   * @returns 是否已处理
+   */
+  private tryUseBucket(itemId: string, hit: RayHit | null): boolean {
+    if (!this.rules.canModifyBlocks) {
+      return false;
+    }
+    const fluid = BUCKET_FLUIDS[itemId];
+    if (fluid === BlockId.AIR) {
+      return this.tryFillBucket();
+    }
+    if (!hit) {
+      return false;
+    }
+    const px = hit.x + hit.nx;
+    const py = hit.y + hit.ny;
+    const pz = hit.z + hit.nz;
+    if (!this.world.inBounds(px, py, pz) || !REPLACEABLE_BLOCKS.has(this.world.getBlock(px, py, pz))) {
+      return false;
+    }
+    this.world.setBlock(px, py, pz, fluid, WATER_SOURCE_META);
+    this.replaceHeldItem('bucket');
+    this.sound.play('place');
+    this.renderer.hand.swing();
+    return true;
+  }
+
+  /** 空桶：把准星指向的流体源装进桶里。 */
+  private tryFillBucket(): boolean {
+    const p = this.player;
+    const dir = this.lookDirection();
+    const fluidHit = raycastBlocks(this.world, p.x, p.eyeY, p.z, dir.x, dir.y, dir.z, this.rules.reach, true);
+    if (!fluidHit) {
+      return false;
+    }
+    const id = this.world.getBlock(fluidHit.x, fluidHit.y, fluidHit.z);
+    const filled = FILLED_BUCKETS[id];
+    if (!filled || this.world.getMeta(fluidHit.x, fluidHit.y, fluidHit.z) !== WATER_SOURCE_META) {
+      return false;
+    }
+    this.world.setBlock(fluidHit.x, fluidHit.y, fluidHit.z, BlockId.AIR);
+    this.replaceHeldItem(filled);
+    this.renderer.hand.swing();
+    return true;
+  }
+
+  /** 把手上的一个物品换成另一个（桶的装 / 倒）。创造模式不消耗也不发放。 */
+  private replaceHeldItem(itemId: string): void {
+    if (this.rules.infiniteItems) {
+      return;
+    }
+    const held = this.player.heldItem;
+    if (!held) {
+      return;
+    }
+    if (held.count > 1) {
+      this.player.inventory.consume(this.player.selectedSlot, 1);
+      const remaining = this.player.inventory.add({ id: itemId, count: 1 });
+      if (remaining > 0) {
+        this.dropItem(this.player.x, this.player.eyeY, this.player.z, { id: itemId, count: remaining }, 0.2);
+      }
+      return;
+    }
+    this.player.inventory.set(this.player.selectedSlot, { id: itemId, count: 1 });
   }
 
   /** 用剪刀剪准星里的羊。 */
