@@ -102,6 +102,7 @@ import { potionOfItem } from './items/potions';
 import { biomeHasSnowfall, biomeLabel } from './world/biomes';
 import { ArrowEntity } from './entities/ArrowEntity';
 import { ThrownPotionEntity } from './entities/ThrownPotionEntity';
+import { FireballEntity } from './entities/FireballEntity';
 import { Entity, allocateEntityId, resetEntityIds, type EntitySaveData } from './entities/Entity';
 import type { EntityContext } from './entities/EntityContext';
 import { ItemDropEntity } from './entities/ItemDropEntity';
@@ -231,6 +232,9 @@ const BOOKSHELF_RING_OFFSETS: readonly (readonly (readonly [number, number])[])[
   [[2, -1], [2, 0], [2, 1]],
   [[2, 2]],
 ];
+/** 打火球时准星允许的偏差与额外触及距离。 */
+const FIREBALL_REFLECT_TOLERANCE = 1.2;
+const FIREBALL_REFLECT_EXTRA_REACH = 2;
 /** 无昼夜的维度用的固定天色（主世界为 null，走正常昼夜）。 */
 const DIMENSION_SKY_COLORS: Readonly<Record<DimensionId, THREE.Color | null>> = {
   overworld: null,
@@ -1907,7 +1911,8 @@ export class Game implements EntityContext, ContainerHost {
     if (cropBlock === null || !this.rules.canModifyBlocks || hit.ny !== 1) {
       return false;
     }
-    if (this.world.getBlock(hit.x, hit.y, hit.z) !== BlockId.FARMLAND) {
+    const soil = getBlock(cropBlock).crop?.soil ?? BlockId.FARMLAND;
+    if (this.world.getBlock(hit.x, hit.y, hit.z) !== soil) {
       return false;
     }
     if (this.world.getBlock(hit.x, hit.y + 1, hit.z) !== BlockId.AIR) {
@@ -2157,6 +2162,9 @@ export class Game implements EntityContext, ContainerHost {
     if (this.attackCooldown > 0) {
       return;
     }
+    if (this.tryReflectFireball()) {
+      return;
+    }
     const target = this.findEntityInCrosshair();
     if (!target) {
       return;
@@ -2188,6 +2196,35 @@ export class Game implements EntityContext, ContainerHost {
       }
     }
     this.renderer.hand.swing();
+  }
+
+  /**
+   * 挥手打中飞行中的恶魂火球就把它弹回去（1.8.9 的经典打法）。
+   * @returns 是否打中了火球
+   */
+  private tryReflectFireball(): boolean {
+    const dir = this.lookDirection();
+    const p = this.player;
+    const origin = new THREE.Vector3(p.x, p.eyeY, p.z);
+    const ray = new THREE.Ray(origin, dir);
+    for (const e of this.entities.values()) {
+      if (!(e instanceof FireballEntity) || e.isDead) {
+        continue;
+      }
+      const center = new THREE.Vector3(e.x, e.y, e.z);
+      if (origin.distanceTo(center) > this.rules.reach + FIREBALL_REFLECT_EXTRA_REACH) {
+        continue;
+      }
+      if (ray.distanceToPoint(center) > FIREBALL_REFLECT_TOLERANCE) {
+        continue;
+      }
+      e.reflect(p.id);
+      this.sound.play('hit');
+      this.renderer.hand.swing();
+      this.attackCooldown = ATTACK_COOLDOWN_TICKS;
+      return true;
+    }
+    return false;
   }
 
   private findEntityInCrosshair(): LivingEntity | null {
@@ -2473,7 +2510,7 @@ export class Game implements EntityContext, ContainerHost {
     const cx = x + 0.5;
     const cy = y + 0.5;
     const cz = z + 0.5;
-    if (this.world.getMeta(x, y, z) < CROP_MAX_STAGE) {
+    if (this.world.getMeta(x, y, z) < (crop.maxStage ?? CROP_MAX_STAGE)) {
       this.dropItem(cx, cy, cz, { id: crop.seedItem, count: 1 }, 0.2);
       return;
     }
@@ -2801,6 +2838,16 @@ export class Game implements EntityContext, ContainerHost {
     const sky = this.world.getSkyLight(x, y, z) * this.renderer.sky.skyLevel;
     const block = this.world.getBlockLight(x, y, z);
     return Math.max(sky, block);
+  }
+
+  igniteAt(x: number, y: number, z: number): void {
+    if (!this.rules.canModifyBlocks || this.world.getBlock(x, y, z) !== BlockId.AIR) {
+      return;
+    }
+    if (!this.world.isSolidAt(x, y - 1, z)) {
+      return;
+    }
+    this.world.setBlock(x, y, z, BlockId.FIRE, 0);
   }
 
   spawnEntity(entity: Entity): void {

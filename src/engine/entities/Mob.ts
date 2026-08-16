@@ -25,8 +25,20 @@ import {
   SKELETON_SHOOT_COOLDOWN_TICKS,
   SKELETON_SHOOT_RANGE,
 } from '../constants/mobs';
-import { HOSTILE_SPAWN_LIGHT_MAX } from '../constants/mobs';
+import {
+  BLAZE_SHOOT_COOLDOWN_TICKS,
+  BLAZE_SHOOT_RANGE,
+  FIREBALL_SPEED,
+  GHAST_HOVER_HEIGHT,
+  GHAST_SHOOT_COOLDOWN_TICKS,
+  GHAST_SHOOT_RANGE,
+  HOSTILE_SPAWN_LIGHT_MAX,
+  PIGMAN_ANGER_RADIUS,
+  PIGMAN_ANGER_TICKS,
+} from '../constants/mobs';
 import { MobSoundKind } from './mobSounds';
+import { FireballEntity, FireballKind } from './FireballEntity';
+import { EffectId } from './effects';
 
 import { EnchantmentId, enchantLevel } from '../items/enchantments';
 import { AABB } from '../physics/AABB';
@@ -136,6 +148,9 @@ export class Mob extends LivingEntity {
 
   override tick(ctx: EntityContext): void {
     this.tickIdleSound(ctx);
+    if (this.angerTicks > 0) {
+      this.angerTicks--;
+    }
     if (this.health > 0) {
       this.tickBreeding();
       this.think(ctx);
@@ -242,7 +257,18 @@ export class Mob extends LivingEntity {
     }
   }
 
+  /** 被激怒的剩余 tick（中立生物用）。 */
+  angerTicks = 0;
+
+  protected override get isFireImmune(): boolean {
+    return this.def.fireImmune === true;
+  }
+
   private isAggressive(ctx: EntityContext): boolean {
+    // 中立生物（僵尸猪人）只在被激怒时攻击
+    if (this.def.neutral) {
+      return this.angerTicks > 0;
+    }
     if (!this.def.neutralInDaylight) {
       return true;
     }
@@ -291,6 +317,12 @@ export class Mob extends LivingEntity {
       case MobType.SKELETON:
         this.chaseSkeleton(ctx, dist);
         break;
+      case MobType.GHAST:
+        this.chaseGhast(ctx, dist);
+        break;
+      case MobType.BLAZE:
+        this.chaseBlaze(ctx, dist);
+        break;
       default:
         this.moveForward = 1;
         if (dist < MOB_ATTACK_RANGE + this.width / 2 && this.attackCooldown === 0) {
@@ -337,6 +369,46 @@ export class Mob extends LivingEntity {
     }
   }
 
+  /** 恶魂：悬停在玩家上方，隔一会儿丢一颗大火球。 */
+  private chaseGhast(ctx: EntityContext, dist: number): void {
+    const player = ctx.player;
+    // 保持距离并浮在玩家上方
+    this.moveForward = dist > GHAST_SHOOT_RANGE / 2 ? 0.6 : -0.3;
+    const targetY = player.y + GHAST_HOVER_HEIGHT;
+    this.vy = Math.sign(targetY - this.y) * this.def.speed * 0.4;
+    if (dist < GHAST_SHOOT_RANGE && this.attackCooldown === 0) {
+      this.attackCooldown = GHAST_SHOOT_COOLDOWN_TICKS;
+      this.shootFireball(ctx, FireballKind.LARGE);
+    }
+  }
+
+  /** 烈焰人：贴近后连发小火球。 */
+  private chaseBlaze(ctx: EntityContext, dist: number): void {
+    this.moveForward = dist > BLAZE_SHOOT_RANGE / 2 ? 0.8 : 0;
+    // 会飞：跟着玩家的高度飘
+    this.vy = Math.sign(ctx.player.y + 1 - this.y) * this.def.speed * 0.3;
+    if (dist < BLAZE_SHOOT_RANGE && this.attackCooldown === 0) {
+      this.attackCooldown = BLAZE_SHOOT_COOLDOWN_TICKS;
+      this.shootFireball(ctx, FireballKind.SMALL);
+    }
+  }
+
+  /** 朝玩家丢一颗火球。 */
+  private shootFireball(ctx: EntityContext, kind: FireballKind): void {
+    const player = ctx.player;
+    const dx = player.x - this.x;
+    const dy = player.y + player.height * 0.6 - this.eyeY;
+    const dz = player.z - this.z;
+    const dist = Math.hypot(dx, dy, dz) || 1;
+    const ball = new FireballEntity(kind, this.id);
+    ball.setPosition(this.x, this.eyeY, this.z);
+    ball.vx = (dx / dist) * FIREBALL_SPEED;
+    ball.vy = (dy / dist) * FIREBALL_SPEED;
+    ball.vz = (dz / dist) * FIREBALL_SPEED;
+    ctx.spawnEntity(ball);
+    ctx.playSound('fizz', this.x, this.y, this.z);
+  }
+
   private shootArrow(ctx: EntityContext): void {
     const player = ctx.player;
     const dx = player.x - this.x;
@@ -357,6 +429,13 @@ export class Mob extends LivingEntity {
     this.attackCooldown = MOB_ATTACK_COOLDOWN_TICKS;
     const damage = this.def.attackDamage * DIFFICULTY_DAMAGE_MULTIPLIER[ctx.difficulty];
     ctx.hurtPlayer(damage, this);
+    // 烈焰人点燃、凋灵骷髅施加凋零
+    if (this.def.igniteTicks) {
+      ctx.player.setOnFire(this.def.igniteTicks);
+    }
+    if (this.def.witherTicks) {
+      ctx.player.addEffect(EffectId.WITHER, this.def.witherTicks, 0, ctx);
+    }
   }
 
   private applyMovement(ctx: EntityContext, dt: number): void {
@@ -443,6 +522,16 @@ export class Mob extends LivingEntity {
     }
   }
 
+  /** 被打后连同附近同族一起进入愤怒状态（1.8.9 的猪人群体激怒）。 */
+  private angerNearby(ctx: EntityContext): void {
+    this.angerTicks = PIGMAN_ANGER_TICKS;
+    for (const other of ctx.livingEntitiesNear(this.x, this.y, this.z, PIGMAN_ANGER_RADIUS)) {
+      if (other instanceof Mob && other.type === this.type) {
+        other.angerTicks = PIGMAN_ANGER_TICKS;
+      }
+    }
+  }
+
   /** 闲置叫声：平均每 IDLE_SOUND_INTERVAL_TICKS 出一次声。 */
   private tickIdleSound(ctx: EntityContext): void {
     if (ctx.random() >= 1 / IDLE_SOUND_INTERVAL_TICKS) {
@@ -453,6 +542,9 @@ export class Mob extends LivingEntity {
 
   protected override onHurt(ctx: EntityContext, _amount: number, source: Entity | null): void {
     ctx.playMobSound(this.type, MobSoundKind.HURT, this.x, this.y, this.z, this.isBaby);
+    if (this.def.neutral && source) {
+      this.angerNearby(ctx);
+    }
     if (this.def.teleports && ctx.random() < TELEPORT_ON_HURT_CHANCE) {
       this.tryTeleport(ctx);
     }

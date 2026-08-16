@@ -203,6 +203,11 @@ export abstract class LivingEntity extends Entity {
     this.fireTicks = Math.max(this.fireTicks, ticks);
   }
 
+  /** 天生免疫火与岩浆（下界生物）；由子类覆盖。 */
+  protected get isFireImmune(): boolean {
+    return false;
+  }
+
   /** 是否正在着火（岩浆 / 火焰点燃）。 */
   get isOnFire(): boolean {
     return this.fireTicks > 0;
@@ -224,7 +229,7 @@ export abstract class LivingEntity extends Entity {
     } else {
       this.cactusDamageTimer = 0;
     }
-    if (this.hasEffect(EffectId.FIRE_RESISTANCE)) {
+    if (this.hasEffect(EffectId.FIRE_RESISTANCE) || this.isFireImmune) {
       this.fireTicks = 0;
       return;
     }

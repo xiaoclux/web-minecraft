@@ -224,14 +224,19 @@ export class RandomTickSystem {
   /** 作物：够亮就按耕地湿度决定的概率长一阶段。 */
   private tickCrop(x: number, y: number, z: number): void {
     const world = this.host.world;
+    const crop = getBlock(world.getBlock(x, y, z)).crop;
+    if (!crop) {
+      return;
+    }
     const stage = world.getMeta(x, y, z);
-    if (stage >= CROP_MAX_STAGE) {
+    if (stage >= (crop.maxStage ?? CROP_MAX_STAGE)) {
       return;
     }
-    if (this.host.lightLevelAt(x, y, z) < CROP_MIN_LIGHT) {
+    if (crop.needsLight !== false && this.host.lightLevelAt(x, y, z) < CROP_MIN_LIGHT) {
       return;
     }
-    const wet = world.getMeta(x, y - 1, z) > 0 && world.getBlock(x, y - 1, z) === BlockId.FARMLAND;
+    // 湿耕地长得快；种在别的土壤上（下界疣）按干地速度
+    const wet = world.getBlock(x, y - 1, z) === BlockId.FARMLAND && world.getMeta(x, y - 1, z) > 0;
     if (this.host.random() >= (wet ? CROP_GROW_CHANCE_WET : CROP_GROW_CHANCE_DRY)) {
       return;
     }

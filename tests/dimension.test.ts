@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
-import { DIMENSION_DEFS, DimensionId, isDimensionId } from '../src/engine/world/Dimension';
+import { DIMENSION_DEFS, isDimensionId } from '../src/engine/world/Dimension';
 import { EndGenerator, END_ISLAND_SURFACE_Y, OBSIDIAN_PILLAR_COUNT } from '../src/engine/world/EndGenerator';
 import { NetherGenerator, NETHER_HEIGHT, NETHER_LAVA_LEVEL } from '../src/engine/world/NetherGenerator';
+import { NetherFortressGenerator } from '../src/engine/world/structures/NetherFortressGenerator';
 import { Chunk } from '../src/engine/world/Chunk';
 import { World } from '../src/engine/world/World';
 import { PORTAL_AXIS_X, mapCoordinate, tryLightPortal } from '../src/engine/systems/PortalSystem';
@@ -132,5 +133,49 @@ describe('传送门框架', () => {
     buildFrame(world, 4, 10, 4);
     world.setBlock(4, 9, 4, BlockId.AIR);
     expect(tryLightPortal(world, 4, 10, 4)).toBe(false);
+  });
+});
+
+describe('下界要塞', () => {
+  it('要塞格子里能找到要塞，且桥与塔用的是下界砖', () => {
+    const generator = new NetherGenerator('fortress-seed', true);
+    const fortresses = new NetherFortressGenerator('fortress-seed');
+    // 找一个有要塞的格子
+    let found: { cellX: number; cellZ: number; fortress: NonNullable<ReturnType<typeof fortresses.getFortress>> } | null = null;
+    for (let cellX = 0; cellX < 6 && !found; cellX++) {
+      for (let cellZ = 0; cellZ < 6 && !found; cellZ++) {
+        const fortress = fortresses.getFortress(cellX, cellZ);
+        if (fortress) {
+          found = { cellX, cellZ, fortress };
+        }
+      }
+    }
+    expect(found).not.toBeNull();
+    const { fortress } = found!;
+    const cx = Math.floor(fortress.centerX / 16);
+    const cz = Math.floor(fortress.centerZ / 16);
+    const chunk = generate(generator, cx, cz);
+    let bricks = 0;
+    let spawners = 0;
+    for (let y = fortress.y - 4; y <= fortress.y + 14; y++) {
+      for (let lz = 0; lz < 16; lz++) {
+        for (let lx = 0; lx < 16; lx++) {
+          const id = chunk.getLocal(lx, y, lz);
+          if (id === BlockId.NETHER_BRICKS) bricks++;
+          if (id === BlockId.MOB_SPAWNER) spawners++;
+        }
+      }
+    }
+    expect(bricks).toBeGreaterThan(50);
+    expect(spawners).toBe(1);
+    expect(chunk.pendingBlockEntities.some((e) => e.spawns === 'blaze')).toBe(true);
+  });
+
+  it('同种子的要塞位置固定', () => {
+    const a = new NetherFortressGenerator('same');
+    const b = new NetherFortressGenerator('same');
+    for (let i = 0; i < 5; i++) {
+      expect(a.getFortress(i, 0)).toEqual(b.getFortress(i, 0));
+    }
   });
 });

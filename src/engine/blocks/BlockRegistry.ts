@@ -143,8 +143,17 @@ export interface BlockDef {
     produce: { item: string; min: number; max: number };
     /** 成熟时额外掉的种子数量区间。 */
     extraSeeds?: { min: number; max: number };
+    /** 种在什么方块上；默认耕地。 */
+    soil?: number;
+    /** 成熟阶段（meta 的最大值）；默认与小麦一致。 */
+    maxStage?: number;
+    /** 是否需要光照才能生长；默认需要（下界疣不需要）。 */
+    needsLight?: boolean;
   };
 }
+
+/** 下界疣的最大生长阶段（1.8.9 是 3 段）。 */
+export const NETHER_WART_MAX_STAGE = 2;
 
 export const BlockId = {
   AIR: 0,
@@ -206,8 +215,8 @@ export const BlockId = {
   QUARTZ_ORE: 153,
   NETHER_BRICKS: 112,
   NETHER_PORTAL: 90,
-  NETHER_WART_BLOCK: 115,
   END_STONE: 121,
+  NETHER_WART: 115,
   SUGAR_CANE: 83,
   GLOWSTONE: 89,
   STONE_BRICKS: 98,
@@ -664,6 +673,20 @@ export const BLOCK_DEFS: BlockDef[] = [
     shape: BlockShape.ANVIL,
   },
   cube(BlockId.NETHERRACK, 'netherrack', '地狱岩', same('netherrack'), 0.4, ToolType.PICKAXE),
+  {
+    ...cross(BlockId.NETHER_WART, 'nether_wart_block', '下界疣', 'nether_wart_0', {
+      needsSupport: true,
+      noItem: true,
+      texturesForMeta: (meta: number) => same(`nether_wart_${Math.min(NETHER_WART_MAX_STAGE, meta)}`),
+      crop: {
+        seedItem: 'nether_wart',
+        produce: { item: 'nether_wart', min: 2, max: 4 },
+        soil: BlockId.SOUL_SAND,
+        maxStage: NETHER_WART_MAX_STAGE,
+        needsLight: false,
+      },
+    }),
+  },
   cube(BlockId.END_STONE, 'end_stone', '末地石', same('end_stone'), 3, ToolType.PICKAXE, {
     minTier: ToolTier.WOOD,
   }),

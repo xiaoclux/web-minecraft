@@ -11,6 +11,8 @@ export interface EntityContext {
   readonly world: World;
   readonly player: Player;
   readonly difficulty: Difficulty;
+  /** 当前维度 id（决定刷什么生物）。 */
+  readonly dimensionId: string;
   readonly tick: number;
   /** 生物是否会主动攻击玩家（创造/和平下为 false）。 */
   readonly canMobsTargetPlayer: boolean;
@@ -20,6 +22,8 @@ export interface EntityContext {
   spawnEntity(entity: Entity): void;
   dropItem(x: number, y: number, z: number, stack: ItemStack, spread?: number): void;
   explode(x: number, y: number, z: number, radius: number, sourceId: number): void;
+  /** 在某个方块位置点一团火（小火球落地）。 */
+  igniteAt(x: number, y: number, z: number): void;
   hurtPlayer(amount: number, source: Entity | null): void;
   onEntityKilled(entity: Entity, byPlayer: boolean): void;
   random(): number;

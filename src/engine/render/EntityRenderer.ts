@@ -6,6 +6,7 @@ import { XpOrbEntity } from '../entities/XpOrbEntity';
 import type { Entity } from '../entities/Entity';
 import { ItemDropEntity } from '../entities/ItemDropEntity';
 import { ThrownPotionEntity } from '../entities/ThrownPotionEntity';
+import { FireballEntity } from '../entities/FireballEntity';
 import type { ItemStack } from '../items/ItemStack';
 import { Mob } from '../entities/Mob';
 import { getItem, ItemKind } from '../items/ItemRegistry';
@@ -36,7 +37,7 @@ interface RenderedEntity {
   group: THREE.Group;
   parts: { mesh: THREE.Mesh; spec: PartSpec }[];
   materials: THREE.MeshLambertMaterial[];
-  kind: 'mob' | 'item' | 'arrow' | 'xp';
+  kind: 'mob' | 'item' | 'arrow' | 'xp' | 'fireball';
 }
 
 /** 负责实体的 three.js 表现：模型、动画、受伤闪烁、光照。 */
@@ -104,6 +105,9 @@ export class EntityRenderer {
     }
     if (entity instanceof ArrowEntity) {
       return this.createArrow();
+    }
+    if (entity instanceof FireballEntity) {
+      return this.createFireball(entity);
     }
     if (entity instanceof XpOrbEntity) {
       return this.createXpOrb();
@@ -241,6 +245,16 @@ export class EntityRenderer {
       group.add(mesh);
     }
     return { group, parts: [], materials, kind: 'item' };
+  }
+
+  /** 火球：一个自发光的橙色小方块，大小随种类。 */
+  private createFireball(fireball: FireballEntity): RenderedEntity {
+    const group = new THREE.Group();
+    const m = new THREE.MeshLambertMaterial({ color: 0xffa030, emissive: 0xff6010 });
+    const size = fireball.width;
+    const mesh = new THREE.Mesh(this.boxGeometry(size, size, size), m);
+    group.add(mesh);
+    return { group, parts: [], materials: [m], kind: 'fireball' };
   }
 
   private createArrow(): RenderedEntity {

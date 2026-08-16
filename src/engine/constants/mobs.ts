@@ -25,6 +25,24 @@ export const ARROW_GRAVITY = 20;
 export const ARROW_DAMAGE = 3;
 export const ARROW_LIFETIME_TICKS = 200;
 /** 喷溅药水：出手速度（格/秒）、重力、最长飞行时间、炸开的作用半径。 */
+/** 火球：存活时间、大火球爆炸半径、小火球伤害与点燃时长。 */
+export const FIREBALL_LIFETIME_TICKS = 200;
+export const FIREBALL_EXPLOSION_RADIUS = 3;
+export const SMALL_FIREBALL_DAMAGE = 5;
+export const SMALL_FIREBALL_IGNITE_TICKS = 100;
+/** 火球出手速度（格/秒）。 */
+export const FIREBALL_SPEED = 14;
+/** 远程生物的射程与冷却。 */
+export const GHAST_SHOOT_RANGE = 40;
+export const GHAST_SHOOT_COOLDOWN_TICKS = 60;
+export const BLAZE_SHOOT_RANGE = 16;
+export const BLAZE_SHOOT_COOLDOWN_TICKS = 40;
+/** 恶魂保持的高度（相对玩家）与游走速度。 */
+export const GHAST_HOVER_HEIGHT = 6;
+/** 僵尸猪人被激怒后波及的半径与持续时间。 */
+export const PIGMAN_ANGER_RADIUS = 16;
+export const PIGMAN_ANGER_TICKS = 400;
+
 export const SPLASH_POTION_SPEED = 12;
 export const SPLASH_POTION_GRAVITY = 20;
 export const SPLASH_POTION_LIFETIME_TICKS = 200;

@@ -644,6 +644,22 @@ const anvilTop: Painter = (c, rng) => {
   c.rect(2, 3, 12, 10, hex('#3a3a3a'));
 };
 
+/** 下界疣：三个生长阶段，越大越密。 */
+function netherWart(stage: number): Painter {
+  return (c, rng) => {
+    c.fill(TRANSPARENT);
+    const red = hex('#a02020');
+    const dark = hex('#6a1414');
+    const rows = 2 + stage * 2;
+    for (let i = 0; i < rows; i++) {
+      const x = 2 + Math.floor(rng() * 11);
+      const y = 14 - i * Math.floor(14 / rows);
+      c.rect(x, y, 3, 2, i % 2 === 0 ? red : dark);
+    }
+    c.rect(7, 2, 2, 12, dark);
+  };
+}
+
 /** 末地石：米黄色带斑点。 */
 const endStone: Painter = (c, rng) => {
   c.noise(hex('#dbdc9b'), 0.1, rng);
@@ -908,6 +924,9 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   brewing_stand: brewingStand,
   netherrack,
   end_stone: endStone,
+  nether_wart_0: netherWart(0),
+  nether_wart_1: netherWart(1),
+  nether_wart_2: netherWart(2),
   soul_sand: soulSand,
   quartz_ore: quartzOre,
   nether_bricks: netherBricks,

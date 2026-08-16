@@ -10,6 +10,7 @@ import { CHUNK_SIZE, WORLD_SIZE_Y } from '../constants/world';
 import { createRng, hashCoords, hashString } from '../textures/PixelCanvas';
 import type { Chunk } from './Chunk';
 import type { ChunkGenerator, SpawnPoint } from './ChunkGenerator';
+import { NetherFortressGenerator } from './structures/NetherFortressGenerator';
 
 /** 下界的可活动高度（1.8.9 是 128，这里也用 128，上面留空）。 */
 export const NETHER_HEIGHT = 128;
@@ -47,10 +48,16 @@ export class NetherGenerator implements ChunkGenerator {
   private readonly base: number;
   private readonly cave: ReturnType<typeof createNoise3D>;
   private readonly patch: ReturnType<typeof createNoise2D>;
+  private readonly fortresses: NetherFortressGenerator | null;
 
-  constructor(seed: string) {
+  constructor(
+    seed: string,
+    /** 是否生成结构（世界创建时可关）。 */
+    structures = true,
+  ) {
     this.seed = seed;
     this.base = hashString(`${seed}:nether`);
+    this.fortresses = structures ? new NetherFortressGenerator(seed) : null;
     this.cave = createNoise3D(createRng(this.base + 1));
     this.patch = createNoise2D(createRng(this.base + SALT_DECOR));
   }
@@ -79,6 +86,7 @@ export class NetherGenerator implements ChunkGenerator {
         this.generateColumn(chunk, lx, lz, x, z, rng);
       }
     }
+    this.fortresses?.placeInChunk(chunk);
   }
 
   private generateColumn(chunk: Chunk, lx: number, lz: number, x: number, z: number, rng: () => number): void {

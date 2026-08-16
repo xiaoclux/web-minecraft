@@ -34,7 +34,7 @@ export function createDimensionGenerator(
   meta: Pick<WorldMeta, 'seed' | 'worldType' | 'generateStructures'>,
 ): ChunkGenerator {
   if (id === DimensionId.NETHER) {
-    return new NetherGenerator(meta.seed);
+    return new NetherGenerator(meta.seed, meta.generateStructures !== false);
   }
   if (id === DimensionId.END) {
     return new EndGenerator(meta.seed);

@@ -303,7 +303,122 @@ const SLIME_MODEL: MobModelSpec = {
   ],
 };
 
+const PIGMAN_SKIN = '#ea9393';
+const PIGMAN_SHIRT = '#3f9c9c';
+const PIGMAN_PANTS = '#3c3f8f';
+const WITHER_BONE = '#3b3b3b';
+const BLAZE_YELLOW = '#f6b201';
+const BLAZE_CORE = '#fff87e';
+const GHAST_WHITE = '#dedede';
+const GHAST_FACE = ['........', '..KK.KK.', '..KK.KK.', '........', '.KKKKKK.', 'K......K', '........', '........'];
+const MAGMA_DARK = '#341b16';
+const MAGMA_HOT = '#f66d1f';
+
+/** 恶魂：一个大白方块 + 九条垂下的触手。 */
+const GHAST_MODEL: MobModelSpec = {
+  swingAmplitude: 0.2,
+  parts: [
+    {
+      name: 'body',
+      size: [16, 16, 16],
+      pivot: [0, 40, 0],
+      offset: [0, 0, 0],
+      color: GHAST_WHITE,
+      face: GHAST_FACE,
+      facePalette: { K: '#1b1b1b' },
+      anim: PartAnim.NONE,
+      noise: 0.05,
+    },
+    ...[
+      [-5, -5],
+      [0, -5],
+      [5, -5],
+      [-5, 0],
+      [0, 0],
+      [5, 0],
+      [-5, 5],
+      [0, 5],
+      [5, 5],
+    ].map(([tx, tz], i) => ({
+      name: `tentacle${i}`,
+      size: [2, 10, 2] as [number, number, number],
+      pivot: [tx, 32, tz] as [number, number, number],
+      offset: [0, -5, 0] as [number, number, number],
+      color: GHAST_WHITE,
+      anim: i % 2 === 0 ? PartAnim.LEG_L : PartAnim.LEG_R,
+    })),
+  ],
+};
+
+/** 烈焰人：核心 + 一圈旋转的焰条。 */
+const BLAZE_MODEL: MobModelSpec = {
+  swingAmplitude: 1.2,
+  parts: [
+    {
+      name: 'head',
+      size: [8, 8, 8],
+      pivot: [0, 22, 0],
+      offset: [0, 0, 0],
+      color: BLAZE_YELLOW,
+      face: ['........', '.KK..KK.', '.KK..KK.', '........', '..KKKK..', '........', '........', '........'],
+      facePalette: { K: '#5a2f00' },
+      anim: PartAnim.HEAD,
+    },
+    {
+      name: 'core',
+      size: [5, 10, 5],
+      pivot: [0, 12, 0],
+      offset: [0, 0, 0],
+      color: BLAZE_CORE,
+      anim: PartAnim.NONE,
+    },
+    ...[
+      [5, 0],
+      [-5, 0],
+      [0, 5],
+      [0, -5],
+    ].map(([rx, rz], i) => ({
+      name: `rod${i}`,
+      size: [2, 8, 2] as [number, number, number],
+      pivot: [rx, 12, rz] as [number, number, number],
+      offset: [0, 0, 0] as [number, number, number],
+      color: BLAZE_YELLOW,
+      anim: i % 2 === 0 ? PartAnim.ARM_L : PartAnim.ARM_R,
+    })),
+  ],
+};
+
+/** 岩浆怪：外层暗壳 + 内层熔岩核。 */
+const MAGMA_CUBE_MODEL: MobModelSpec = {
+  swingAmplitude: 0.3,
+  parts: [
+    {
+      name: 'body',
+      size: [12, 12, 12],
+      pivot: [0, 6, 0],
+      offset: [0, 0, 0],
+      color: MAGMA_DARK,
+      anim: PartAnim.NONE,
+      noise: 0.18,
+    },
+    {
+      name: 'core',
+      size: [8, 8, 8],
+      pivot: [0, 6, 0],
+      offset: [0, 0, 0],
+      color: MAGMA_HOT,
+      anim: PartAnim.NONE,
+      noise: 0.1,
+    },
+  ],
+};
+
 export const MOB_MODELS: Record<MobType, MobModelSpec> = {
+  zombie_pigman: humanoid(PIGMAN_SKIN, PIGMAN_SHIRT, PIGMAN_PANTS, ZOMBIE_FACE, PartAnim.ZOMBIE_ARM),
+  wither_skeleton: humanoid(WITHER_BONE, '#2a2a2a', WITHER_BONE, SKELETON_FACE, PartAnim.ZOMBIE_ARM, 2),
+  ghast: GHAST_MODEL,
+  blaze: BLAZE_MODEL,
+  magma_cube: MAGMA_CUBE_MODEL,
   enderman: humanoid(ENDERMAN_BLACK, ENDERMAN_BLACK, ENDERMAN_BLACK, ENDERMAN_FACE, PartAnim.ARM_L, 2, {
     M: '#c77ffb',
   }),

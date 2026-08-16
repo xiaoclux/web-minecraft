@@ -14,6 +14,11 @@ export const MobType = {
   SQUID: 'squid',
   BAT: 'bat',
   SLIME: 'slime',
+  ZOMBIE_PIGMAN: 'zombie_pigman',
+  GHAST: 'ghast',
+  BLAZE: 'blaze',
+  MAGMA_CUBE: 'magma_cube',
+  WITHER_SKELETON: 'wither_skeleton',
 } as const;
 export type MobType = (typeof MobType)[keyof typeof MobType];
 
@@ -47,6 +52,20 @@ export interface MobDef {
   teleports?: boolean;
   /** 死亡时分裂成几只更小的同类（史莱姆）。 */
   splits?: boolean;
+  /**
+   * 中立：平时不主动攻击，被打了才还手；且同族会一起被激怒（僵尸猪人）。
+   */
+  neutral?: boolean;
+  /** 远程攻击方式；不填表示只有近战。 */
+  ranged?: 'arrow' | 'fireball' | 'small_fireball';
+  /** 免疫火与岩浆（下界生物）。 */
+  fireImmune?: boolean;
+  /** 攻击时附带的着火 tick（烈焰人 / 凋灵骷髅）。 */
+  igniteTicks?: number;
+  /** 攻击时附带的凋零效果时长（凋灵骷髅）。 */
+  witherTicks?: number;
+  /** 只在这些维度里自然生成；不填表示只在主世界。 */
+  dimensions?: readonly string[];
 }
 
 export const MOB_DEFS: Record<MobType, MobDef> = {
@@ -222,6 +241,100 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     burnsInSunlight: false,
     flying: true,
     noFallDamage: true,
+  },
+  zombie_pigman: {
+    type: 'zombie_pigman',
+    label: '僵尸猪人',
+    width: 0.6,
+    height: 1.95,
+    maxHealth: 20,
+    speed: 2.3,
+    hostile: true,
+    neutral: true,
+    attackDamage: 5,
+    drops: [
+      { item: 'rotten_flesh', min: 0, max: 1 },
+      { item: 'gold_nugget', min: 0, max: 1 },
+    ],
+    xp: 5,
+    burnsInSunlight: false,
+    fireImmune: true,
+    dimensions: ['nether'],
+  },
+  ghast: {
+    type: 'ghast',
+    label: '恶魂',
+    width: 4,
+    height: 4,
+    maxHealth: 10,
+    speed: 1.6,
+    hostile: true,
+    attackDamage: 0,
+    ranged: 'fireball',
+    drops: [
+      { item: 'gunpowder', min: 0, max: 2 },
+      { item: 'ghast_tear', min: 0, max: 1 },
+    ],
+    xp: 5,
+    burnsInSunlight: false,
+    flying: true,
+    noFallDamage: true,
+    fireImmune: true,
+    dimensions: ['nether'],
+  },
+  blaze: {
+    type: 'blaze',
+    label: '烈焰人',
+    width: 0.6,
+    height: 1.8,
+    maxHealth: 20,
+    speed: 1.8,
+    hostile: true,
+    attackDamage: 6,
+    ranged: 'small_fireball',
+    igniteTicks: 100,
+    drops: [{ item: 'blaze_rod', min: 0, max: 1 }],
+    xp: 10,
+    burnsInSunlight: false,
+    flying: true,
+    noFallDamage: true,
+    fireImmune: true,
+    dimensions: ['nether'],
+  },
+  magma_cube: {
+    type: 'magma_cube',
+    label: '岩浆怪',
+    width: 1.0,
+    height: 1.0,
+    maxHealth: 16,
+    speed: 1.6,
+    hostile: true,
+    attackDamage: 4,
+    drops: [{ item: 'magma_cream', min: 0, max: 1 }],
+    xp: 4,
+    burnsInSunlight: false,
+    splits: true,
+    fireImmune: true,
+    dimensions: ['nether'],
+  },
+  wither_skeleton: {
+    type: 'wither_skeleton',
+    label: '凋灵骷髅',
+    width: 0.7,
+    height: 2.4,
+    maxHealth: 20,
+    speed: 2.4,
+    hostile: true,
+    attackDamage: 5,
+    witherTicks: 200,
+    drops: [
+      { item: 'coal', min: 0, max: 1 },
+      { item: 'bone', min: 0, max: 2 },
+    ],
+    xp: 5,
+    burnsInSunlight: false,
+    fireImmune: true,
+    dimensions: ['nether'],
   },
   slime: {
     type: 'slime',

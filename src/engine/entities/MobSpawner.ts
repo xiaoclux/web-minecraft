@@ -26,6 +26,18 @@ const HOSTILE_TYPES: MobType[] = [
   MobType.SLIME,
 ];
 const HOSTILE_WEIGHTS = [4, 3, 2, 2, 1, 1];
+/** 下界的敌对生物与权重。 */
+const NETHER_HOSTILE_TYPES: MobType[] = [
+  MobType.ZOMBIE_PIGMAN,
+  MobType.MAGMA_CUBE,
+  MobType.GHAST,
+  MobType.BLAZE,
+  MobType.WITHER_SKELETON,
+];
+const NETHER_HOSTILE_WEIGHTS = [6, 2, 1, 1, 1];
+/** 下界不看光照（到处都黑），改成按维度直接生成。 */
+const NETHER_DIMENSION = 'nether';
+const OVERWORLD_DIMENSION = 'overworld';
 const PASSIVE_TYPES: MobType[] = [MobType.PIG, MobType.COW, MobType.SHEEP, MobType.CHICKEN];
 const PASSIVE_GROUP_MIN = 2;
 const PASSIVE_GROUP_MAX = 4;
@@ -65,6 +77,10 @@ export class MobSpawner {
       for (let i = 0; i < HOSTILE_SPAWN_ATTEMPTS_PER_TICK; i++) {
         this.trySpawnHostile(ctx);
       }
+    }
+    // 动物 / 鱿鱼 / 蝙蝠只在主世界刷
+    if (ctx.dimensionId !== OVERWORLD_DIMENSION) {
+      return;
     }
     if (ctx.tick % PASSIVE_SPAWN_INTERVAL_TICKS === 0 && passive < MAX_PASSIVE_MOBS && ctx.isDaytime()) {
       this.trySpawnPassiveGroup(ctx, SPAWN_MIN_DISTANCE, SPAWN_MAX_DISTANCE);
@@ -130,16 +146,20 @@ export class MobSpawner {
     }
   }
 
+  /** 按当前维度挑一种敌对生物。 */
   private pickWeighted(ctx: EntityContext): MobType {
-    const total = HOSTILE_WEIGHTS.reduce((a, b) => a + b, 0);
+    const nether = ctx.dimensionId === NETHER_DIMENSION;
+    const types = nether ? NETHER_HOSTILE_TYPES : HOSTILE_TYPES;
+    const weights = nether ? NETHER_HOSTILE_WEIGHTS : HOSTILE_WEIGHTS;
+    const total = weights.reduce((a, b) => a + b, 0);
     let r = ctx.random() * total;
-    for (let i = 0; i < HOSTILE_TYPES.length; i++) {
-      r -= HOSTILE_WEIGHTS[i];
+    for (let i = 0; i < types.length; i++) {
+      r -= weights[i];
       if (r <= 0) {
-        return HOSTILE_TYPES[i];
+        return types[i];
       }
     }
-    return HOSTILE_TYPES[0];
+    return types[0];
   }
 
   private randomSpawnPosition(ctx: EntityContext, minDist: number, maxDist: number): { x: number; z: number } | null {
@@ -166,7 +186,8 @@ export class MobSpawner {
       ctx.random() < SURFACE_SPAWN_RATIO
         ? surfaceY
         : 1 + Math.floor(ctx.random() * Math.max(1, surfaceY - 1));
-    if (ctx.lightLevelAt(pos.x, y, pos.z) > HOSTILE_SPAWN_LIGHT_MAX) {
+    // 下界没有天空光，到处都够黑，不再看光照
+    if (ctx.dimensionId !== NETHER_DIMENSION && ctx.lightLevelAt(pos.x, y, pos.z) > HOSTILE_SPAWN_LIGHT_MAX) {
       return;
     }
     this.spawnMobAt(ctx, this.pickWeighted(ctx), pos.x, y, pos.z);
