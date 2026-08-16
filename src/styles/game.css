@@ -872,6 +872,71 @@ button:disabled {
   color: #ff5c5c;
 }
 
+.stats-panel {
+  width: min(560px, 92vw);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.achievement-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+
+.achievement {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  border: 2px solid #555;
+  background: #6f6f6f;
+}
+
+.achievement img {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+}
+
+.achievement.done {
+  border-color: #7cff5c;
+  background: #4a6a3a;
+}
+
+.achievement.locked {
+  opacity: 0.45;
+}
+
+.achievement-title {
+  font-weight: bold;
+}
+
+.achievement-desc {
+  font-size: 12px;
+  color: #ddd;
+}
+
+.stats-table {
+  width: 100%;
+  margin: 8px 0;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.stats-table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid #555;
+}
+
+.stats-table td:last-child {
+  text-align: right;
+}
+
 .progress-arrow {
   width: 48px;
   height: 12px;

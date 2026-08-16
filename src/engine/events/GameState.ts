@@ -11,6 +11,7 @@ export const Screen = {
   BREWING: 'brewing',
   ENCHANTING: 'enchanting',
   ANVIL: 'anvil',
+  STATS: 'stats',
   CHEST: 'chest',
   PAUSE: 'pause',
   DEATH: 'death',
@@ -61,6 +62,8 @@ export interface GameUiState {
   /** 短暂提示（如捡起物品名）。 */
   toast: string;
   toastVersion: number;
+  /** 成就 / 统计每变化一次 +1（成就页据此刷新）。 */
+  achievementVersion: number;
   debug: DebugInfo | null;
   isLoading: boolean;
   loadingText: string;

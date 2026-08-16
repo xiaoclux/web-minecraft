@@ -1,3 +1,4 @@
+import type { AchievementSaveData } from '../systems/Achievements';
 import { del, get, set } from 'idb-keyval';
 import type { Difficulty, GameMode } from '../constants/game';
 import {
@@ -55,6 +56,7 @@ export interface WorldSave {
   furnaces?: Record<string, FurnaceState>;
   blockEntities?: BlockEntitySaveData[];
   weather?: WeatherSaveData;
+  achievements?: AchievementSaveData;
 }
 
 /** 基于 IndexedDB 的存档管理。 */

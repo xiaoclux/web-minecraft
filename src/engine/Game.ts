@@ -87,6 +87,8 @@ import {
 import { BlockEntityStore, BlockEntityType } from './world/BlockEntityStore';
 import { RandomTickSystem } from './systems/RandomTickSystem';
 import { WeatherSystem } from './systems/WeatherSystem';
+import { AchievementSystem, StatId } from './systems/Achievements';
+import { potionOfItem } from './items/potions';
 import { biomeHasSnowfall, biomeLabel } from './world/biomes';
 import { ArrowEntity } from './entities/ArrowEntity';
 import { ThrownPotionEntity } from './entities/ThrownPotionEntity';
@@ -250,6 +252,8 @@ export class Game implements EntityContext, ContainerHost {
   private readonly randomTicks = new RandomTickSystem(this);
   /** 天气（构造函数里在 rng 就绪后创建）。 */
   readonly weather: WeatherSystem;
+  /** 成就与统计。 */
+  readonly achievements = new AchievementSystem((def) => this.showToast(`成就达成：${def.label}`));
   private readonly fluids: FluidSimulator;
   private readonly light: LightEngine;
   private readonly atlas: TextureAtlas;
@@ -329,6 +333,7 @@ export class Game implements EntityContext, ContainerHost {
       breakProgress: 0,
       targetLabel: '',
       toast: '',
+      achievementVersion: 0,
       toastVersion: 0,
       debug: null,
       isLoading: true,
@@ -352,7 +357,10 @@ export class Game implements EntityContext, ContainerHost {
     this.player.inventory.subscribe(() =>
       this.store.patch({ inventoryVersion: this.store.get().inventoryVersion + 1 }),
     );
-    this.player.onPickupItem((id) => this.showToast(`拾取：${getItem(id)?.label ?? id}`));
+    this.player.onPickupItem((id) => {
+      this.showToast(`拾取：${getItem(id)?.label ?? id}`);
+      this.achievements.onItemObtained(id);
+    });
     this.bindControls();
   }
 
@@ -432,6 +440,7 @@ export class Game implements EntityContext, ContainerHost {
       }
     }
     this.weather.load(save.weather);
+    this.achievements.load(save.achievements);
     if (typeof save.timeTick === 'number') {
       this.timeTick = save.timeTick;
     }
@@ -477,6 +486,7 @@ export class Game implements EntityContext, ContainerHost {
       nextEntityId: allocateEntityId(),
       blockEntities: this.blockEntities.serialize(),
       weather: this.weather.serialize(),
+      achievements: this.achievements.serialize(),
     };
   }
 
@@ -606,6 +616,7 @@ export class Game implements EntityContext, ContainerHost {
     this.spawner.tick(this, this.entities.values());
     this.tickTnt();
     this.tickFurnaces();
+    this.achievements.tickPlayTime();
     this.tickSpawners();
     this.tickGravityBlocks();
     this.randomTicks.tick(this.player.x, this.player.z);
@@ -656,6 +667,7 @@ export class Game implements EntityContext, ContainerHost {
     this.store.patch({
       health: p.health,
       food: p.food,
+      achievementVersion: this.achievements.version,
       air: p.air,
       armor: p.armorPoints,
       effects: this.effectsForHud(),
@@ -744,6 +756,7 @@ export class Game implements EntityContext, ContainerHost {
     if (action === 'inventory') {
       if (screen === Screen.NONE) {
         this.openScreen(Screen.INVENTORY);
+        this.achievements.onOpenInventory();
       } else if (isContainerScreen(screen)) {
         this.closeScreen();
       }
@@ -848,7 +861,7 @@ export class Game implements EntityContext, ContainerHost {
   openScreen(screen: Screen, openBlock: { x: number; y: number; z: number } | null = null): void {
     this.craftGridSize = screen === Screen.CRAFTING ? 3 : 2;
     this.store.patch({ screen, openBlock });
-    this.isPaused = screen === Screen.PAUSE;
+    this.isPaused = screen === Screen.PAUSE || screen === Screen.STATS;
     if (screen !== Screen.NONE) {
       this.controls.exitLock();
     }
@@ -935,6 +948,7 @@ export class Game implements EntityContext, ContainerHost {
         // 站在地上（含浅水底）就正常起跳；疾跑起跳只在刚按下时加一次前冲
         p.vy = PLAYER_JUMP_VELOCITY * p.jumpMultiplier;
         p.onJump();
+        this.achievements.addStat(StatId.JUMPS);
         if (p.isSprinting && !this.jumpWasDown) {
           p.vx += forwardX * 1.5;
           p.vz += forwardZ * 1.5;
@@ -1131,6 +1145,7 @@ export class Game implements EntityContext, ContainerHost {
       return;
     }
     const def = getBlock(id);
+    this.achievements.addStat(StatId.BLOCKS_MINED);
     this.spawnBreakParticles(x, y, z, def);
     // 床和门都是两格一体：先把另一半悄悄拆掉，掉落只算一次
     const partner = this.multiBlockPartner(x, y, z);
@@ -1553,6 +1568,7 @@ export class Game implements EntityContext, ContainerHost {
 
   /** 生一只幼崽并让父母进入繁殖冷却。 */
   private breed(a: Mob, b: Mob): void {
+    this.achievements.onBred(a.type);
     a.loveTicks = 0;
     b.loveTicks = 0;
     a.mateTarget = null;
@@ -1806,6 +1822,7 @@ export class Game implements EntityContext, ContainerHost {
       }
     }
     this.world.setBlock(px, py, pz, blockId, meta);
+    this.achievements.addStat(StatId.BLOCKS_PLACED);
     if (def.shape === BlockShape.BED) {
       const [fx, fz] = FACINGS[meta & FACING_MASK];
       this.world.setBlock(px + fx, py, pz + fz, blockId, meta | BED_HEAD_BIT);
@@ -1855,6 +1872,7 @@ export class Game implements EntityContext, ContainerHost {
     );
     target.lastDamageCause = 'mob';
     if (target.hurt(this, damage, this.player, true)) {
+      this.achievements.onDamageDealt(damage);
       this.sound.play('hit');
       this.player.onAttack();
       const knockback = enchantLevel(held, EnchantmentId.KNOCKBACK);
@@ -2076,6 +2094,7 @@ export class Game implements EntityContext, ContainerHost {
       this.player.removeXpLevels(LEVELS_PER_OPTION[index]);
     }
     this.rerollEnchantSeed();
+    this.achievements.onEnchanted();
     this.sound.play('level');
     this.notifyChanged();
   }
@@ -2325,6 +2344,16 @@ export class Game implements EntityContext, ContainerHost {
     return this.rules.infiniteItems;
   }
 
+  onOutputTaken(kind: SlotRef['kind'], stack: ItemStack): void {
+    if (kind === 'craftResult') {
+      this.achievements.onCrafted(stack.id, stack.count);
+    } else if (kind === 'furnaceOutput') {
+      this.achievements.onItemObtained(stack.id);
+    } else if (kind === 'brewBottle' && potionOfItem(stack.id)?.potion.effect) {
+      this.achievements.onPotionBrewed();
+    }
+  }
+
   notifyChanged(): void {
     this.bumpInventory();
   }
@@ -2332,6 +2361,7 @@ export class Game implements EntityContext, ContainerHost {
   // ---------------------------------------------------------------- 死亡 / 复活
 
   private onPlayerDeath(): void {
+    this.achievements.addStat(StatId.DEATHS);
     this.resetBreaking();
     const workspace = this.containers.drainWorkspace();
     if (!this.rules.infiniteItems) {
@@ -2591,6 +2621,7 @@ export class Game implements EntityContext, ContainerHost {
       this.player.lastDamageCause = 'arrow';
     }
     if (this.player.hurtBy(this, amount, source)) {
+      this.achievements.addStat(StatId.DAMAGE_TAKEN, amount);
       this.sound.play('hurt');
       this.store.patch({ health: this.player.health });
     }
@@ -2598,6 +2629,7 @@ export class Game implements EntityContext, ContainerHost {
 
   onEntityKilled(entity: Entity, byPlayer: boolean): void {
     if (byPlayer && entity instanceof Mob) {
+      this.achievements.onMobKilled(entity.def.hostile);
       this.dropXp(entity.x, entity.y + entity.height * 0.5, entity.z, entity.def.xp * XP_PER_MOB_KILL_MULTIPLIER);
     }
   }

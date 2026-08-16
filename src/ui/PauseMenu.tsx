@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Game } from '../engine/Game';
+import { Screen } from '../engine/events/GameState';
 import { GAME_MODE_LABELS } from '../engine/constants/game';
 import { settingsStore } from '../engine/settings/Settings';
 import { keyLabel } from './keyLabels';
@@ -60,6 +61,9 @@ export function PauseMenu({ game }: PauseMenuProps) {
         />
         <button className="menu-button" onClick={() => setShowSettings(true)}>
           设置
+        </button>
+        <button className="menu-button" onClick={() => game.openScreen(Screen.STATS)}>
+          成就与统计
         </button>
         <button className="menu-button" onClick={() => void handleSave()} disabled={isSaving}>
           {isSaving ? '保存中…' : '保存游戏'}

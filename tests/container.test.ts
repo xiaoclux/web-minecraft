@@ -25,6 +25,7 @@ function setup(screen: 'inventory' | 'crafting' | 'furnace' | 'chest' | 'brewing
     anvilSlots: [null, null],
     anvilOutput: () => null,
     consumeAnvilInputs: () => {},
+    onOutputTaken: () => {},
     openFurnace: screen === 'furnace' ? furnace : null,
     openBrewingStand: screen === 'brewing' ? brewing : null,
     openChestItems: screen === 'chest' ? chestItems : null,

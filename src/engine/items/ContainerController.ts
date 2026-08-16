@@ -54,6 +54,8 @@ export interface ContainerHost {
   readonly isCreative: boolean;
   /** 通知 UI 刷新。 */
   notifyChanged(): void;
+  /** 玩家从产物格 / 容器格取走了物品（成就与统计用）。 */
+  onOutputTaken(kind: SlotRef['kind'], stack: ItemStack): void;
 }
 
 const CRAFT_GRID_SIZE = 9;
@@ -227,6 +229,9 @@ export class ContainerController {
       if (!slot) {
         return;
       }
+      if (ref.kind === 'brewBottle') {
+        this.host.onOutputTaken(ref.kind, slot);
+      }
       if (button === MOUSE_RIGHT) {
         const half = Math.ceil(slot.count / 2);
         this.cursorStack = { ...slot, count: half };
@@ -326,6 +331,7 @@ export class ContainerController {
           break;
         }
         this.consumeOutput(ref);
+        this.host.onOutputTaken(ref.kind, r);
         if (ref.kind !== 'craftResult') {
           break;
         }
@@ -342,6 +348,7 @@ export class ContainerController {
       this.cursorStack = { ...result };
     }
     this.consumeOutput(ref);
+    this.host.onOutputTaken(ref.kind, result);
     this.host.notifyChanged();
   }
 
@@ -420,6 +427,9 @@ export class ContainerController {
       return;
     }
     // 从容器/合成格移回背包
+    if (ref.kind === 'brewBottle') {
+      this.host.onOutputTaken(ref.kind, slot);
+    }
     const remaining = this.host.inventory.add(slot);
     this.setSlot(ref, remaining > 0 ? { ...slot, count: remaining } : null);
   }

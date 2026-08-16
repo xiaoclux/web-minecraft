@@ -7,6 +7,7 @@ import { DebugOverlay } from './DebugOverlay';
 import { Hud } from './Hud';
 import { InventoryScreen } from './InventoryScreen';
 import { PauseMenu } from './PauseMenu';
+import { StatsScreen } from './StatsScreen';
 import { TouchControls } from './TouchControls';
 import { useStore } from './useGameStore';
 import { settingsStore } from '../engine/settings/Settings';
@@ -94,6 +95,7 @@ function GameOverlays({ game }: { game: Game }) {
       {state.debug && <DebugOverlay info={state.debug} />}
       {showInventory && <InventoryScreen game={game} state={state} />}
       {state.screen === Screen.PAUSE && <PauseMenu game={game} />}
+      {state.screen === Screen.STATS && <StatsScreen game={game} state={state} />}
       {state.screen === Screen.DEATH && <DeathScreen game={game} state={state} />}
       {!game.isTouch && !state.isPointerLocked && state.screen === Screen.NONE && (
         <div className="overlay center click-hint" onClick={() => game.requestPointerLock()}>
