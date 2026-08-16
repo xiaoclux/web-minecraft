@@ -1,0 +1,264 @@
+/**
+ * 联机服务端核心：管理连接、按需下发 chunk、把方块改动与玩家位置广播给所有人。
+ *
+ * 它不关心传输是 WebSocket 还是 WebRTC DataChannel —— 只要给它一个能收发字节的 Connection。
+ * 世界数据由外部提供（Node 专用服务端自己建 World，浏览器主机直接用玩家正在玩的那个 World），
+ * 这样单机与联机跑的是同一套世界代码。
+ */
+
+import { CHUNK_SIZE } from '../engine/constants/world';
+import { serializeChunk } from '../engine/save/chunkSerializer';
+import type { ChunkManager } from '../engine/world/ChunkManager';
+import type { World } from '../engine/world/World';
+import { MessageType, decodeMessage, encodeMessage, type NetMessage } from './protocol';
+
+/** 一条与客户端的连接（WebSocket / DataChannel 都能包成这个样子）。 */
+export interface Connection {
+  /** 发送一帧二进制数据。 */
+  send(bytes: Uint8Array): void;
+  /** 主动断开。 */
+  close(): void;
+}
+
+/** 服务端看到的一名玩家。 */
+export interface ServerPlayer {
+  id: number;
+  name: string;
+  connection: Connection;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+  /** 已经发过 chunk 数据的 key，避免重复下发。 */
+  sentChunks: Set<number>;
+}
+
+/** 服务端需要外部提供的世界能力。 */
+export interface ServerWorldSource {
+  readonly world: World;
+  readonly chunkManager: ChunkManager;
+  /** 世界种子与类型（握手时告诉客户端）。 */
+  readonly seed: string;
+  readonly worldType: string;
+  /** 当前世界时间。 */
+  currentTime(): number;
+  /** 出生点。 */
+  spawnPoint(): { x: number; y: number; z: number };
+}
+
+/** 服务端每隔多少毫秒同步一次时间。 */
+export const TIME_SYNC_INTERVAL_MS = 5000;
+
+/**
+ * 联机服务端。
+ * 用法：new ServerCore(source) → 每来一条连接调 addConnection → 收到字节调 handleMessage。
+ */
+export class ServerCore {
+  private readonly players = new Map<number, ServerPlayer>();
+  private nextPlayerId = 1;
+  private unsubscribeBlocks: (() => void) | null = null;
+
+  constructor(private readonly source: ServerWorldSource) {
+    // 世界里任何方块变化都广播出去（玩家自己改的、活塞推的、火烧的都算）
+    this.unsubscribeBlocks = source.world.onBlockChange((x, y, z, _oldId, newId) => {
+      this.broadcast({
+        type: MessageType.BLOCK_CHANGE,
+        x,
+        y,
+        z,
+        blockId: newId,
+        meta: source.world.getMeta(x, y, z),
+      });
+    });
+  }
+
+  /** 在线玩家数。 */
+  get playerCount(): number {
+    return this.players.size;
+  }
+
+  /** 全部在线玩家（渲染其他玩家模型时用）。 */
+  get onlinePlayers(): readonly ServerPlayer[] {
+    return [...this.players.values()];
+  }
+
+  /**
+   * 接入一条新连接。真正的"加入"要等客户端发 HELLO。
+   * @returns 分配给这条连接的玩家 id
+   */
+  addConnection(connection: Connection): number {
+    const id = this.nextPlayerId++;
+    const spawn = this.source.spawnPoint();
+    this.players.set(id, {
+      id,
+      name: `玩家${id}`,
+      connection,
+      x: spawn.x,
+      y: spawn.y,
+      z: spawn.z,
+      yaw: 0,
+      pitch: 0,
+      sentChunks: new Set(),
+    });
+    return id;
+  }
+
+  /** 断开一条连接。 */
+  removeConnection(playerId: number): void {
+    const player = this.players.get(playerId);
+    if (!player) {
+      return;
+    }
+    this.players.delete(playerId);
+    this.broadcast({ type: MessageType.PLAYER_LEAVE, playerId });
+    this.broadcast({ type: MessageType.CHAT_BROADCAST, text: `${player.name} 离开了游戏` });
+  }
+
+  /** 处理一条来自客户端的原始字节。 */
+  handleMessage(playerId: number, bytes: Uint8Array): void {
+    const message = decodeMessage(bytes);
+    const player = this.players.get(playerId);
+    if (!message || !player) {
+      return;
+    }
+    switch (message.type) {
+      case MessageType.HELLO:
+        this.handleHello(player, message.name);
+        break;
+      case MessageType.MOVE:
+        this.handleMove(player, message);
+        break;
+      case MessageType.REQUEST_CHUNK:
+        this.sendChunk(player, message.cx, message.cz);
+        break;
+      case MessageType.PLACE_BLOCK:
+        // 服务端权威：直接改世界，改动会由 onBlockChange 广播回所有人
+        this.setBlockAuthoritative(message.x, message.y, message.z, message.blockId, message.meta);
+        break;
+      case MessageType.BREAK_BLOCK:
+        this.setBlockAuthoritative(message.x, message.y, message.z, 0, 0);
+        break;
+      case MessageType.CHAT:
+        this.broadcast({ type: MessageType.CHAT_BROADCAST, text: `<${player.name}> ${message.text}` });
+        break;
+      default:
+        // 服务端不该收到 S→C 的消息，忽略
+        break;
+    }
+  }
+
+  /**
+   * 按客户端请求改一个方块。改之前先确保该 chunk 已加载，
+   * 否则玩家在服务端还没生成的区域动手时，改动会静默丢失。
+   */
+  private setBlockAuthoritative(x: number, y: number, z: number, blockId: number, meta: number): void {
+    if (!this.source.world.hasChunkAt(x, z)) {
+      this.source.chunkManager.ensureLoaded(x, z, 0);
+    }
+    this.source.world.setBlock(x, y, z, blockId, meta);
+  }
+
+  /** 握手：确认名字、告诉客户端世界信息，并互相通报在线玩家。 */
+  private handleHello(player: ServerPlayer, name: string): void {
+    player.name = name.trim() || player.name;
+    const spawn = this.source.spawnPoint();
+    this.send(player, {
+      type: MessageType.WELCOME,
+      playerId: player.id,
+      seed: this.source.seed,
+      worldType: this.source.worldType,
+      timeTick: this.source.currentTime(),
+      x: spawn.x,
+      y: spawn.y,
+      z: spawn.z,
+    });
+    // 把已经在线的人告诉新玩家
+    for (const other of this.players.values()) {
+      if (other.id !== player.id) {
+        this.send(player, { type: MessageType.PLAYER_JOIN, playerId: other.id, name: other.name });
+      }
+    }
+    // 把新玩家告诉其他人
+    this.broadcastExcept(player.id, { type: MessageType.PLAYER_JOIN, playerId: player.id, name: player.name });
+    this.broadcast({ type: MessageType.CHAT_BROADCAST, text: `${player.name} 加入了游戏` });
+  }
+
+  private handleMove(
+    player: ServerPlayer,
+    pose: { x: number; y: number; z: number; yaw: number; pitch: number },
+  ): void {
+    player.x = pose.x;
+    player.y = pose.y;
+    player.z = pose.z;
+    player.yaw = pose.yaw;
+    player.pitch = pose.pitch;
+    this.broadcastExcept(player.id, {
+      type: MessageType.PLAYER_MOVE,
+      playerId: player.id,
+      x: pose.x,
+      y: pose.y,
+      z: pose.z,
+      yaw: pose.yaw,
+      pitch: pose.pitch,
+    });
+  }
+
+  /** 下发一个 chunk（必要时先生成）。同一个 chunk 对同一玩家只发一次。 */
+  private sendChunk(player: ServerPlayer, cx: number, cz: number): void {
+    const key = chunkKeyOf(cx, cz);
+    if (player.sentChunks.has(key)) {
+      return;
+    }
+    this.source.chunkManager.ensureLoaded(cx * CHUNK_SIZE, cz * CHUNK_SIZE, 0);
+    const chunk = this.source.world.getChunk(cx, cz);
+    if (!chunk) {
+      return;
+    }
+    player.sentChunks.add(key);
+    const data = serializeChunk(chunk);
+    this.send(player, { type: MessageType.CHUNK_DATA, cx, cz, blocks: data.blocks, meta: data.meta });
+  }
+
+  /** 定时同步世界时间。 */
+  syncTime(): void {
+    this.broadcast({ type: MessageType.TIME_SYNC, timeTick: this.source.currentTime() });
+  }
+
+  /** 给所有人发一条消息。 */
+  broadcast(message: NetMessage): void {
+    const bytes = encodeMessage(message);
+    for (const player of this.players.values()) {
+      player.connection.send(bytes);
+    }
+  }
+
+  /** 给除某人之外的所有人发。 */
+  private broadcastExcept(exceptId: number, message: NetMessage): void {
+    const bytes = encodeMessage(message);
+    for (const player of this.players.values()) {
+      if (player.id !== exceptId) {
+        player.connection.send(bytes);
+      }
+    }
+  }
+
+  private send(player: ServerPlayer, message: NetMessage): void {
+    player.connection.send(encodeMessage(message));
+  }
+
+  /** 关服：断开全部连接并取消订阅。 */
+  dispose(): void {
+    for (const player of this.players.values()) {
+      player.connection.close();
+    }
+    this.players.clear();
+    this.unsubscribeBlocks?.();
+    this.unsubscribeBlocks = null;
+  }
+}
+
+/** chunk 坐标 → 数字键。 */
+function chunkKeyOf(cx: number, cz: number): number {
+  return (cx & 0xffff) * 0x10000 + (cz & 0xffff);
+}
