@@ -17,8 +17,15 @@ import type { EntityContext } from './EntityContext';
 import { Mob } from './Mob';
 import { MOB_DEFS, MobType } from './MobDefs';
 
-const HOSTILE_TYPES: MobType[] = [MobType.ZOMBIE, MobType.SKELETON, MobType.CREEPER, MobType.SPIDER];
-const HOSTILE_WEIGHTS = [4, 3, 2, 2];
+const HOSTILE_TYPES: MobType[] = [
+  MobType.ZOMBIE,
+  MobType.SKELETON,
+  MobType.CREEPER,
+  MobType.SPIDER,
+  MobType.ENDERMAN,
+  MobType.SLIME,
+];
+const HOSTILE_WEIGHTS = [4, 3, 2, 2, 1, 1];
 const PASSIVE_TYPES: MobType[] = [MobType.PIG, MobType.COW, MobType.SHEEP, MobType.CHICKEN];
 const PASSIVE_GROUP_MIN = 2;
 const PASSIVE_GROUP_MAX = 4;
@@ -27,6 +34,11 @@ const PASSIVE_SPAWN_LIGHT_MIN = 9;
 const INITIAL_PASSIVE_GROUPS = 12;
 const INITIAL_SPAWN_RADIUS = 80;
 const SURFACE_SPAWN_RATIO = 0.6;
+/** 鱿鱼往下找水的深度，蝙蝠的 y 范围与光照上限。 */
+const SQUID_SEARCH_DEPTH = 12;
+const BAT_MIN_Y = 8;
+const BAT_MAX_Y = 50;
+const BAT_MAX_LIGHT = 4;
 
 /** 生物生成与消失。 */
 export class MobSpawner {
@@ -57,6 +69,44 @@ export class MobSpawner {
     if (ctx.tick % PASSIVE_SPAWN_INTERVAL_TICKS === 0 && passive < MAX_PASSIVE_MOBS && ctx.isDaytime()) {
       this.trySpawnPassiveGroup(ctx, SPAWN_MIN_DISTANCE, SPAWN_MAX_DISTANCE);
     }
+    if (ctx.tick % PASSIVE_SPAWN_INTERVAL_TICKS === 0 && passive < MAX_PASSIVE_MOBS) {
+      this.trySpawnSquid(ctx);
+      this.trySpawnBat(ctx);
+    }
+  }
+
+  /** 鱿鱼：在够深的水里生成。 */
+  private trySpawnSquid(ctx: EntityContext): void {
+    const pos = this.randomSpawnPosition(ctx, SPAWN_MIN_DISTANCE, SPAWN_MAX_DISTANCE);
+    if (!pos) {
+      return;
+    }
+    const world = ctx.world;
+    const surface = world.getSurfaceY(pos.x, pos.z);
+    for (let y = surface; y > surface - SQUID_SEARCH_DEPTH; y--) {
+      if (world.getBlock(pos.x, y, pos.z) === BlockId.WATER && world.getBlock(pos.x, y - 1, pos.z) === BlockId.WATER) {
+        this.spawnMob(ctx, MobType.SQUID, pos.x + 0.5, y, pos.z + 0.5);
+        return;
+      }
+    }
+  }
+
+  /** 蝙蝠：在地下黑暗的空腔里生成。 */
+  private trySpawnBat(ctx: EntityContext): void {
+    const pos = this.randomSpawnPosition(ctx, SPAWN_MIN_DISTANCE, SPAWN_MAX_DISTANCE);
+    if (!pos) {
+      return;
+    }
+    const world = ctx.world;
+    const y = BAT_MIN_Y + Math.floor(ctx.random() * (BAT_MAX_Y - BAT_MIN_Y));
+    if (
+      world.getBlock(pos.x, y, pos.z) !== BlockId.AIR ||
+      world.getBlock(pos.x, y + 1, pos.z) !== BlockId.AIR ||
+      ctx.lightLevelAt(pos.x, y, pos.z) > BAT_MAX_LIGHT
+    ) {
+      return;
+    }
+    this.spawnMob(ctx, MobType.BAT, pos.x + 0.5, y, pos.z + 0.5);
   }
 
   /** 新世界初始撒布友善生物。 */

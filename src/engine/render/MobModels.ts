@@ -65,12 +65,13 @@ function humanoid(
   face: string[],
   armAnim: PartAnim,
   limbWidth = 4,
+  facePalette: Record<string, string> = { K: '#101010' },
 ): MobModelSpec {
   const armOffset = 4 + limbWidth / 2;
   return {
     swingAmplitude: 0.7,
     parts: [
-      HUMANOID_HEAD(skin, face, { K: '#101010' }),
+      HUMANOID_HEAD(skin, face, facePalette),
       { name: 'body', size: [8, 12, 4], pivot: [0, 24, 0], offset: [0, -6, 0], color: shirt, anim: PartAnim.NONE },
       {
         name: 'armR',
@@ -233,7 +234,82 @@ const CHICKEN_MODEL: MobModelSpec = {
 };
 
 /** 各生物模型。 */
+const ENDERMAN_BLACK = '#161320';
+const ENDERMAN_FACE = ['........', '........', '........', '.MM..MM.', '.MM..MM.', '........', '........', '........'];
+const SQUID_BLUE = '#2b5a8a';
+const BAT_BROWN = '#4a3a2a';
+const SLIME_GREEN = '#63c063';
+
+/** 鱿鱼：一个大身子 + 一圈短触手。 */
+const SQUID_MODEL: MobModelSpec = {
+  swingAmplitude: 0.4,
+  parts: [
+    { name: 'body', size: [10, 10, 10], pivot: [0, 5, 0], offset: [0, 0, 0], color: SQUID_BLUE, anim: PartAnim.NONE },
+    ...[
+      [-3, -3],
+      [3, -3],
+      [-3, 3],
+      [3, 3],
+    ].map(([dx, dz], i) => ({
+      name: `tentacle${i}`,
+      size: [2, 8, 2] as [number, number, number],
+      pivot: [dx, 0, dz] as [number, number, number],
+      offset: [0, 0, 0] as [number, number, number],
+      color: SQUID_BLUE,
+      anim: i % 2 === 0 ? PartAnim.LEG_L : PartAnim.LEG_R,
+    })),
+  ],
+};
+
+/** 蝙蝠：小身子 + 两只扇动的翅膀。 */
+const BAT_MODEL: MobModelSpec = {
+  swingAmplitude: 0.9,
+  parts: [
+    { name: 'body', size: [5, 6, 4], pivot: [0, 6, 0], offset: [0, 0, 0], color: BAT_BROWN, anim: PartAnim.NONE },
+    {
+      name: 'head',
+      size: [4, 4, 4],
+      pivot: [0, 10, 0],
+      offset: [0, 1, 0],
+      color: BAT_BROWN,
+      anim: PartAnim.HEAD,
+    },
+    { name: 'wingL', size: [8, 6, 1], pivot: [3, 8, 0], offset: [4, 0, 0], color: BAT_BROWN, anim: PartAnim.WING },
+    { name: 'wingR', size: [8, 6, 1], pivot: [-3, 8, 0], offset: [-4, 0, 0], color: BAT_BROWN, anim: PartAnim.WING },
+  ],
+};
+
+/** 史莱姆：一个半透明感的绿方块 + 里面的小核。 */
+const SLIME_MODEL: MobModelSpec = {
+  swingAmplitude: 0.2,
+  parts: [
+    {
+      name: 'body',
+      size: [14, 14, 14],
+      pivot: [0, 7, 0],
+      offset: [0, 0, 0],
+      color: SLIME_GREEN,
+      anim: PartAnim.NONE,
+      noise: 0.12,
+    },
+    {
+      name: 'core',
+      size: [6, 6, 6],
+      pivot: [0, 7, 0],
+      offset: [0, 0, 0],
+      color: '#4a9c4a',
+      anim: PartAnim.NONE,
+    },
+  ],
+};
+
 export const MOB_MODELS: Record<MobType, MobModelSpec> = {
+  enderman: humanoid(ENDERMAN_BLACK, ENDERMAN_BLACK, ENDERMAN_BLACK, ENDERMAN_FACE, PartAnim.ARM_L, 2, {
+    M: '#c77ffb',
+  }),
+  squid: SQUID_MODEL,
+  bat: BAT_MODEL,
+  slime: SLIME_MODEL,
   zombie: humanoid(ZOMBIE_SKIN, ZOMBIE_SHIRT, ZOMBIE_PANTS, ZOMBIE_FACE, PartAnim.ZOMBIE_ARM),
   skeleton: humanoid(SKELETON_BONE, '#a8a8a8', SKELETON_BONE, SKELETON_FACE, PartAnim.ZOMBIE_ARM, 2),
   creeper: {

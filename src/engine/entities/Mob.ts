@@ -37,6 +37,14 @@ import { MOB_DEFS, MobType, type MobDef } from './MobDefs';
 const MOB_GROUND_ACCEL = 10;
 const MOB_AIR_ACCEL = 2;
 const STUCK_SPEED_THRESHOLD = 0.3;
+/** 末影人受伤传送：概率、尝试次数与范围。 */
+const TELEPORT_ON_HURT_CHANCE = 0.5;
+const TELEPORT_ATTEMPTS = 16;
+const TELEPORT_RANGE = 16;
+const TELEPORT_VERTICAL_RANGE = 4;
+/** 史莱姆死亡分裂出的数量与体型比例。 */
+const SLIME_SPLIT_COUNT = 2;
+const SLIME_SPLIT_SCALE = 0.6;
 const STUCK_TICKS_BEFORE_DETOUR = 15;
 const DETOUR_TICKS = 25;
 
@@ -92,6 +100,8 @@ export class Mob extends LivingEntity {
     this.def = def;
     this.width = def.width;
     this.height = def.height;
+    // 会飞与水生生物不受重力：前者在空中乱飞、后者靠水的浮力
+    this.hasGravity = !def.flying;
   }
 
   /** 设为幼崽（体型减半）或成体。 */
@@ -396,7 +406,44 @@ export class Mob extends LivingEntity {
     return this.burnTicks > 0 || this.isOnFire;
   }
 
+  /** 死亡时分裂成两只更小的同类（史莱姆）；已经很小的就不再分裂。 */
+  private trySplit(ctx: EntityContext): void {
+    if (!this.def.splits || this.width < this.def.width * SLIME_SPLIT_SCALE) {
+      return;
+    }
+    for (let i = 0; i < SLIME_SPLIT_COUNT; i++) {
+      const child = new Mob(this.type);
+      child.width = this.width * SLIME_SPLIT_SCALE;
+      child.height = this.height * SLIME_SPLIT_SCALE;
+      child.maxHealth = Math.max(1, Math.floor(this.maxHealth * SLIME_SPLIT_SCALE));
+      child.health = child.maxHealth;
+      child.setPosition(this.x + (ctx.random() - 0.5), this.y, this.z + (ctx.random() - 0.5));
+      ctx.spawnEntity(child);
+    }
+  }
+
+  /** 受伤时随机传送（末影人）。 */
+  private tryTeleport(ctx: EntityContext): void {
+    for (let i = 0; i < TELEPORT_ATTEMPTS; i++) {
+      const x = Math.floor(this.x) + Math.floor((ctx.random() - 0.5) * 2 * TELEPORT_RANGE);
+      const z = Math.floor(this.z) + Math.floor((ctx.random() - 0.5) * 2 * TELEPORT_RANGE);
+      const y = Math.floor(this.y) + Math.floor((ctx.random() - 0.5) * 2 * TELEPORT_VERTICAL_RANGE);
+      if (
+        ctx.world.isSolidAt(x, y - 1, z) &&
+        ctx.world.getBlock(x, y, z) === 0 &&
+        ctx.world.getBlock(x, y + 1, z) === 0
+      ) {
+        this.setPosition(x + 0.5, y, z + 0.5);
+        ctx.playSound('hit', this.x, this.y, this.z);
+        return;
+      }
+    }
+  }
+
   protected override onHurt(ctx: EntityContext, _amount: number, source: Entity | null): void {
+    if (this.def.teleports && ctx.random() < TELEPORT_ON_HURT_CHANCE) {
+      this.tryTeleport(ctx);
+    }
     if (this.def.hostile) {
       if (source && this.state !== MobState.CHASE && ctx.canMobsTargetPlayer) {
         this.state = MobState.CHASE;
@@ -420,6 +467,7 @@ export class Mob extends LivingEntity {
   }
 
   protected override onDeath(ctx: EntityContext, byPlayer: boolean): void {
+    this.trySplit(ctx);
     for (const drop of this.def.drops) {
       if (drop.item === 'wool' && !this.hasWool) {
         continue;

@@ -331,6 +331,27 @@ const HAND_DRAWN_ICONS: Record<string, Painter> = {
     c.draw(['..XXX.', '.X...X', 'X.....', 'X.....', '.X...X', '..XXX.'], { X: hex('#c8c8c8') }, 3, 4);
     c.draw(['XXX', 'XXX'], { X: hex('#4a4a52') }, 9, 9);
   },
+  ender_pearl: (c) =>
+    c.draw(
+      ['..XXXX..', '.XXXXXX.', 'XXXXLXXX', 'XXXLLXXX', 'XXXXXXXX', 'XXXXXXXX', '.XXXXXX.', '..XXXX..'],
+      { X: hex('#12a37a'), L: hex('#7fe6c8') },
+      4,
+      4,
+    ),
+  ink_sac: (c) =>
+    c.draw(
+      ['..XXXX..', '.XXXXXX.', 'XXXXXXXX', 'XXXXXXXX', 'XXXXXXXX', '.XXXXXX.', '..XXXX..'],
+      { X: hex('#1d1d21') },
+      4,
+      5,
+    ),
+  slimeball: (c) =>
+    c.draw(
+      ['..XXXX..', '.XXXXXX.', 'XXXLXXXX', 'XXLLXXXX', 'XXXXXXXX', '.XXXXXX.', '..XXXX..'],
+      { X: hex('#7ac47a'), L: hex('#b6e6b6') },
+      4,
+      5,
+    ),
   sugar: (c) => {
     c.fill([0, 0, 0, 0]);
     c.rect(4, 8, 8, 5, hex('#eeeeee'));

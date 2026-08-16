@@ -78,6 +78,8 @@ function dyeRecipes(): Recipe[] {
     shapeless([dye('red'), dye('blue')], dye('purple'), 2),
     shapeless([dye('purple'), dye('pink')], dye('magenta'), 2),
     shapeless([dye('blue'), dye('white')], dye('light_blue'), 2),
+    shapeless([dye('black'), dye('white')], dye('gray'), 2),
+    shapeless([dye('gray'), dye('white')], dye('light_gray'), 2),
   ];
 }
 

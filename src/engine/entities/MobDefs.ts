@@ -10,6 +10,10 @@ export const MobType = {
   COW: 'cow',
   SHEEP: 'sheep',
   CHICKEN: 'chicken',
+  ENDERMAN: 'enderman',
+  SQUID: 'squid',
+  BAT: 'bat',
+  SLIME: 'slime',
 } as const;
 export type MobType = (typeof MobType)[keyof typeof MobType];
 
@@ -35,6 +39,14 @@ export interface MobDef {
   noFallDamage?: boolean;
   /** 可以用这些物品喂食并进入繁殖状态；不填表示不可繁殖。 */
   breedingItems?: readonly string[];
+  /** 只在水里生成 / 活动（鱿鱼）。 */
+  aquatic?: boolean;
+  /** 会飞（蝙蝠）：不受重力、可以在空中乱飞。 */
+  flying?: boolean;
+  /** 受伤时随机传送（末影人）。 */
+  teleports?: boolean;
+  /** 死亡时分裂成几只更小的同类（史莱姆）。 */
+  splits?: boolean;
 }
 
 export const MOB_DEFS: Record<MobType, MobDef> = {
@@ -161,6 +173,66 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     burnsInSunlight: false,
     noFallDamage: true,
     breedingItems: ['wheat_seeds'],
+  },
+  enderman: {
+    type: 'enderman',
+    label: '末影人',
+    width: 0.6,
+    height: 2.9,
+    maxHealth: 40,
+    speed: 3.2,
+    hostile: true,
+    attackDamage: 7,
+    drops: [{ item: 'ender_pearl', min: 0, max: 1 }],
+    xp: 5,
+    burnsInSunlight: false,
+    // 原版是"被盯着看才发怒"，视线判定还没做，先按夜里主动敌对处理
+    neutralInDaylight: true,
+    teleports: true,
+  },
+  squid: {
+    type: 'squid',
+    label: '鱿鱼',
+    width: 0.8,
+    height: 0.8,
+    maxHealth: 10,
+    speed: 1.2,
+    hostile: false,
+    attackDamage: 0,
+    drops: [{ item: 'ink_sac', min: 1, max: 3 }],
+    xp: 2,
+    burnsInSunlight: false,
+    aquatic: true,
+    noFallDamage: true,
+  },
+  bat: {
+    type: 'bat',
+    label: '蝙蝠',
+    width: 0.5,
+    height: 0.9,
+    maxHealth: 6,
+    speed: 2.4,
+    hostile: false,
+    attackDamage: 0,
+    drops: [],
+    xp: 0,
+    burnsInSunlight: false,
+    flying: true,
+    noFallDamage: true,
+  },
+  slime: {
+    type: 'slime',
+    label: '史莱姆',
+    width: 1.0,
+    height: 1.0,
+    maxHealth: 16,
+    speed: 1.4,
+    hostile: true,
+    attackDamage: 2,
+    drops: [{ item: 'slimeball', min: 0, max: 2 }],
+    xp: 4,
+    burnsInSunlight: false,
+    splits: true,
   },
 };
 

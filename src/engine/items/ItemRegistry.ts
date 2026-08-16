@@ -157,7 +157,10 @@ function armorItems(): ItemDef[] {
  * 目前能做出来的有白 / 红 / 黄 / 蓝 与它们的混色，其余等墨囊、仙人掌绿、可可豆。
  */
 const DYE_ITEM_IDS: Record<string, string> = Object.fromEntries(
-  COLOR_VARIANTS.map((c) => [c.id, c.id === 'white' ? 'bone_meal' : c.id === 'blue' ? 'lapis_lazuli' : `${c.id}_dye`]),
+  COLOR_VARIANTS.map((c) => [
+    c.id,
+    c.id === 'white' ? 'bone_meal' : c.id === 'blue' ? 'lapis_lazuli' : c.id === 'black' ? 'ink_sac' : `${c.id}_dye`,
+  ]),
 );
 
 /** 某个颜色对应的染料物品 id。 */
@@ -218,7 +221,9 @@ function blockItems(def: BlockDef): ItemDef[] {
 const TOOL_TYPES: ToolType[] = [ToolType.SWORD, ToolType.PICKAXE, ToolType.AXE, ToolType.SHOVEL, ToolType.HOE];
 
 /** 除骨粉与青金石之外的 14 种染料物品。 */
-const DYE_ITEMS: ItemDef[] = COLOR_VARIANTS.filter((c) => c.id !== 'white' && c.id !== 'blue').map((c) => ({
+const DYE_ITEMS: ItemDef[] = COLOR_VARIANTS.filter(
+  (c) => c.id !== 'white' && c.id !== 'blue' && c.id !== 'black',
+).map((c) => ({
   id: DYE_ITEM_IDS[c.id],
   label: `${c.label}染料`,
   kind: ItemKind.MATERIAL,
@@ -243,6 +248,9 @@ export const ITEM_DEFS: ItemDef[] = [
   material('feather', '羽毛'),
   material('leather', '皮革'),
   material('bone', '骨头'),
+  material('ender_pearl', '末影珍珠', { maxStack: 16 }),
+  material('ink_sac', '墨囊'),
+  material('slimeball', '粘液球'),
   material('bone_meal', '骨粉'),
   material('gunpowder', '火药'),
   material('arrow', '箭'),
