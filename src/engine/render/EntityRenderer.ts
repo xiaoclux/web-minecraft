@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getBlock, RenderType } from '../blocks/BlockRegistry';
 import { MAX_LIGHT } from '../constants/world';
 import { ArrowEntity } from '../entities/ArrowEntity';
+import { XpOrbEntity } from '../entities/XpOrbEntity';
 import type { Entity } from '../entities/Entity';
 import { ItemDropEntity } from '../entities/ItemDropEntity';
 import { Mob } from '../entities/Mob';
@@ -10,6 +11,7 @@ import { PixelCanvas, createRng, hashString, hex } from '../textures/PixelCanvas
 import { paintBlockTexture } from '../textures/blockTextures';
 import { paintItemIcon } from '../textures/itemTextures';
 import type { World } from '../world/World';
+import { XP_ORB_SIZE } from '../constants/game';
 import { MOB_BABY_SCALE } from '../constants/mobs';
 import { MOB_MODELS, PartAnim, type MobModelSpec, type PartSpec } from './MobModels';
 
@@ -22,6 +24,9 @@ const ITEM_SPIN_SPEED = 1.2;
 const DROP_BLOCK_SIZE = 0.3;
 const DROP_ITEM_SIZE = 0.4;
 const ARROW_LENGTH = 0.6;
+/** 经验球的基础颜色与闪烁速度。 */
+const XP_ORB_COLOR = 0x8fff26;
+const XP_ORB_PULSE_SPEED = 6;
 const ARROW_THICKNESS = 0.06;
 const SHEEP_SHEARED_COLOR = '#f0a0a0';
 
@@ -29,7 +34,7 @@ interface RenderedEntity {
   group: THREE.Group;
   parts: { mesh: THREE.Mesh; spec: PartSpec }[];
   materials: THREE.MeshLambertMaterial[];
-  kind: 'mob' | 'item' | 'arrow';
+  kind: 'mob' | 'item' | 'arrow' | 'xp';
 }
 
 /** 负责实体的 three.js 表现：模型、动画、受伤闪烁、光照。 */
@@ -77,6 +82,9 @@ export class EntityRenderer {
     }
     if (entity instanceof ArrowEntity) {
       return this.createArrow();
+    }
+    if (entity instanceof XpOrbEntity) {
+      return this.createXpOrb();
     }
     return null;
   }
@@ -221,6 +229,15 @@ export class EntityRenderer {
     return { group, parts: [], materials: [m], kind: 'arrow' };
   }
 
+  /** 经验球：一个自发光的小方块，颜色在黄绿之间闪。 */
+  private createXpOrb(): RenderedEntity {
+    const group = new THREE.Group();
+    const m = new THREE.MeshBasicMaterial({ color: XP_ORB_COLOR });
+    const mesh = new THREE.Mesh(this.boxGeometry(XP_ORB_SIZE, XP_ORB_SIZE, XP_ORB_SIZE), m);
+    group.add(mesh);
+    return { group, parts: [], materials: [m as unknown as THREE.MeshLambertMaterial], kind: 'xp' };
+  }
+
   private blockTexture(key: string): THREE.Texture {
     const cacheKey = `block:${key}`;
     let tex = this.textureCache.get(cacheKey);
@@ -264,6 +281,17 @@ export class EntityRenderer {
       r.group.rotation.y = time * ITEM_SPIN_SPEED + entity.id;
       for (const m of r.materials) {
         m.color.setScalar(brightness);
+      }
+      return;
+    }
+    if (r.kind === 'xp') {
+      // 经验球自己会发光，不受环境亮度影响；上下浮动 + 黄绿闪烁
+      const bob = Math.sin(time * ITEM_BOB_SPEED + entity.id) * ITEM_BOB_HEIGHT + ITEM_BOB_HEIGHT;
+      r.group.position.y = entity.y + bob;
+      r.group.rotation.y = time * ITEM_SPIN_SPEED + entity.id;
+      const pulse = 0.5 + 0.5 * Math.sin(time * XP_ORB_PULSE_SPEED + entity.id);
+      for (const m of r.materials) {
+        m.color.setRGB(0.55 + 0.45 * pulse, 1, 0.15);
       }
       return;
     }

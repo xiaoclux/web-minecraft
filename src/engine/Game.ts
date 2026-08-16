@@ -39,6 +39,7 @@ import {
   LADDER_CLIMB_SPEED,
   LADDER_SLIDE_SPEED,
   SLEEP_MONSTER_RADIUS,
+  XP_ORB_MAX_AMOUNT,
   SPRINT_FOOD_THRESHOLD,
   TICK_MS,
 } from './constants/game';
@@ -69,6 +70,7 @@ import { ArrowEntity } from './entities/ArrowEntity';
 import { Entity, allocateEntityId, resetEntityIds, type EntitySaveData } from './entities/Entity';
 import type { EntityContext } from './entities/EntityContext';
 import { ItemDropEntity } from './entities/ItemDropEntity';
+import { XpOrbEntity } from './entities/XpOrbEntity';
 import { LivingEntity } from './entities/LivingEntity';
 import { Mob } from './entities/Mob';
 import { MobType, isMobType } from './entities/MobDefs';
@@ -350,6 +352,9 @@ export class Game implements EntityContext, ContainerHost {
     if (data.type === 'item') {
       return ItemDropEntity.deserialize(data);
     }
+    if (data.type === 'xp_orb') {
+      return XpOrbEntity.deserialize(data);
+    }
     if (isMobType(data.type)) {
       return Mob.deserialize(data);
     }
@@ -365,7 +370,7 @@ export class Game implements EntityContext, ContainerHost {
       }
       if (e instanceof Mob) {
         entities.push(e.serialize());
-      } else if (e instanceof ItemDropEntity) {
+      } else if (e instanceof ItemDropEntity || e instanceof XpOrbEntity) {
         entities.push(e.serialize());
       }
     }
@@ -1020,10 +1025,7 @@ export class Game implements EntityContext, ContainerHost {
       for (const drop of rollDrops(def, held, this.rng)) {
         this.dropItem(x + 0.5, y + 0.5, z + 0.5, drop, 0.2);
       }
-      const xp = rollXp(def, held, this.rng);
-      if (xp > 0) {
-        this.player.addXp(xp);
-      }
+      this.dropXp(x + 0.5, y + 0.5, z + 0.5, rollXp(def, held, this.rng));
       this.damageHeldTool(1);
       this.player.onBlockBroken();
     }
@@ -1354,7 +1356,7 @@ export class Game implements EntityContext, ContainerHost {
     this.entities.set(baby.id, baby);
     this.spawnHeartParticles(baby);
     const xp = MOB_BREED_XP_MIN + Math.floor(this.rng() * (MOB_BREED_XP_MAX - MOB_BREED_XP_MIN + 1));
-    this.player.addXp(xp);
+    this.dropXp(baby.x, baby.y + baby.height, baby.z, xp);
   }
 
   /** 锄地：对着草方块或泥土的顶面用锄，且上方是空的，变成耕地。 */
@@ -2092,7 +2094,22 @@ export class Game implements EntityContext, ContainerHost {
 
   onEntityKilled(entity: Entity, byPlayer: boolean): void {
     if (byPlayer && entity instanceof Mob) {
-      this.player.addXp(entity.def.xp * XP_PER_MOB_KILL_MULTIPLIER);
+      this.dropXp(entity.x, entity.y + entity.height * 0.5, entity.z, entity.def.xp * XP_PER_MOB_KILL_MULTIPLIER);
+    }
+  }
+
+  /** 在某处掉出若干经验球（总量超过一颗上限就拆成多颗）。 */
+  dropXp(x: number, y: number, z: number, amount: number): void {
+    let remaining = Math.floor(amount);
+    while (remaining > 0) {
+      const chunkAmount = Math.min(XP_ORB_MAX_AMOUNT, remaining);
+      remaining -= chunkAmount;
+      const orb = new XpOrbEntity(chunkAmount);
+      orb.setPosition(x, y, z);
+      orb.vx = (this.rng() - 0.5) * ITEM_DROP_SPAWN_SPEED;
+      orb.vy = ITEM_DROP_SPAWN_SPEED * 0.5;
+      orb.vz = (this.rng() - 0.5) * ITEM_DROP_SPAWN_SPEED;
+      this.entities.set(orb.id, orb);
     }
   }
 

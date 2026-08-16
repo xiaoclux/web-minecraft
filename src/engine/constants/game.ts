@@ -118,3 +118,12 @@ export const FIRE_CONSUME_CHANCE = 0.1;
 export const FIRE_CONSUME_MIN_AGE = 5;
 /** 打火石耐久（1.8.9 为 65）。 */
 export const FLINT_AND_STEEL_DURABILITY = 65;
+
+/** 经验球：大小、消失时间、吸引与拾取半径、吸引加速度（格/秒²）。 */
+export const XP_ORB_SIZE = 0.25;
+export const XP_ORB_DESPAWN_TICKS = 6000;
+export const XP_ORB_ATTRACT_RANGE = 7;
+export const XP_ORB_PICKUP_RANGE = 1;
+export const XP_ORB_ATTRACT_ACCEL = 24;
+/** 一颗经验球最多装多少经验（超出就拆成多颗）。 */
+export const XP_ORB_MAX_AMOUNT = 7;
