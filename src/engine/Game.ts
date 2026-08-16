@@ -104,6 +104,12 @@ import { FireballEntity } from './entities/FireballEntity';
 import { EnderCrystalEntity } from './entities/EnderCrystalEntity';
 import { EnderDragonEntity } from './entities/EnderDragonEntity';
 import { WitherEntity } from './entities/WitherEntity';
+import { powerAt, updateWires } from './systems/RedstoneSystem';
+import {
+  BUTTON_PRESS_TICKS,
+  PRESSURE_PLATE_RANGE,
+  REDSTONE_POWERED_BIT,
+} from './constants/redstone';
 import {
   BEACON_EFFECT_TICKS,
   beaconLevel,
@@ -265,6 +271,10 @@ const CRYSTAL_HIT_TOLERANCE = 1.5;
 const CRYSTAL_EXTRA_REACH = 3;
 /** 末影水晶治疗末影龙的距离平方。 */
 const CRYSTAL_HEAL_RANGE_SQ = ENDER_CRYSTAL_HEAL_RANGE * ENDER_CRYSTAL_HEAL_RANGE;
+/** 压力板多久检查一次。 */
+const PRESSURE_PLATE_CHECK_TICKS = 5;
+/** 方块变更后重算用电器的半径。 */
+const REDSTONE_CONSUMER_RADIUS = 2;
 /** 凋灵召唤阵的两个可能轴向（沿 X 或沿 Z 摆）。 */
 const WITHER_SUMMON_AXES: readonly (readonly [number, number])[] = [
   [1, 0],
@@ -404,6 +414,7 @@ export class Game implements EntityContext, ContainerHost {
     }
     const dimension = new Dimension(DIMENSION_DEFS[id], createDimensionGenerator(id, this.meta), this);
     dimension.world.onChunkLoad((chunk) => this.applyPendingBlockEntities(chunk));
+    dimension.world.onBlockChange((x, y, z) => this.onRedstoneRelevantChange(x, y, z));
     dimension.world.onChunkUnload((chunk) => this.onChunkUnloaded(chunk));
     this.dimensions.set(id, dimension);
     return dimension;
@@ -436,6 +447,12 @@ export class Game implements EntityContext, ContainerHost {
   readonly isTouch = isTouchDevice();
   private breakTarget: { x: number; y: number; z: number; id: number } | null = null;
   /** 脚步声：累计走过的水平距离与上一次采样点。 */
+  /** 按下的按钮（到时间弹回）。 */
+  private pressedButtons: { x: number; y: number; z: number; ticks: number }[] = [];
+  /** 世界里已知的压力板坐标（放置时登记）。 */
+  private readonly knownPlates = new Set<string>();
+  /** 正在重算红石：避免 setBlock 触发的变更事件递归。 */
+  private redstoneUpdating = false;
   /** 末地 Boss 战是否已布置过（每次进末地只布置一次）。 */
   private endFightStarted = false;
   /** 站在传送门里的累计 tick 与传送后的冷却。 */
@@ -864,6 +881,7 @@ export class Game implements EntityContext, ContainerHost {
         /* toast 已提示 */
       });
     }
+    this.tickRedstone();
     this.tickBeacons();
     this.tickPortal();
     this.tickFootsteps();
@@ -1119,6 +1137,157 @@ export class Game implements EntityContext, ContainerHost {
   /** 当前维度 id（存档与调试面板用）。 */
   get dimensionId(): DimensionId {
     return this.current.id;
+  }
+
+  // ---------------------------------------------------------------- 红石
+
+  /** 拉杆：开关一下并重算线路。 */
+  private toggleLever(x: number, y: number, z: number): void {
+    const meta = this.world.getMeta(x, y, z);
+    this.world.setBlock(x, y, z, BlockId.LEVER, meta ^ REDSTONE_POWERED_BIT);
+    this.sound.play('door');
+    this.renderer.hand.swing();
+  }
+
+  /** 按钮：按下并在若干 tick 后自动弹回。 */
+  private pressButton(x: number, y: number, z: number): void {
+    const meta = this.world.getMeta(x, y, z);
+    if ((meta & REDSTONE_POWERED_BIT) !== 0) {
+      return;
+    }
+    this.world.setBlock(x, y, z, BlockId.STONE_BUTTON, meta | REDSTONE_POWERED_BIT);
+    this.pressedButtons.push({ x, y, z, ticks: BUTTON_PRESS_TICKS });
+    this.sound.play('door');
+    this.renderer.hand.swing();
+  }
+
+  /** 每 tick：按钮弹回、压力板感应、用电器跟随信号。 */
+  private tickRedstone(): void {
+    this.tickButtons();
+    this.tickPressurePlates();
+  }
+
+  private tickButtons(): void {
+    if (this.pressedButtons.length === 0) {
+      return;
+    }
+    const remaining: typeof this.pressedButtons = [];
+    for (const button of this.pressedButtons) {
+      button.ticks--;
+      if (this.world.getBlock(button.x, button.y, button.z) !== BlockId.STONE_BUTTON) {
+        continue;
+      }
+      if (button.ticks > 0) {
+        remaining.push(button);
+        continue;
+      }
+      const meta = this.world.getMeta(button.x, button.y, button.z);
+      this.world.setBlock(button.x, button.y, button.z, BlockId.STONE_BUTTON, meta & ~REDSTONE_POWERED_BIT);
+    }
+    this.pressedButtons = remaining;
+  }
+
+  /** 压力板：玩家或生物站上去就通电，离开一会儿后断电。 */
+  private tickPressurePlates(): void {
+    if (this.tick % PRESSURE_PLATE_CHECK_TICKS !== 0) {
+      return;
+    }
+    for (const plate of this.knownPlates) {
+      const [x, y, z] = plate.split(',').map(Number);
+      if (this.world.getBlock(x, y, z) !== BlockId.STONE_PRESSURE_PLATE) {
+        this.knownPlates.delete(plate);
+        continue;
+      }
+      const pressed = this.isPlatePressed(x, y, z);
+      const meta = this.world.getMeta(x, y, z);
+      const powered = (meta & REDSTONE_POWERED_BIT) !== 0;
+      if (pressed === powered) {
+        continue;
+      }
+      this.world.setBlock(
+        x,
+        y,
+        z,
+        BlockId.STONE_PRESSURE_PLATE,
+        pressed ? meta | REDSTONE_POWERED_BIT : meta & ~REDSTONE_POWERED_BIT,
+      );
+    }
+  }
+
+  /** 板子上有没有站人 / 站生物。 */
+  private isPlatePressed(x: number, y: number, z: number): boolean {
+    const cx = x + 0.5;
+    const cz = z + 0.5;
+    const onPlate = (ex: number, ey: number, ez: number): boolean =>
+      Math.abs(ex - cx) <= PRESSURE_PLATE_RANGE && Math.abs(ez - cz) <= PRESSURE_PLATE_RANGE && Math.abs(ey - y) < 1;
+    if (onPlate(this.player.x, this.player.y, this.player.z)) {
+      return true;
+    }
+    for (const e of this.entities.values()) {
+      if (e instanceof Mob && !e.isDead && onPlate(e.x, e.y, e.z)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 方块变化后重算红石：先更新红石粉的强度，再让用电器（红石灯 / 门）跟上。
+   * 由 world 的变更事件驱动，因此手动放置、活塞推动、爆炸都会触发。
+   */
+  private onRedstoneRelevantChange(x: number, y: number, z: number): void {
+    if (this.redstoneUpdating) {
+      return;
+    }
+    this.redstoneUpdating = true;
+    try {
+      // 线路可能一路延伸出去，所以用电器要围着"变了的那些粉"刷新，而不只是变更点
+      const changed = updateWires(this.world, x, y, z);
+      this.updateConsumers(x, y, z);
+      for (const [wx, wy, wz] of changed) {
+        this.updateConsumers(wx, wy, wz);
+      }
+    } finally {
+      this.redstoneUpdating = false;
+    }
+  }
+
+  /** 让变更点附近的用电器跟随当前信号。 */
+  private updateConsumers(x: number, y: number, z: number): void {
+    for (let dy = -REDSTONE_CONSUMER_RADIUS; dy <= REDSTONE_CONSUMER_RADIUS; dy++) {
+      for (let dz = -REDSTONE_CONSUMER_RADIUS; dz <= REDSTONE_CONSUMER_RADIUS; dz++) {
+        for (let dx = -REDSTONE_CONSUMER_RADIUS; dx <= REDSTONE_CONSUMER_RADIUS; dx++) {
+          this.updateConsumerAt(x + dx, y + dy, z + dz);
+        }
+      }
+    }
+  }
+
+  private updateConsumerAt(x: number, y: number, z: number): void {
+    const id = this.world.getBlock(x, y, z);
+    const def = getBlock(id);
+    const redstone = def.redstone;
+    if (!redstone) {
+      return;
+    }
+    const powered = powerAt(this.world, x, y, z) > 0;
+    // 红石灯：亮 / 灭是两个方块 id
+    if (redstone.litBlockId !== undefined) {
+      const shouldBeLit = powered;
+      const isLit = id === BlockId.REDSTONE_LAMP_LIT;
+      if (shouldBeLit !== isLit) {
+        this.world.setBlock(x, y, z, shouldBeLit ? BlockId.REDSTONE_LAMP_LIT : BlockId.REDSTONE_LAMP);
+      }
+      return;
+    }
+    // 门与栅栏门：被充能就开
+    if (redstone.opensWhenPowered) {
+      const meta = this.world.getMeta(x, y, z);
+      const open = (meta & DOOR_OPEN_BIT) !== 0;
+      if (open !== powered) {
+        this.world.setBlock(x, y, z, id, powered ? meta | DOOR_OPEN_BIT : meta & ~DOOR_OPEN_BIT);
+      }
+    }
   }
 
   // ---------------------------------------------------------------- 凋灵与信标
@@ -2372,6 +2541,12 @@ export class Game implements EntityContext, ContainerHost {
       case BlockId.BEACON:
         this.openScreen(Screen.BEACON, { x: hit.x, y: hit.y, z: hit.z });
         return true;
+      case BlockId.LEVER:
+        this.toggleLever(hit.x, hit.y, hit.z);
+        return true;
+      case BlockId.STONE_BUTTON:
+        this.pressButton(hit.x, hit.y, hit.z);
+        return true;
       case BlockId.BED:
         this.useBed(hit.x, hit.y, hit.z);
         return true;
@@ -2538,6 +2713,9 @@ export class Game implements EntityContext, ContainerHost {
     this.playBlockSound(placeSound(soundGroupOf(def)), px, py, pz, 'place');
     if (blockId === BlockId.WITHER_SKULL) {
       this.trySummonWither(px, py, pz);
+    }
+    if (blockId === BlockId.STONE_PRESSURE_PLATE) {
+      this.knownPlates.add(`${px},${py},${pz}`);
     }
     this.achievements.addStat(StatId.BLOCKS_PLACED);
     if (def.shape === BlockShape.BED) {

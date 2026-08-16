@@ -39,6 +39,7 @@ export const RenderType = {
 export type RenderType = (typeof RenderType)[keyof typeof RenderType];
 
 import { SoundGroup } from './blockSounds';
+import { REDSTONE_MAX_POWER, REDSTONE_POWERED_BIT } from '../constants/redstone';
 import { BED_HEAD_BIT, BlockShape, CROP_MAX_STAGE, DOOR_UPPER_BIT } from './blockShapes';
 
 /** 六个面各自的贴图 key。 */
@@ -128,6 +129,17 @@ export interface BlockDef {
   flammable?: boolean;
   /** 材质音效组；不写时由 blockSounds 按名字与工具推断。 */
   soundGroup?: SoundGroup;
+  /** 红石属性：电源强度、通电位、是否是用电器。 */
+  redstone?: {
+    /** 作为电源时的输出强度；不填表示不是电源。 */
+    source?: number;
+    /** meta 里表示"通电"的位（拉杆 / 按钮 / 压力板）；不填表示恒定输出。 */
+    poweredBit?: number;
+    /** 用电器：被充能时换成这个方块 id（红石灯亮 / 灭）。 */
+    litBlockId?: number;
+    /** 用电器：被充能时开门 / 开活板门。 */
+    opensWhenPowered?: boolean;
+  };
   /**
    * 变种：同一个方块 id 下按 meta 区分的若干种（木材、羊毛颜色、石头变种等），与 1.8.9 一致。
    * 有变种时，方块的物品、标签与贴图都按 meta 取对应变种。
@@ -226,6 +238,15 @@ export const BlockId = {
   QUARTZ_BLOCK: 155,
   WITHER_SKULL: 144,
   BEACON: 138,
+  REDSTONE_WIRE: 55,
+  REDSTONE_ORE: 73,
+  REDSTONE_BLOCK: 152,
+  REDSTONE_TORCH: 76,
+  LEVER: 69,
+  STONE_BUTTON: 77,
+  STONE_PRESSURE_PLATE: 70,
+  REDSTONE_LAMP: 123,
+  REDSTONE_LAMP_LIT: 124,
   SUGAR_CANE: 83,
   GLOWSTONE: 89,
   STONE_BRICKS: 98,
@@ -448,6 +469,11 @@ export const BLOCK_DEFS: BlockDef[] = [
   }),
   cube(BlockId.GOLD_ORE, 'gold_ore', '金矿石', same('gold_ore'), 3, ToolType.PICKAXE, { minTier: ToolTier.IRON }),
   cube(BlockId.IRON_ORE, 'iron_ore', '铁矿石', same('iron_ore'), 3, ToolType.PICKAXE, { minTier: ToolTier.STONE }),
+  cube(BlockId.REDSTONE_ORE, 'redstone_ore', '红石矿石', same('redstone_ore'), 3, ToolType.PICKAXE, {
+    minTier: ToolTier.IRON,
+    drops: [{ item: 'redstone', min: 4, max: 5 }],
+    xp: [1, 5],
+  }),
   cube(BlockId.LAPIS_ORE, 'lapis_ore', '青金石矿石', same('lapis_ore'), 3, ToolType.PICKAXE, {
     minTier: ToolTier.STONE,
     drops: [{ item: 'lapis_lazuli', min: 4, max: 8 }],
@@ -752,6 +778,73 @@ export const BLOCK_DEFS: BlockDef[] = [
     ),
     shape: BlockShape.SKULL,
   },
+  // 红石粉：贴地的十字面片，meta 存 0~15 的信号强度
+  {
+    ...cross(BlockId.REDSTONE_WIRE, 'redstone_wire', '红石粉', 'redstone_dust', {
+      needsSupport: true,
+      noItem: true,
+      texturesForMeta: (meta: number) => same(meta > 0 ? 'redstone_dust_on' : 'redstone_dust'),
+      redstone: {},
+    }),
+    shape: BlockShape.WIRE,
+  },
+  cube(BlockId.REDSTONE_BLOCK, 'redstone_block', '红石块', same('redstone_block'), 5, ToolType.PICKAXE, {
+    minTier: ToolTier.WOOD,
+    redstone: { source: REDSTONE_MAX_POWER },
+  }),
+  {
+    ...cross(BlockId.REDSTONE_TORCH, 'redstone_torch', '红石火把', 'redstone_torch', {
+      needsSupport: true,
+      light: 7,
+      redstone: { source: REDSTONE_MAX_POWER },
+    }),
+  },
+  {
+    ...cube(BlockId.LEVER, 'lever', '拉杆', same('lever'), 0.5, null, {
+      solid: false,
+      opaque: false,
+      needsSupport: true,
+      interactive: true,
+      redstone: { source: REDSTONE_MAX_POWER, poweredBit: REDSTONE_POWERED_BIT },
+    }),
+    shape: BlockShape.LEVER,
+  },
+  {
+    ...cube(BlockId.STONE_BUTTON, 'stone_button', '石头按钮', same('stone_button'), 0.5, ToolType.PICKAXE, {
+      solid: false,
+      opaque: false,
+      needsSupport: true,
+      interactive: true,
+      redstone: { source: REDSTONE_MAX_POWER, poweredBit: REDSTONE_POWERED_BIT },
+    }),
+    shape: BlockShape.BUTTON,
+  },
+  {
+    ...cube(
+      BlockId.STONE_PRESSURE_PLATE,
+      'stone_pressure_plate',
+      '石头压力板',
+      same('stone_pressure_plate'),
+      0.5,
+      ToolType.PICKAXE,
+      {
+        solid: false,
+        opaque: false,
+        needsSupport: true,
+        redstone: { source: REDSTONE_MAX_POWER, poweredBit: REDSTONE_POWERED_BIT },
+      },
+    ),
+    shape: BlockShape.PRESSURE_PLATE,
+  },
+  cube(BlockId.REDSTONE_LAMP, 'redstone_lamp', '红石灯', same('redstone_lamp'), 0.3, null, {
+    redstone: { litBlockId: BlockId.REDSTONE_LAMP_LIT },
+  }),
+  cube(BlockId.REDSTONE_LAMP_LIT, 'redstone_lamp_lit', '红石灯（亮）', same('redstone_lamp_on'), 0.3, null, {
+    light: 15,
+    noItem: true,
+    drops: [{ item: 'redstone_lamp', min: 1, max: 1 }],
+    redstone: { litBlockId: BlockId.REDSTONE_LAMP },
+  }),
   cube(BlockId.BEACON, 'beacon', '信标', same('beacon'), 3, null, {
     opaque: false,
     interactive: true,
@@ -820,6 +913,7 @@ export const BLOCK_DEFS: BlockDef[] = [
       render: RenderType.CUTOUT,
       opaque: false,
       interactive: true,
+      redstone: { opensWhenPowered: true },
     }),
     shape: BlockShape.FENCE_GATE,
     connectGroup: 'fence',
@@ -830,6 +924,7 @@ export const BLOCK_DEFS: BlockDef[] = [
       opaque: false,
       interactive: true,
       drops: [{ item: 'wooden_door', min: 1, max: 1 }],
+      redstone: { opensWhenPowered: true },
     }),
     shape: BlockShape.DOOR,
     hasFacing: true,

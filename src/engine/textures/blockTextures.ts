@@ -660,6 +660,56 @@ function netherWart(stage: number): Painter {
   };
 }
 
+/** 红石粉：断电时暗红、通电时亮红的十字线。 */
+function redstoneDust(lit: boolean): Painter {
+  return (c) => {
+    c.fill(TRANSPARENT);
+    const color = lit ? hex('#ff3a2a') : hex('#7a1a12');
+    c.rect(0, 6, 16, 4, color);
+    c.rect(6, 0, 4, 16, color);
+  };
+}
+
+/** 红石块：暗红底 + 亮红颗粒。 */
+const redstoneBlock: Painter = (c, rng) => {
+  c.noise(hex('#a51a10'), 0.12, rng);
+  c.speckle(hex('#ff4a3a'), 26, rng);
+};
+
+/** 红石火把：木杆 + 暗红火头。 */
+const redstoneTorch: Painter = (c) => {
+  c.fill(TRANSPARENT);
+  c.rect(7, 6, 2, 10, hex('#6b4a2a'));
+  c.rect(6, 3, 4, 4, hex('#ff3a2a'));
+};
+
+/** 拉杆：石座 + 木柄。 */
+const lever: Painter = (c) => {
+  c.fill(TRANSPARENT);
+  c.rect(5, 11, 6, 4, hex('#8a8a8a'));
+  c.rect(7, 4, 2, 8, hex('#8f6b3a'));
+};
+
+/** 石头按钮与压力板：一小块石头。 */
+const stoneButton: Painter = (c, rng) => {
+  c.fill(TRANSPARENT);
+  c.rect(4, 6, 8, 5, hex('#8a8a8a'));
+  void rng;
+};
+const stonePressurePlate: Painter = (c, rng) => {
+  c.noise(hex('#8f8f8f'), 0.06, rng);
+};
+
+/** 红石灯：灭时暗黄格子，亮时通体发光。 */
+const redstoneLamp: Painter = (c, rng) => {
+  c.noise(hex('#6a5535'), 0.08, rng);
+  c.rect(3, 3, 10, 10, hex('#7d6640'));
+};
+const redstoneLampOn: Painter = (c, rng) => {
+  c.noise(hex('#e0b060'), 0.08, rng);
+  c.rect(3, 3, 10, 10, hex('#ffdc90'));
+};
+
 /** 凋灵骷髅头：黑色骨质。 */
 const witherSkullTop: Painter = (c, rng) => {
   c.noise(hex('#3a3a3a'), 0.1, rng);
@@ -979,6 +1029,16 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   netherrack,
   end_stone: endStone,
   quartz_block: quartzBlock,
+  redstone_ore: ore(hex('#ff2a1a'), 9),
+  redstone_dust: redstoneDust(false),
+  redstone_dust_on: redstoneDust(true),
+  redstone_block: redstoneBlock,
+  redstone_torch: redstoneTorch,
+  lever,
+  stone_button: stoneButton,
+  stone_pressure_plate: stonePressurePlate,
+  redstone_lamp: redstoneLamp,
+  redstone_lamp_on: redstoneLampOn,
   wither_skull_top: witherSkullTop,
   wither_skull_side: witherSkullSide,
   beacon,

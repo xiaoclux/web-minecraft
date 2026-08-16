@@ -194,6 +194,13 @@ export const RECIPES: Recipe[] = [
   shapeless(['blaze_rod'], 'blaze_powder', 2),
   shapeless(['blaze_powder', 'ender_pearl'], 'ender_eye'),
   shaped(['GGG', 'GSG', 'OOO'], { G: 'glass', S: 'nether_star', O: 'obsidian' }, 'beacon'),
+  shaped(['RRR', 'RRR', 'RRR'], { R: 'redstone' }, 'redstone_block'),
+  shapeless(['redstone_block'], 'redstone', 9),
+  shaped(['R', 'S'], { R: 'redstone', S: 'stick' }, 'redstone_torch'),
+  shaped(['S', 'C'], { S: 'stick', C: 'cobblestone' }, 'lever'),
+  shapeless(['stone'], 'stone_button'),
+  shaped(['SS'], { S: 'stone' }, 'stone_pressure_plate'),
+  shaped([' R ', 'RGR', ' R '], { R: 'redstone', G: 'glowstone' }, 'redstone_lamp'),
   shaped(['QQ', 'QQ'], { Q: 'quartz' }, 'quartz_block'),
   shapeless(['blaze_powder', 'slimeball'], 'magma_cream'),
   // 1.8.9 还要一个棕色蘑菇；蘑菇没做之前先用蛛眼 + 糖

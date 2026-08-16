@@ -47,6 +47,14 @@ export const BlockShape = {
   ANVIL: 'anvil',
   /** 头颅：半格高、四周各缩 1/4。 */
   SKULL: 'skull',
+  /** 红石粉：贴地的薄片，无碰撞。 */
+  WIRE: 'wire',
+  /** 拉杆：贴墙 / 贴地的小柄，无碰撞。 */
+  LEVER: 'lever',
+  /** 按钮：贴面的小块，无碰撞。 */
+  BUTTON: 'button',
+  /** 压力板：薄薄一层，无碰撞。 */
+  PRESSURE_PLATE: 'pressure_plate',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -144,6 +152,15 @@ const ANVIL_BOXES: readonly BlockBox[] = [
   box(0.5 - ANVIL_INSET, ANVIL_BASE_HEIGHT, 0.5 - ANVIL_INSET, 0.5 + ANVIL_INSET, ANVIL_TOP_START, 0.5 + ANVIL_INSET),
   box(0, ANVIL_TOP_START, ANVIL_INSET, 1, 1, 1 - ANVIL_INSET),
 ];
+const WIRE_HEIGHT = 1 / 16;
+const WIRE_BOXES: readonly BlockBox[] = [box(0, 0, 0, 1, WIRE_HEIGHT, 1)];
+const PLATE_HEIGHT = 1 / 16;
+const PLATE_INSET = 1 / 16;
+const PRESSURE_PLATE_BOXES: readonly BlockBox[] = [
+  box(PLATE_INSET, 0, PLATE_INSET, 1 - PLATE_INSET, PLATE_HEIGHT, 1 - PLATE_INSET),
+];
+const LEVER_BOXES: readonly BlockBox[] = [box(6 / 16, 0, 6 / 16, 10 / 16, 8 / 16, 10 / 16)];
+const BUTTON_BOXES: readonly BlockBox[] = [box(5 / 16, 0, 5 / 16, 11 / 16, 2 / 16, 11 / 16)];
 const SKULL_INSET = 4 / 16;
 const SKULL_HEIGHT = 8 / 16;
 const SKULL_BOXES: readonly BlockBox[] = [
@@ -299,6 +316,14 @@ export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readon
       return ANVIL_BOXES;
     case BlockShape.SKULL:
       return SKULL_BOXES;
+    case BlockShape.WIRE:
+      return WIRE_BOXES;
+    case BlockShape.PRESSURE_PLATE:
+      return PRESSURE_PLATE_BOXES;
+    case BlockShape.LEVER:
+      return LEVER_BOXES;
+    case BlockShape.BUTTON:
+      return BUTTON_BOXES;
     case BlockShape.LADDER:
       return LADDER_BOXES[meta & FACING_MASK];
     case BlockShape.DOOR:
@@ -312,6 +337,15 @@ export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readon
 
 /** 方块在给定 meta 下的碰撞盒；不阻挡实体时为空。栅栏的碰撞比外观高，跳不过去。 */
 export function collisionBoxes(def: BlockDef, meta: number, connections = 0): readonly BlockBox[] {
+  // 红石线路这些贴面的小东西不挡人
+  if (
+    def.shape === BlockShape.WIRE ||
+    def.shape === BlockShape.LEVER ||
+    def.shape === BlockShape.BUTTON ||
+    def.shape === BlockShape.PRESSURE_PLATE
+  ) {
+    return NO_BOXES;
+  }
   if (!def.solid) {
     return NO_BOXES;
   }

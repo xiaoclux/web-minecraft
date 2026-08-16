@@ -93,6 +93,7 @@ const ORES: OreConfig[] = [
   { block: BlockId.LAPIS_ORE, minY: 1, maxY: 32, attempts: 2, size: 6 },
   { block: BlockId.IRON_ORE, minY: 2, maxY: 64, attempts: 16, size: 6 },
   { block: BlockId.GOLD_ORE, minY: 2, maxY: 32, attempts: 3, size: 5 },
+  { block: BlockId.REDSTONE_ORE, minY: 1, maxY: 16, attempts: 8, size: 7 },
   { block: BlockId.DIAMOND_ORE, minY: 1, maxY: 16, attempts: 2, size: 5 },
   { block: BlockId.GRAVEL, minY: 4, maxY: 60, attempts: 8, size: 12 },
 ];
