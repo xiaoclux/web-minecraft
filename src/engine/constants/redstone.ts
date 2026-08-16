@@ -52,3 +52,14 @@ export const MINECART_POWERED_ACCEL = 6;
 export const MINECART_BRAKE_FACTOR = 0.5;
 /** 压力板的触发范围（以方块中心为准的水平半径）。 */
 export const PRESSURE_PLATE_RANGE = 0.7;
+
+/** 音符盒的音高数（1.8.9 为两个八度共 25 个音）。 */
+export const NOTE_COUNT = 25;
+/** 音符盒 meta 里存音高的低位掩码。 */
+export const NOTE_MASK = 31;
+/** 音符盒 meta 里"上一次是否通电"的位，用来只在上升沿发声。 */
+export const NOTE_POWERED_BIT = 32;
+/** 音符盒的中间音（第 12 号）对应音效的原始音高，两侧按十二平均律换算。 */
+export const NOTE_CENTER = 12;
+/** 十二平均律的一个八度有几个半音。 */
+export const SEMITONES_PER_OCTAVE = 12;

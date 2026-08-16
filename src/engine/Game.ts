@@ -127,7 +127,7 @@ import { getBlockByName } from './blocks/BlockRegistry';
 import { ENCHANTMENT_DEFS, canEnchant, isEnchantmentId } from './items/enchantments';
 import { EFFECT_DEFS } from './entities/effects';
 import type { Weather } from './systems/WeatherSystem';
-import { isPoweredRailOn, powerAt, repeaterInputPower, updateWires } from './systems/RedstoneSystem';
+import { isPoweredRailOn, powerAt, repeaterInputPower, notePitch, updateWires } from './systems/RedstoneSystem';
 import { containerSlots, extractOne, insertOne, isEmpty } from './systems/HopperSystem';
 import { extendPiston, pistonDirection, retractPiston } from './systems/PistonSystem';
 import {
@@ -146,6 +146,9 @@ import {
   HOPPER_PICKUP_RANGE,
   HOPPER_SLOT_COUNT,
   HOPPER_TRANSFER_INTERVAL_TICKS,
+  NOTE_COUNT,
+  NOTE_MASK,
+  NOTE_POWERED_BIT,
   RailShape,
 } from './constants/redstone';
 import {
@@ -274,6 +277,9 @@ const FILLED_BUCKETS: Record<number, string> = {
 /** 求爱 / 繁殖时冒出的爱心粒子数量与取样贴图。 */
 const HEART_PARTICLE_COUNT = 7;
 const HEART_PARTICLE_TEXTURE = 'particle_heart';
+/** 音符盒响一声时飘出的音符粒子。 */
+const NOTE_PARTICLE_TEXTURE = 'particle_note';
+const NOTE_PARTICLE_OPTIONS = { speed: 1, minLife: 0.5, maxLife: 0.9, size: 0.16 };
 /** 破坏一个方块炸出的碎屑数量。 */
 const BREAK_PARTICLE_COUNT = 12;
 /** 爆炸粒子数量与取样贴图（用石头的灰色当烟）。 */
@@ -2309,6 +2315,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       return;
     }
     const powered = powerAt(this.world, x, y, z) > 0;
+    if (redstone.noteBlock) {
+      this.updateNoteBlock(x, y, z, powered);
+      return;
+    }
     // 通电 / 断电是两个方块 id 的用电器（红石灯）
     if (powered && redstone.litBlockId !== undefined) {
       this.world.setBlock(x, y, z, redstone.litBlockId, this.world.getMeta(x, y, z));
@@ -3637,6 +3647,9 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       case BlockId.REPEATER_ON:
         this.cycleRepeaterDelay(hit.x, hit.y, hit.z);
         return true;
+      case BlockId.NOTE_BLOCK:
+        this.cycleNote(hit.x, hit.y, hit.z);
+        return true;
       case BlockId.BED:
         this.useBed(hit.x, hit.y, hit.z);
         return true;
@@ -4468,6 +4481,33 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       apply(partner.x, partner.y, partner.z);
     }
     this.sound.play('door');
+  }
+
+  /** 右键音符盒：音高 +1（循环）并试听一下。 */
+  private cycleNote(x: number, y: number, z: number): void {
+    const meta = this.world.getMeta(x, y, z);
+    const note = ((meta & NOTE_MASK) + 1) % NOTE_COUNT;
+    this.world.setMeta(x, y, z, (meta & ~NOTE_MASK) | note);
+    this.playNote(x, y, z, note);
+  }
+
+  /** 音符盒跟随红石：只在"没电 → 有电"的那一下响，持续通电不会一直响。 */
+  private updateNoteBlock(x: number, y: number, z: number, powered: boolean): void {
+    const meta = this.world.getMeta(x, y, z);
+    const wasPowered = (meta & NOTE_POWERED_BIT) !== 0;
+    if (wasPowered === powered) {
+      return;
+    }
+    this.world.setMeta(x, y, z, powered ? meta | NOTE_POWERED_BIT : meta & ~NOTE_POWERED_BIT);
+    if (powered) {
+      this.playNote(x, y, z, meta & NOTE_MASK);
+    }
+  }
+
+  private playNote(x: number, y: number, z: number, note: number): void {
+    const p = this.player;
+    this.sound.play('note', Math.hypot(x - p.x, y - p.y, z - p.z), notePitch(note));
+    this.renderer.particles.spawn(x + 0.5, y + 1.1, z + 0.5, NOTE_PARTICLE_TEXTURE, NOTE_PARTICLE_OPTIONS);
   }
 
   /**

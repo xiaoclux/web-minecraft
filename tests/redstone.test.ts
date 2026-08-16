@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
-import { REDSTONE_MAX_POWER, REDSTONE_POWERED_BIT } from '../src/engine/constants/redstone';
+import { NOTE_CENTER, NOTE_COUNT, REDSTONE_MAX_POWER, REDSTONE_POWERED_BIT } from '../src/engine/constants/redstone';
 import {
   isPoweredRailOn,
+  notePitch,
   powerAt,
   repeaterInputPower,
   sourcePower,
@@ -242,5 +243,20 @@ describe('铁轨与矿车', () => {
   it('轨道走向决定矿车的行进轴', () => {
     expect(railAxis(RailShape.EAST_WEST)).toEqual([1, 0]);
     expect(railAxis(RailShape.NORTH_SOUTH)).toEqual([0, 1]);
+  });
+});
+
+describe('音符盒', () => {
+  it('中间音是原音高，高一个八度正好翻倍', () => {
+    expect(notePitch(NOTE_CENTER)).toBeCloseTo(1);
+    expect(notePitch(NOTE_CENTER + 12)).toBeCloseTo(2);
+    expect(notePitch(NOTE_CENTER - 12)).toBeCloseTo(0.5);
+  });
+
+  it('两个八度共 25 个音，音高单调递增', () => {
+    expect(NOTE_COUNT).toBe(25);
+    for (let note = 1; note < NOTE_COUNT; note++) {
+      expect(notePitch(note)).toBeGreaterThan(notePitch(note - 1));
+    }
   });
 });

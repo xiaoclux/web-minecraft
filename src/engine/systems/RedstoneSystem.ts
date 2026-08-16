@@ -17,6 +17,8 @@ import {
   REDSTONE_MAX_POWER,
   REDSTONE_UPDATE_RADIUS,
   REPEATER_FACING_MASK,
+  NOTE_CENTER,
+  SEMITONES_PER_OCTAVE,
   RailShape,
 } from '../constants/redstone';
 import type { World } from '../world/World';
@@ -316,3 +318,11 @@ function collectWires(world: World, x: number, y: number, z: number): Set<string
 
 /** 信号强度上限（导出给 UI / 测试用）。 */
 export const MAX_POWER = REDSTONE_MAX_POWER;
+
+/**
+ * 音符盒某个音高相对音效原始音高的倍率（十二平均律）。
+ * @param note 0 ~ NOTE_COUNT-1，NOTE_CENTER 为原音高
+ */
+export function notePitch(note: number): number {
+  return 2 ** ((note - NOTE_CENTER) / SEMITONES_PER_OCTAVE);
+}

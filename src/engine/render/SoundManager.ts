@@ -90,6 +90,8 @@ export const SOUNDS: Readonly<Record<string, SoundSpec>> = {
   chest: { layers: [noise('bandpass', 700, 400, 2, 0.2, 1)], volume: 0.12 },
   splash: { layers: [noise('bandpass', 1200, 300, 1.5, 0.35, 1)], volume: 0.18, pitchJitter: 0.15 },
   fizz: { layers: [noise('highpass', 2400, 800, 1, 0.5, 1)], volume: 0.16 },
+  // 音符盒：基频交给调用方的 pitch 参数拉伸，这里只定音色包络
+  note: { layers: [tone('triangle', 440, 380, 0.7), tone('sine', 880, 760, 0.4, 0.3)], volume: 0.2 },
   anvil: { layers: [tone('triangle', 1200, 300, 0.25), noise('bandpass', 2000, 900, 4, 0.15, 0.8)], volume: 0.2 },
   // ---- 战斗
   hit: { layers: [tone('sawtooth', 200, 120, 0.1)], volume: 0.15, pitchJitter: 0.15 },

@@ -155,6 +155,8 @@ export interface BlockDef {
     dispenser?: boolean;
     /** 投掷器：只把物品丢出来，不发射（箭 / 药水也当普通物品丢）。 */
     dropper?: boolean;
+    /** 音符盒：上升沿响一声（音高存在 meta 里）。 */
+    noteBlock?: boolean;
     /** TNT：被充能就点着。 */
     ignitesWhenPowered?: boolean;
     /** 动力铁轨：被充能时给矿车加速。 */
@@ -276,6 +278,7 @@ export const BlockId = {
   POWERED_RAIL: 27,
   DISPENSER: 23,
   DROPPER: 158,
+  NOTE_BLOCK: 159,
   LEVER: 69,
   STONE_BUTTON: 77,
   STONE_PRESSURE_PLATE: 70,
@@ -958,6 +961,10 @@ export const BLOCK_DEFS: BlockDef[] = [
     interactive: true,
     hasFacing: true,
     redstone: { dispenser: true, dropper: true },
+  }),
+  cube(BlockId.NOTE_BLOCK, 'note_block', '音符盒', same('note_block'), 0.8, ToolType.AXE, {
+    interactive: true,
+    redstone: { noteBlock: true },
   }),
   cube(BlockId.PISTON, 'piston', '活塞', topSide('piston_top', 'piston_side'), 0.5, null, {
     hasFacing: true,

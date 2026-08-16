@@ -202,6 +202,7 @@ export const RECIPES: Recipe[] = [
   shaped(['SS'], { S: 'stone' }, 'stone_pressure_plate'),
   shaped([' R ', 'RGR', ' R '], { R: 'redstone', G: 'glowstone' }, 'redstone_lamp'),
   shaped(['TRT', 'SSS'], { T: 'redstone_torch', R: 'redstone', S: 'stone' }, 'repeater'),
+  shaped(['PPP', 'PRP', 'PPP'], { P: '#planks', R: 'redstone' }, 'note_block'),
   shaped(['PPP', 'CIC', 'CRC'], { P: '#planks', C: 'cobblestone', I: 'iron_ingot', R: 'redstone' }, 'piston'),
   shapeless(['piston', 'slimeball'], 'sticky_piston'),
   shaped(['I I', 'ICI', ' I '], { I: 'iron_ingot', C: 'chest' }, 'hopper'),

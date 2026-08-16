@@ -350,7 +350,7 @@ const bedHeadEnd: Painter = (c, rng) => {
 };
 
 /** 不挂在任何方块上、但需要进图集的贴图（粒子等）。 */
-export const EXTRA_TEXTURE_KEYS = ['particle_heart', 'particle_rain', 'particle_snow'] as const;
+export const EXTRA_TEXTURE_KEYS = ['particle_heart', 'particle_note', 'particle_rain', 'particle_snow'] as const;
 
 /** 火：底部亮、顶部窄的橙黄火苗，其余透明。 */
 const fire: Painter = (c, rng) => {
@@ -378,6 +378,11 @@ const lava: Painter = (c, rng) => {
 /** 爱心粒子：粒子系统只取 2×2 像素，所以纯色即可。 */
 const particleHeart: Painter = (c, rng) => {
   c.noise(hex('#f04a6a'), 0.1, rng);
+};
+
+/** 音符粒子：音符盒响一声时飘出来的彩色小点。 */
+const particleNote: Painter = (c, rng) => {
+  c.noise(hex('#7ad86a'), 0.12, rng);
 };
 
 /** 雨滴与雪花粒子（同样只取 2×2 像素，纯色）。 */
@@ -762,6 +767,14 @@ function repeater(lit: boolean): Painter {
   };
 }
 
+/** 音符盒：木箱身 + 中间一圈深色音孔。 */
+const noteBlock: Painter = (c, rng) => {
+  c.noise(hex('#5f4327'), 0.08, rng);
+  c.rect(1, 1, 14, 14, hex('#6b4b2c'));
+  c.rect(3, 3, 10, 10, hex('#4a3320'));
+  c.rect(6, 6, 4, 4, hex('#2a1d12'));
+};
+
 /** 拉杆：石座 + 木柄。 */
 const lever: Painter = (c) => {
   c.fill(TRANSPARENT);
@@ -1127,6 +1140,7 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   piston_side: pistonSide,
   piston_top: pistonTop,
   sticky_piston_top: stickyPistonTop,
+  note_block: noteBlock,
   repeater: repeater(false),
   repeater_on: repeater(true),
   lever,
@@ -1168,6 +1182,7 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   bed_foot_end: bedFootEnd,
   ladder,
   particle_heart: particleHeart,
+  particle_note: particleNote,
   particle_rain: particleRain,
   particle_snow: particleSnow,
   lava,
