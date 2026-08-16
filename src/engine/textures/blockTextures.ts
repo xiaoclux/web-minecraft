@@ -338,6 +338,14 @@ const bedHeadEnd: Painter = (c, rng) => {
   c.rect(1, 2, 14, 8, BED_PILLOW);
 };
 
+/** 不挂在任何方块上、但需要进图集的贴图（粒子等）。 */
+export const EXTRA_TEXTURE_KEYS = ['particle_heart'] as const;
+
+/** 爱心粒子：粒子系统只取 2×2 像素，所以纯色即可。 */
+const particleHeart: Painter = (c, rng) => {
+  c.noise(hex('#f04a6a'), 0.1, rng);
+};
+
 /** 梯子：两根立柱 + 若干横档，其余透明。 */
 const LADDER_WOOD = hex('#8a6a3a');
 const ladder: Painter = (c) => {
@@ -604,6 +612,7 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   bed_head_end: bedHeadEnd,
   bed_foot_end: bedFootEnd,
   ladder,
+  particle_heart: particleHeart,
   door_lower: doorLower,
   door_upper: doorUpper,
   farmland_dry: farmlandDry,

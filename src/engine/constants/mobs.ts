@@ -34,3 +34,18 @@ export const MOB_HURT_TICKS = 10;
 export const MOB_DEATH_TICKS = 20;
 export const MOB_MAX_FALL_SAFE = 3;
 export const SHEEP_REGROW_WOOL_TICKS = 2400;
+
+/** 繁殖：喂食后进入求爱状态的时长，以及两次繁殖之间的冷却（1.8.9 都是 30 秒）。 */
+export const MOB_LOVE_TICKS = 600;
+export const MOB_BREED_COOLDOWN_TICKS = 6000;
+/** 幼崽长成成体所需的 tick（1.8.9 为 20 分钟）。 */
+export const MOB_BABY_GROW_TICKS = 24000;
+/** 幼崽的模型缩放。 */
+export const MOB_BABY_SCALE = 0.5;
+/** 两只动物相距多远之内可以配对。 */
+export const MOB_BREED_RANGE = 3;
+/** 求爱状态下互相寻找配偶的最大距离。 */
+export const MOB_MATE_SEEK_RANGE = 12;
+/** 繁殖掉落的经验区间。 */
+export const MOB_BREED_XP_MIN = 1;
+export const MOB_BREED_XP_MAX = 7;

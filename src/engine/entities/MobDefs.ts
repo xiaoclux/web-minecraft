@@ -33,6 +33,8 @@ export interface MobDef {
   neutralInDaylight?: boolean;
   /** 免疫摔落伤害。 */
   noFallDamage?: boolean;
+  /** 可以用这些物品喂食并进入繁殖状态；不填表示不可繁殖。 */
+  breedingItems?: readonly string[];
 }
 
 export const MOB_DEFS: Record<MobType, MobDef> = {
@@ -105,6 +107,8 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     drops: [{ item: 'porkchop', min: 1, max: 3 }],
     xp: 2,
     burnsInSunlight: false,
+    // 原版猪吃胡萝卜 / 土豆 / 甜菜根，这些作物还没做，暂时也吃小麦
+    breedingItems: ['wheat'],
   },
   cow: {
     type: 'cow',
@@ -121,6 +125,7 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     ],
     xp: 2,
     burnsInSunlight: false,
+    breedingItems: ['wheat'],
   },
   sheep: {
     type: 'sheep',
@@ -137,6 +142,7 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     ],
     xp: 2,
     burnsInSunlight: false,
+    breedingItems: ['wheat'],
   },
   chicken: {
     type: 'chicken',
@@ -154,6 +160,7 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     xp: 2,
     burnsInSunlight: false,
     noFallDamage: true,
+    breedingItems: ['wheat_seeds'],
   },
 };
 

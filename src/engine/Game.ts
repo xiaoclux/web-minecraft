@@ -45,7 +45,14 @@ import {
 import { KEY_ESCAPE, KEY_HOTBAR_PREFIX, MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT } from './constants/keys';
 import { actionForCode, isTouchDevice, settingsStore, type BindingAction } from './settings/Settings';
 import { AUTOSAVE_INTERVAL_TICKS, SAVE_FORMAT_VERSION } from './constants/save';
-import { CREEPER_EXPLOSION_MAX_DAMAGE } from './constants/mobs';
+import {
+  CREEPER_EXPLOSION_MAX_DAMAGE,
+  MOB_BREED_COOLDOWN_TICKS,
+  MOB_BREED_RANGE,
+  MOB_MATE_SEEK_RANGE,
+  MOB_BREED_XP_MAX,
+  MOB_BREED_XP_MIN,
+} from './constants/mobs';
 import { CHEST_SLOT_COUNT } from './constants/ui';
 import { WATER_TICK_INTERVAL } from './constants/fluids';
 import {
@@ -117,6 +124,9 @@ const FACING_LABELS = ['南 (+Z)', '西 (-X)', '北 (-Z)', '东 (+X)'];
 const XP_PER_MOB_KILL_MULTIPLIER = 1;
 const SPAWN_PROTECTION_TICKS = 40;
 const REPLACEABLE_BLOCKS: ReadonlySet<number> = new Set<number>([BlockId.AIR, BlockId.WATER, BlockId.TALL_GRASS]);
+/** 求爱 / 繁殖时冒出的爱心粒子数量与取样贴图。 */
+const HEART_PARTICLE_COUNT = 7;
+const HEART_PARTICLE_TEXTURE = 'particle_heart';
 /** 成熟小麦额外掉落的种子上限。 */
 const WHEAT_MAX_SEED_DROP = 3;
 /** 破坏一个方块炸出的碎屑数量。 */
@@ -490,6 +500,7 @@ export class Game implements EntityContext, ContainerHost {
     this.tickFurnaces();
     this.tickGravityBlocks();
     this.randomTicks.tick(this.player.x, this.player.z);
+    this.tickBreeding();
     if (this.tick % WATER_TICK_INTERVAL === 0) {
       this.fluids.tick();
     }
@@ -1126,6 +1137,9 @@ export class Game implements EntityContext, ContainerHost {
       }
       return;
     }
+    if (this.tryFeedMob(def.id)) {
+      return;
+    }
     if (def.tool?.type === ToolType.HOE && hit && this.tryTill(hit)) {
       return;
     }
@@ -1135,6 +1149,81 @@ export class Game implements EntityContext, ContainerHost {
     if (def.kind === ItemKind.BLOCK && def.blockId !== undefined && hit) {
       this.tryPlaceBlock(def.blockId, hit);
     }
+  }
+
+  /** 用手里的食物喂准星里的动物，让它进入求爱状态。 */
+  private tryFeedMob(itemId: string): boolean {
+    const target = this.findEntityInCrosshair();
+    if (!(target instanceof Mob) || !target.canBreedWith(itemId)) {
+      return false;
+    }
+    target.enterLove();
+    this.spawnHeartParticles(target);
+    this.renderer.hand.swing();
+    if (!this.rules.infiniteItems) {
+      this.player.inventory.consume(this.player.selectedSlot, 1);
+    }
+    return true;
+  }
+
+  /** 求爱 / 繁殖成功时在动物头顶冒爱心。 */
+  private spawnHeartParticles(mob: Mob): void {
+    for (let i = 0; i < HEART_PARTICLE_COUNT; i++) {
+      this.renderer.particles.spawn(
+        mob.x + (Math.random() - 0.5) * mob.width,
+        mob.y + mob.height * 0.9,
+        mob.z + (Math.random() - 0.5) * mob.width,
+        HEART_PARTICLE_TEXTURE,
+        { speed: 1.2, minLife: 0.6, maxLife: 1, size: 0.18 },
+      );
+    }
+  }
+
+  /** 两只同类动物都在求爱状态且靠得够近时生一只幼崽。 */
+  private tickBreeding(): void {
+    const mobs: Mob[] = [];
+    for (const e of this.entities.values()) {
+      if (e instanceof Mob && e.loveTicks > 0 && e.health > 0) {
+        mobs.push(e);
+      }
+    }
+    for (let i = 0; i < mobs.length; i++) {
+      for (let j = i + 1; j < mobs.length; j++) {
+        const a = mobs[i];
+        const b = mobs[j];
+        if (a.loveTicks === 0 || b.loveTicks === 0 || a.type !== b.type) {
+          continue;
+        }
+        const dist = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+        if (dist > MOB_MATE_SEEK_RANGE) {
+          continue;
+        }
+        if (dist > MOB_BREED_RANGE) {
+          // 还不够近：互相走过去
+          a.mateTarget ??= b;
+          b.mateTarget ??= a;
+          continue;
+        }
+        this.breed(a, b);
+      }
+    }
+  }
+
+  /** 生一只幼崽并让父母进入繁殖冷却。 */
+  private breed(a: Mob, b: Mob): void {
+    a.loveTicks = 0;
+    b.loveTicks = 0;
+    a.mateTarget = null;
+    b.mateTarget = null;
+    a.breedCooldown = MOB_BREED_COOLDOWN_TICKS;
+    b.breedCooldown = MOB_BREED_COOLDOWN_TICKS;
+    const baby = new Mob(a.type);
+    baby.setBaby(true);
+    baby.setPosition((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+    this.entities.set(baby.id, baby);
+    this.spawnHeartParticles(baby);
+    const xp = MOB_BREED_XP_MIN + Math.floor(this.rng() * (MOB_BREED_XP_MAX - MOB_BREED_XP_MIN + 1));
+    this.player.addXp(xp);
   }
 
   /** 锄地：对着草方块或泥土的顶面用锄，且上方是空的，变成耕地。 */

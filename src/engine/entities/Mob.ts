@@ -6,6 +6,9 @@ import {
   CREEPER_TRIGGER_RANGE,
   ENTITY_STEP_HEIGHT,
   MOB_ATTACK_COOLDOWN_TICKS,
+  MOB_BABY_GROW_TICKS,
+  MOB_BABY_SCALE,
+  MOB_LOVE_TICKS,
   MOB_ATTACK_RANGE,
   MOB_BURN_DAMAGE,
   MOB_BURN_DAMAGE_INTERVAL_TICKS,
@@ -63,6 +66,16 @@ export class Mob extends LivingEntity {
   isCharging = false;
   /** 羊毛（羊）。 */
   hasWool = true;
+  /** 幼崽：体型减半、无法繁殖，长大需要 MOB_BABY_GROW_TICKS。 */
+  isBaby = false;
+  /** 幼崽长大的剩余 tick。 */
+  growTicks = 0;
+  /** 求爱状态剩余 tick（>0 时会与同类配对）。 */
+  loveTicks = 0;
+  /** 繁殖冷却剩余 tick。 */
+  breedCooldown = 0;
+  /** 求爱时要走向的配偶（由 Game 每 tick 指派）。 */
+  mateTarget: Mob | null = null;
   /** 行走动画相位。 */
   limbSwing = 0;
   limbSpeed = 0;
@@ -76,12 +89,53 @@ export class Mob extends LivingEntity {
     this.height = def.height;
   }
 
+  /** 设为幼崽（体型减半）或成体。 */
+  setBaby(isBaby: boolean, growTicks = MOB_BABY_GROW_TICKS): void {
+    this.isBaby = isBaby;
+    this.growTicks = isBaby ? growTicks : 0;
+    const scale = isBaby ? MOB_BABY_SCALE : 1;
+    this.width = this.def.width * scale;
+    this.height = this.def.height * scale;
+  }
+
+  /** 是否可以被喂食进入求爱状态。 */
+  canBreedWith(itemId: string): boolean {
+    return (
+      !this.isBaby &&
+      this.loveTicks === 0 &&
+      this.breedCooldown === 0 &&
+      this.def.breedingItems?.includes(itemId) === true
+    );
+  }
+
+  /** 喂食后进入求爱状态。 */
+  enterLove(): void {
+    this.loveTicks = MOB_LOVE_TICKS;
+  }
+
   override tick(ctx: EntityContext): void {
     if (this.health > 0) {
+      this.tickBreeding();
       this.think(ctx);
       this.handleSunlight(ctx);
     }
     super.tick(ctx);
+  }
+
+  /** 幼崽长大与求爱 / 冷却计时。 */
+  private tickBreeding(): void {
+    if (this.isBaby) {
+      this.growTicks--;
+      if (this.growTicks <= 0) {
+        this.setBaby(false);
+      }
+    }
+    if (this.loveTicks > 0) {
+      this.loveTicks--;
+    }
+    if (this.breedCooldown > 0) {
+      this.breedCooldown--;
+    }
   }
 
   override move(ctx: EntityContext, dt: number): void {
@@ -105,6 +159,9 @@ export class Mob extends LivingEntity {
       if (this.panicTicks % 20 === 0) {
         this.targetYaw += (ctx.random() - 0.5) * 1.5;
       }
+      return;
+    }
+    if (this.seekMate()) {
       return;
     }
     const player = ctx.player;
@@ -168,6 +225,19 @@ export class Mob extends LivingEntity {
       this.targetYaw = ctx.random() * Math.PI * 2;
       this.moveForward = 0.6;
     }
+  }
+
+  /** 求爱状态下走向配偶；正在求偶时返回 true（这一 tick 不做别的 AI）。 */
+  private seekMate(): boolean {
+    const mate = this.mateTarget;
+    if (this.loveTicks === 0 || !mate || mate.loveTicks === 0 || mate.health <= 0) {
+      this.mateTarget = null;
+      return false;
+    }
+    this.state = MobState.WANDER;
+    this.targetYaw = Math.atan2(-(mate.x - this.x), -(mate.z - this.z));
+    this.moveForward = 1;
+    return true;
   }
 
   private chase(ctx: EntityContext, distSq: number): void {
@@ -346,7 +416,13 @@ export class Mob extends LivingEntity {
 
   /** 序列化。 */
   serialize(): EntitySaveData {
-    return { ...this.serializeBase(), health: this.health, hasWool: this.hasWool };
+    return {
+      ...this.serializeBase(),
+      health: this.health,
+      hasWool: this.hasWool,
+      isBaby: this.isBaby,
+      growTicks: this.growTicks,
+    };
   }
 
   /** 反序列化。 */
@@ -360,6 +436,9 @@ export class Mob extends LivingEntity {
     }
     if (typeof data.hasWool === 'boolean') {
       mob.hasWool = data.hasWool;
+    }
+    if (data.isBaby === true) {
+      mob.setBaby(true, typeof data.growTicks === 'number' ? data.growTicks : MOB_BABY_GROW_TICKS);
     }
     return mob;
   }

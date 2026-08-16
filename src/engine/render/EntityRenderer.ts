@@ -10,6 +10,7 @@ import { PixelCanvas, createRng, hashString, hex } from '../textures/PixelCanvas
 import { paintBlockTexture } from '../textures/blockTextures';
 import { paintItemIcon } from '../textures/itemTextures';
 import type { World } from '../world/World';
+import { MOB_BABY_SCALE } from '../constants/mobs';
 import { MOB_MODELS, PartAnim, type MobModelSpec, type PartSpec } from './MobModels';
 
 const PIXEL = 1 / 16;
@@ -279,6 +280,9 @@ export class EntityRenderer {
   private syncMob(mob: Mob, r: RenderedEntity, brightness: number): void {
     const spec = MOB_MODELS[mob.type];
     r.group.rotation.y = mob.yaw;
+    // 幼崽整体缩小（原版是身体缩小、脑袋按比例更大，这里先做整体缩放）
+    const scale = mob.isBaby ? MOB_BABY_SCALE : 1;
+    r.group.scale.setScalar(scale);
     const swing = Math.sin(mob.limbSwing * 3) * spec.swingAmplitude * Math.min(1, mob.limbSpeed / 1.5);
     const dying = mob.health <= 0;
     if (dying) {
