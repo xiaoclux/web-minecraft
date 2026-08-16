@@ -1,8 +1,16 @@
 import { BlockId, getBlock } from '../blocks/BlockRegistry';
 import { CHUNK_SIZE, SECTION_COUNT, SECTION_HEIGHT, WORLD_SIZE_Y } from '../constants/world';
 import { toChunkCoord } from '../world/Chunk';
+import { packPos, unpackPos } from '../world/posKey';
 import type { World } from '../world/World';
 import { CROP_MAX_STAGE, FARMLAND_MAX_MOISTURE } from '../blocks/blockShapes';
+import {
+  FIRE_CONSUME_CHANCE,
+  FIRE_CONSUME_MIN_AGE,
+  FIRE_MAX_AGE,
+  FIRE_SPREAD_CHANCE,
+  FIRE_TICK_INTERVAL,
+} from '../constants/game';
 import { TREE_HEIGHT_VARIANCE, TREE_MIN_HEIGHT, forEachTreeBlock } from '../world/treeShape';
 
 /** 每个已分配段每 tick 随机抽取的方块数（1.8.9 是 3）。 */
@@ -19,6 +27,15 @@ const SAPLING_GROW_CHANCE = 0.15;
 const SAPLING_CLEARANCE = 6;
 /** 树冠缺角随机种子的取值上限。 */
 const MAX_TREE_SEED = 0xffffffff;
+/** 六个方向（火的蔓延与判定用）。 */
+const DIRS: readonly (readonly [number, number, number])[] = [
+  [1, 0, 0],
+  [-1, 0, 0],
+  [0, 1, 0],
+  [0, -1, 0],
+  [0, 0, 1],
+  [0, 0, -1],
+];
 /** 作物生长所需的最低光照。 */
 const CROP_MIN_LIGHT = 9;
 /** 每次随机 tick 的生长概率：湿耕地上更快。 */
@@ -41,10 +58,43 @@ export interface RandomTickHost {
  * 草蔓延、树苗长大、作物生长、火焰蔓延这类"慢慢发生"的规则都挂在这里。
  */
 export class RandomTickSystem {
-  constructor(private readonly host: RandomTickHost) {}
+  /** 当前世界里的火（火要按自己的节奏更新，随机 tick 太稀疏了）。 */
+  private readonly fires = new Set<number>();
+  private readonly posOut = [0, 0, 0];
+  private tickCount = 0;
+
+  constructor(private readonly host: RandomTickHost) {
+    host.world.onBlockChange((x, y, z, oldId, newId) => this.trackFire(x, y, z, oldId, newId));
+    host.world.onBatchChange((changes) => {
+      for (const c of changes) {
+        this.trackFire(c.x, c.y, c.z, c.oldId, c.newId);
+      }
+    });
+  }
+
+  private trackFire(x: number, y: number, z: number, oldId: number, newId: number): void {
+    if (newId === BlockId.FIRE) {
+      this.fires.add(packPos(x, y, z));
+    } else if (oldId === BlockId.FIRE) {
+      this.fires.delete(packPos(x, y, z));
+    }
+  }
+
+  /** 按固定间隔更新所有火（每游戏 tick 调用一次）。 */
+  private tickFires(): void {
+    this.tickCount++;
+    if (this.tickCount % FIRE_TICK_INTERVAL !== 0 || this.fires.size === 0) {
+      return;
+    }
+    for (const key of [...this.fires]) {
+      unpackPos(key, this.posOut);
+      this.tickBlock(this.posOut[0], this.posOut[1], this.posOut[2]);
+    }
+  }
 
   /** 跑一轮随机 tick（每游戏 tick 调用一次）。 */
   tick(playerX: number, playerZ: number): void {
+    this.tickFires();
     const world = this.host.world;
     const pcx = toChunkCoord(playerX);
     const pcz = toChunkCoord(playerZ);
@@ -86,6 +136,9 @@ export class RandomTickSystem {
         break;
       case BlockId.WHEAT:
         this.tickCrop(x, y, z);
+        break;
+      case BlockId.FIRE:
+        this.tickFire(x, y, z);
         break;
       default:
         break;
@@ -172,6 +225,55 @@ export class RandomTickSystem {
       return;
     }
     world.setMeta(x, y, z, stage + 1);
+  }
+
+  /**
+   * 火：没有支撑也没有可燃邻居就熄灭；否则慢慢变老，
+   * 有几率烧掉脚下的可燃方块，并向旁边紧挨可燃方块的空气蔓延。
+   */
+  private tickFire(x: number, y: number, z: number): void {
+    const world = this.host.world;
+    const belowDef = getBlock(world.getBlock(x, y - 1, z));
+    const hasFuel = this.hasFlammableNeighbor(x, y, z);
+    if (!belowDef.solid && !hasFuel) {
+      world.setBlock(x, y, z, BlockId.AIR);
+      return;
+    }
+    const age = world.getMeta(x, y, z);
+    if (age >= FIRE_MAX_AGE) {
+      if (!hasFuel) {
+        world.setBlock(x, y, z, BlockId.AIR);
+        return;
+      }
+    } else {
+      world.setMeta(x, y, z, age + 1);
+    }
+    // 每次只朝一个随机方向尝试蔓延，避免火势爆炸式扩散
+    const [dx, dy, dz] = DIRS[Math.floor(this.host.random() * DIRS.length)];
+    const tx = x + dx;
+    const ty = y + dy;
+    const tz = z + dz;
+    if (
+      world.getBlock(tx, ty, tz) === BlockId.AIR &&
+      this.hasFlammableNeighbor(tx, ty, tz) &&
+      this.host.random() < FIRE_SPREAD_CHANCE
+    ) {
+      world.setBlock(tx, ty, tz, BlockId.FIRE, 0);
+    }
+    // 烧久了才会把脚下的方块吃掉，否则火还没来得及蔓延就把自己的燃料烧没了
+    if (belowDef.flammable && age >= FIRE_CONSUME_MIN_AGE && this.host.random() < FIRE_CONSUME_CHANCE) {
+      world.setBlock(x, y - 1, z, BlockId.AIR);
+    }
+  }
+
+  /** 六邻中是否有可燃方块。 */
+  private hasFlammableNeighbor(x: number, y: number, z: number): boolean {
+    for (const [dx, dy, dz] of DIRS) {
+      if (getBlock(this.host.world.getBlock(x + dx, y + dy, z + dz)).flammable) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** 树苗在够亮、上方够空旷时长成树。 */

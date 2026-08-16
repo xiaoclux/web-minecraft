@@ -110,6 +110,8 @@ export interface BlockDef {
   climbable?: boolean;
   /** 连接组：同组的连接型方块（栅栏、玻璃板等）之间会连成一片。 */
   connectGroup?: string;
+  /** 可燃：会被相邻的火点着并烧掉。 */
+  flammable?: boolean;
 }
 
 export const BlockId = {
@@ -142,6 +144,7 @@ export const BlockId = {
   MOSSY_COBBLESTONE: 48,
   OBSIDIAN: 49,
   TORCH: 50,
+  FIRE: 51,
   DIAMOND_ORE: 56,
   BED: 26,
   WHEAT: 59,
@@ -276,7 +279,7 @@ export const BLOCK_DEFS: BlockDef[] = [
   cube(BlockId.COBBLESTONE, 'cobblestone', '圆石', same('cobblestone'), 2, ToolType.PICKAXE, {
     minTier: ToolTier.WOOD,
   }),
-  cube(BlockId.PLANKS, 'planks', '橡木木板', same('planks'), 2, ToolType.AXE),
+  cube(BlockId.PLANKS, 'planks', '橡木木板', same('planks'), 2, ToolType.AXE, { flammable: true }),
   cross(BlockId.SAPLING, 'sapling', '橡树树苗', 'sapling'),
   cube(BlockId.BEDROCK, 'bedrock', '基岩', same('bedrock'), -1, null, { isBlastResistant: true }),
   {
@@ -308,7 +311,14 @@ export const BLOCK_DEFS: BlockDef[] = [
     noItem: true,
   },
   cube(BlockId.SAND, 'sand', '沙子', same('sand'), 0.5, ToolType.SHOVEL, { hasGravity: true }),
-  cube(BlockId.GRAVEL, 'gravel', '砂砾', same('gravel'), 0.6, ToolType.SHOVEL, { hasGravity: true }),
+  cube(BlockId.GRAVEL, 'gravel', '砂砾', same('gravel'), 0.6, ToolType.SHOVEL, {
+    hasGravity: true,
+    // 原版是"要么砂砾要么燧石"，这里简化成额外 10% 掉燧石
+    drops: [
+      { item: 'gravel', min: 1, max: 1 },
+      { item: 'flint', min: 1, max: 1, chance: 0.1 },
+    ],
+  }),
   cube(BlockId.GOLD_ORE, 'gold_ore', '金矿石', same('gold_ore'), 3, ToolType.PICKAXE, { minTier: ToolTier.IRON }),
   cube(BlockId.IRON_ORE, 'iron_ore', '铁矿石', same('iron_ore'), 3, ToolType.PICKAXE, { minTier: ToolTier.STONE }),
   cube(BlockId.COAL_ORE, 'coal_ore', '煤矿石', same('coal_ore'), 3, ToolType.PICKAXE, {
@@ -316,7 +326,7 @@ export const BLOCK_DEFS: BlockDef[] = [
     drops: [{ item: 'coal', min: 1, max: 1 }],
     xp: [0, 2],
   }),
-  cube(BlockId.LOG, 'log', '橡木原木', topSide('log_top', 'log_side'), 2, ToolType.AXE),
+  cube(BlockId.LOG, 'log', '橡木原木', topSide('log_top', 'log_side'), 2, ToolType.AXE, { flammable: true }),
   {
     id: BlockId.LEAVES,
     name: 'leaves',
@@ -332,6 +342,7 @@ export const BLOCK_DEFS: BlockDef[] = [
       { item: 'sapling', min: 1, max: 1, chance: 0.05 },
       { item: 'apple', min: 1, max: 1, chance: 0.02 },
     ],
+    flammable: true,
   },
   {
     id: BlockId.GLASS,
@@ -352,12 +363,14 @@ export const BLOCK_DEFS: BlockDef[] = [
   cross(BlockId.TALL_GRASS, 'tall_grass', '草丛', 'tall_grass', {
     drops: [{ item: 'wheat_seeds', min: 1, max: 1, chance: 0.125 }],
   }),
-  cube(BlockId.WOOL, 'wool', '羊毛', same('wool'), 0.8, null),
+  cube(BlockId.WOOL, 'wool', '羊毛', same('wool'), 0.8, null, { flammable: true }),
   cross(BlockId.DANDELION, 'dandelion', '蒲公英', 'dandelion'),
   cross(BlockId.POPPY, 'poppy', '虞美人', 'poppy'),
   cube(BlockId.BRICKS, 'bricks', '砖块', same('bricks'), 2, ToolType.PICKAXE, { minTier: ToolTier.WOOD }),
   cube(BlockId.TNT, 'tnt', 'TNT', topSide('tnt_top', 'tnt_side', 'tnt_bottom'), 0, null, { interactive: true }),
-  cube(BlockId.BOOKSHELF, 'bookshelf', '书架', topSide('planks', 'bookshelf'), 1.5, ToolType.AXE),
+  cube(BlockId.BOOKSHELF, 'bookshelf', '书架', topSide('planks', 'bookshelf'), 1.5, ToolType.AXE, {
+    flammable: true,
+  }),
   cube(BlockId.MOSSY_COBBLESTONE, 'mossy_cobblestone', '苔石', same('mossy_cobblestone'), 2, ToolType.PICKAXE, {
     minTier: ToolTier.WOOD,
   }),
@@ -365,6 +378,21 @@ export const BLOCK_DEFS: BlockDef[] = [
     minTier: ToolTier.DIAMOND,
     isBlastResistant: true,
   }),
+  {
+    id: BlockId.FIRE,
+    name: 'fire',
+    label: '火',
+    textures: same('fire'),
+    render: RenderType.CROSS,
+    shape: BlockShape.CROSS,
+    solid: false,
+    opaque: false,
+    hardness: 0,
+    tool: null,
+    light: 15,
+    drops: [],
+    noItem: true,
+  },
   {
     id: BlockId.TORCH,
     name: 'torch',

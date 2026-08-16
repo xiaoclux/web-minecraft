@@ -105,3 +105,16 @@ export const ARMOR_DURABILITY_DAMAGE_DIVISOR = 4;
 /** 着火时每隔多少 tick 掉多少血。 */
 export const FIRE_DAMAGE_INTERVAL_TICKS = 20;
 export const FIRE_DAMAGE = 1;
+
+/** 站进火里会被点燃多久。 */
+export const FIRE_TOUCH_BURN_TICKS = 160;
+/** 火每隔多少 tick 更新一次（1.8.9 是 30，随机 tick 命中太稀疏）。 */
+export const FIRE_TICK_INTERVAL = 30;
+/** 火：最大年龄、蔓延概率、烧掉脚下方块的概率。 */
+export const FIRE_MAX_AGE = 15;
+export const FIRE_SPREAD_CHANCE = 0.2;
+export const FIRE_CONSUME_CHANCE = 0.1;
+/** 火烧到这个年龄之后才会开始吃掉脚下的方块。 */
+export const FIRE_CONSUME_MIN_AGE = 5;
+/** 打火石耐久（1.8.9 为 65）。 */
+export const FLINT_AND_STEEL_DURABILITY = 65;

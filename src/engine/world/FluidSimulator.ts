@@ -12,17 +12,12 @@ import {
   WATER_TICK_INTERVAL,
   type FluidSpec,
 } from '../constants/fluids';
-import { CHUNK_SIZE, WORLD_SIZE_Y } from '../constants/world';
+import { CHUNK_SIZE } from '../constants/world';
 import type { Chunk } from './Chunk';
 import { sectionIndex } from './Chunk';
+import { packPos, unpackPos } from './posKey';
 import type { World } from './World';
 
-/** 位置打包为数字键：x/z 各占 ±2^21，y 占 64。 */
-const POS_OFFSET = 1 << 21;
-const POS_SPAN = 1 << 22;
-function packPos(x: number, y: number, z: number): number {
-  return ((x + POS_OFFSET) * POS_SPAN + (z + POS_OFFSET)) * WORLD_SIZE_Y + y;
-}
 
 const SIDES: readonly (readonly [number, number])[] = [
   [1, 0],
@@ -76,6 +71,8 @@ export class FluidSimulator {
   private readonly pendingByFluid = new Map<number, Set<number>>();
   /** 已经调用过多少次 tick，用来按各流体的间隔分频。 */
   private tickCount = 0;
+  /** unpackPos 的输出槽（避免每格分配数组）。 */
+  private readonly posOut = [0, 0, 0];
   private readonly washedListeners = new Set<WashedListener>();
 
   constructor(private readonly world: World) {
@@ -168,11 +165,8 @@ export class FluidSimulator {
       const batch = [...set];
       set.clear();
       for (const key of batch) {
-        const y = key % WORLD_SIZE_Y;
-        const rest = (key - y) / WORLD_SIZE_Y;
-        const z = (rest % POS_SPAN) - POS_OFFSET;
-        const x = (rest - (z + POS_OFFSET)) / POS_SPAN - POS_OFFSET;
-        this.updateFluid(x, y, z, spec);
+        unpackPos(key, this.posOut);
+        this.updateFluid(this.posOut[0], this.posOut[1], this.posOut[2], spec);
       }
     }
   }

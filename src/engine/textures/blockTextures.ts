@@ -341,6 +341,21 @@ const bedHeadEnd: Painter = (c, rng) => {
 /** 不挂在任何方块上、但需要进图集的贴图（粒子等）。 */
 export const EXTRA_TEXTURE_KEYS = ['particle_heart'] as const;
 
+/** 火：底部亮、顶部窄的橙黄火苗，其余透明。 */
+const fire: Painter = (c, rng) => {
+  c.fill(TRANSPARENT);
+  const outer = hex('#e05a12');
+  const inner = hex('#ffc24a');
+  for (let x = 0; x < 16; x++) {
+    const h = 6 + Math.round(Math.abs(Math.sin((x + 1) * 1.7)) * 9);
+    c.rect(x, 16 - h, 1, h, outer);
+    if (h > 8) {
+      c.rect(x, 16 - h + 4, 1, h - 4, inner);
+    }
+  }
+  c.speckle(hex('#ffe9a8'), 12, rng, 8, 16);
+};
+
 /** 岩浆：橙红底 + 亮黄斑块。 */
 const LAVA = hex('#d45a12');
 const lava: Painter = (c, rng) => {
@@ -622,6 +637,7 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   ladder,
   particle_heart: particleHeart,
   lava,
+  fire,
   door_lower: doorLower,
   door_upper: doorUpper,
   farmland_dry: farmlandDry,

@@ -1155,6 +1155,9 @@ export class Game implements EntityContext, ContainerHost {
     if (def.id === 'bucket' && this.tryMilkCow()) {
       return;
     }
+    if (def.id === 'flint_and_steel' && hit && this.tryIgnite(hit)) {
+      return;
+    }
     if (def.id === 'milk_bucket') {
       this.replaceHeldItem('bucket');
       this.sound.play('eat');
@@ -1176,6 +1179,24 @@ export class Game implements EntityContext, ContainerHost {
     if (def.kind === ItemKind.BLOCK && def.blockId !== undefined && hit) {
       this.tryPlaceBlock(def.blockId, hit);
     }
+  }
+
+  /** 打火石：在命中面外侧点一团火。 */
+  private tryIgnite(hit: RayHit): boolean {
+    if (!this.rules.canModifyBlocks) {
+      return false;
+    }
+    const px = hit.x + hit.nx;
+    const py = hit.y + hit.ny;
+    const pz = hit.z + hit.nz;
+    if (!this.world.inBounds(px, py, pz) || this.world.getBlock(px, py, pz) !== BlockId.AIR) {
+      return false;
+    }
+    this.world.setBlock(px, py, pz, BlockId.FIRE, 0);
+    this.sound.play('fuse', 0);
+    this.renderer.hand.swing();
+    this.damageHeldTool(1);
+    return true;
   }
 
   /** 空桶对着牛右键挤奶。 */

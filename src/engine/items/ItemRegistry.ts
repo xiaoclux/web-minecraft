@@ -1,5 +1,5 @@
 import { BLOCK_DEFS, ToolTier, ToolType, type BlockDef } from '../blocks/BlockRegistry';
-import { MAX_STACK } from '../constants/game';
+import { FLINT_AND_STEEL_DURABILITY, MAX_STACK } from '../constants/game';
 
 /** 物品种类。 */
 export const ItemKind = {
@@ -204,6 +204,8 @@ export const ITEM_DEFS: ItemDef[] = [
   material('snowball', '雪球', { maxStack: 16 }),
   material('bow', '弓', { maxStack: 1 }),
   material('shears', '剪刀', { maxStack: 1, durability: SHEARS_DURABILITY }),
+  material('flint', '燧石'),
+  material('flint_and_steel', '打火石', { maxStack: 1, durability: FLINT_AND_STEEL_DURABILITY }),
   material('bucket', '桶', { maxStack: 1 }),
   material('water_bucket', '水桶', { maxStack: 1 }),
   material('lava_bucket', '岩浆桶', { maxStack: 1 }),

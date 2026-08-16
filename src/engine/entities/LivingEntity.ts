@@ -3,6 +3,7 @@ import {
   FALL_DAMAGE_THRESHOLD,
   FIRE_DAMAGE,
   FIRE_DAMAGE_INTERVAL_TICKS,
+  FIRE_TOUCH_BURN_TICKS,
   INVULNERABLE_TICKS,
   KNOCKBACK_STRENGTH,
 } from '../constants/game';
@@ -71,6 +72,9 @@ export abstract class LivingEntity extends Entity {
    */
   protected tickFire(ctx: EntityContext): void {
     const box = this.box();
+    if (isBoxTouchingBlock(ctx.world, box, BlockId.FIRE)) {
+      this.setOnFire(FIRE_TOUCH_BURN_TICKS);
+    }
     if (isBoxTouchingBlock(ctx.world, box, BlockId.LAVA)) {
       this.setOnFire(LAVA_BURN_TICKS);
       this.lavaDamageTimer++;

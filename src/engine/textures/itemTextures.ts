@@ -318,6 +318,17 @@ const HAND_DRAWN_ICONS: Record<string, Painter> = {
     '................',
     '................',
   ]),
+  flint: (c) =>
+    c.draw(
+      ['..XX..', '.XXXX.', 'XXXXXX', 'XXXXXX', '.XXXX.', '..XX..'],
+      { X: hex('#4a4a52') },
+      5,
+      5,
+    ),
+  flint_and_steel: (c) => {
+    c.draw(['..XXX.', '.X...X', 'X.....', 'X.....', '.X...X', '..XXX.'], { X: hex('#c8c8c8') }, 3, 4);
+    c.draw(['XXX', 'XXX'], { X: hex('#4a4a52') }, 9, 9);
+  },
   bucket: bucketPainter(null),
   water_bucket: bucketPainter(hex('#3f60d6')),
   lava_bucket: bucketPainter(hex('#d45a12')),

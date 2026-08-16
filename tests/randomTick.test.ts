@@ -121,6 +121,41 @@ describe('随机 tick', () => {
     expect(world.getBlock(0, 10, 0)).toBe(BlockId.FARMLAND);
   });
 
+  it('没有支撑也没有燃料的火会熄灭', () => {
+    const world = emptyWorld(0);
+    world.setBlock(0, 10, 0, BlockId.FIRE, 0);
+    const system = new RandomTickSystem(host(world));
+    system.tickBlock(0, 10, 0);
+    expect(world.getBlock(0, 10, 0)).toBe(BlockId.AIR);
+  });
+
+  it('石头上的火会慢慢变老，烧完就灭', () => {
+    const world = emptyWorld(0);
+    world.setBlock(0, 10, 0, BlockId.STONE);
+    world.setBlock(0, 11, 0, BlockId.FIRE, 0);
+    const system = new RandomTickSystem(host(world));
+    expect(runUntil(system, [0, 11, 0], () => world.getBlock(0, 11, 0) === BlockId.AIR, 100)).toBe(true);
+  });
+
+  it('火会烧掉脚下的可燃方块', () => {
+    const world = emptyWorld(0);
+    world.setBlock(0, 10, 0, BlockId.PLANKS);
+    world.setBlock(0, 11, 0, BlockId.FIRE, 0);
+    const system = new RandomTickSystem(host(world));
+    expect(runUntil(system, [0, 11, 0], () => world.getBlock(0, 10, 0) === BlockId.AIR, 200)).toBe(true);
+  });
+
+  it('火会蔓延到紧挨可燃方块的空气里', () => {
+    const world = emptyWorld(0);
+    // 火烧在石头上（不会被吃掉），上方有木板当长期燃料，隔壁 (1,11,0) 是紧挨木板的空气
+    world.setBlock(0, 10, 0, BlockId.STONE);
+    world.setBlock(0, 11, 0, BlockId.FIRE, 0);
+    world.setBlock(0, 12, 0, BlockId.PLANKS);
+    world.setBlock(1, 10, 0, BlockId.PLANKS);
+    const system = new RandomTickSystem(host(world));
+    expect(runUntil(system, [0, 11, 0], () => world.getBlock(1, 11, 0) === BlockId.FIRE, 800)).toBe(true);
+  });
+
   it('上方被挡住的树苗不会长大', () => {
     const world = emptyWorld(0);
     world.setBlock(0, 10, 0, BlockId.DIRT);
