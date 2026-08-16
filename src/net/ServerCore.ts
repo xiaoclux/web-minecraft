@@ -10,7 +10,7 @@ import { CHUNK_SIZE } from '../engine/constants/world';
 import { serializeChunk } from '../engine/save/chunkSerializer';
 import type { ChunkManager } from '../engine/world/ChunkManager';
 import type { World } from '../engine/world/World';
-import { MessageType, decodeMessage, encodeMessage, type NetMessage } from './protocol';
+import { MessageType, decodeMessage, encodeMessage, type NetMessage, type SnapshotEntity } from './protocol';
 
 /** 一条与客户端的连接（WebSocket / DataChannel 都能包成这个样子）。 */
 export interface Connection {
@@ -50,10 +50,24 @@ export interface ServerWorldSource {
    * 没有这个回调的话主机看不到客人的聊天。
    */
   onBroadcast?(message: NetMessage): void;
+  /**
+   * 世界里当前的实体（生物 / 掉落物）。Node 专用服务端目前不跑生物 AI，可以不实现；
+   * 浏览器主机则把自己这局的实体给出来，客人才能看见怪。
+   */
+  entities?(): SnapshotEntity[];
+  /**
+   * 宿主自己的位置与名字。浏览器主机也是一名在场玩家，但它不占连接，
+   * 所以要单独告诉客人，否则客人看不到房主。
+   */
+  hostPlayer?(): { name: string; x: number; y: number; z: number; yaw: number; pitch: number };
 }
 
 /** 服务端每隔多少毫秒同步一次时间。 */
 export const TIME_SYNC_INTERVAL_MS = 5000;
+/** 房主的玩家 id（客人的 id 从 1 开始，0 留给房主）。 */
+export const HOST_PLAYER_ID = 0;
+/** 一次快照里最多带多少实体（避免一帧塞爆通道）。 */
+const MAX_SNAPSHOT_ENTITIES = 200;
 
 /**
  * 联机服务端。
@@ -178,6 +192,11 @@ export class ServerCore {
       y: spawn.y,
       z: spawn.z,
     });
+    // 房主也是一名玩家，只是不占连接
+    const host = this.source.hostPlayer?.();
+    if (host) {
+      this.send(player, { type: MessageType.PLAYER_JOIN, playerId: HOST_PLAYER_ID, name: host.name });
+    }
     // 把已经在线的人告诉新玩家
     for (const other of this.players.values()) {
       if (other.id !== player.id) {
@@ -228,6 +247,35 @@ export class ServerCore {
   /** 定时同步世界时间。 */
   syncTime(): void {
     this.broadcast({ type: MessageType.TIME_SYNC, timeTick: this.source.currentTime() });
+  }
+
+  /** 广播宿主自己的位置（浏览器主机用）。 */
+  syncHostPlayer(): void {
+    const host = this.source.hostPlayer?.();
+    if (!host || this.players.size === 0) {
+      return;
+    }
+    this.broadcast({
+      type: MessageType.PLAYER_MOVE,
+      playerId: HOST_PLAYER_ID,
+      x: host.x,
+      y: host.y,
+      z: host.z,
+      yaw: host.yaw,
+      pitch: host.pitch,
+    });
+  }
+
+  /** 定时广播实体快照（生物 / 掉落物）。 */
+  syncEntities(): void {
+    const entities = this.source.entities?.();
+    if (!entities) {
+      return;
+    }
+    this.broadcast({
+      type: MessageType.ENTITY_SNAPSHOT,
+      entities: entities.length > MAX_SNAPSHOT_ENTITIES ? entities.slice(0, MAX_SNAPSHOT_ENTITIES) : entities,
+    });
   }
 
   /** 给所有人发一条消息。 */

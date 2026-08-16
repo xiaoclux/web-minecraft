@@ -4,7 +4,7 @@ import { LightEngine } from '../src/engine/world/LightEngine';
 import { ChunkManager } from '../src/engine/world/ChunkManager';
 import { FlatGenerator } from '../src/engine/world/FlatGenerator';
 import { World } from '../src/engine/world/World';
-import { ServerCore, type Connection, type ServerWorldSource } from '../src/net/ServerCore';
+import { HOST_PLAYER_ID, ServerCore, type Connection, type ServerWorldSource } from '../src/net/ServerCore';
 import { MessageType, decodeMessage, encodeMessage, type NetMessage } from '../src/net/protocol';
 
 /** 一个把收到的消息记下来的假连接。 */
@@ -192,5 +192,48 @@ describe('浏览器主机', () => {
     server.handleMessage(guest.id, encodeMessage({ type: MessageType.CHAT, text: '你好' }));
     expect(seen).toContain('客人 加入了游戏');
     expect(seen).toContain('<客人> 你好');
+  });
+});
+
+describe('房主作为玩家', () => {
+  function hostServer() {
+    const world = new World(true);
+    const generator = new FlatGenerator('host', false);
+    const light = new LightEngine(world);
+    const chunkManager = new ChunkManager(world, generator, light);
+    return new ServerCore({
+      world,
+      chunkManager,
+      seed: 'host',
+      worldType: 'flat',
+      currentTime: () => 0,
+      spawnPoint: () => ({ x: 0, y: 5, z: 0 }),
+      hostPlayer: () => ({ name: '房主', x: 1, y: 2, z: 3, yaw: 0.5, pitch: 0 }),
+    });
+  }
+
+  it('客人加入时会看到房主', () => {
+    const server = hostServer();
+    const guest = join(server, '客人');
+    const joins = guest.conn.ofType(MessageType.PLAYER_JOIN);
+    expect(joins.map((m) => m.name)).toContain('房主');
+    expect(joins.find((m) => m.name === '房主')?.playerId).toBe(HOST_PLAYER_ID);
+  });
+
+  it('房主的位置会同步给客人', () => {
+    const server = hostServer();
+    const guest = join(server, '客人');
+    guest.conn.received.length = 0;
+    server.syncHostPlayer();
+    const move = guest.conn.ofType(MessageType.PLAYER_MOVE)[0];
+    expect(move.playerId).toBe(HOST_PLAYER_ID);
+    expect(move.x).toBeCloseTo(1);
+    expect(move.z).toBeCloseTo(3);
+  });
+
+  it('没人在线时不必广播房主位置', () => {
+    const server = hostServer();
+    // 没有客人，不该抛异常
+    expect(() => server.syncHostPlayer()).not.toThrow();
   });
 });

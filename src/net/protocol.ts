@@ -41,6 +41,8 @@ export const MessageType = {
   CHAT_BROADCAST: 26,
   /** 世界时间同步。 */
   TIME_SYNC: 27,
+  /** 附近实体的快照（生物 / 掉落物）。 */
+  ENTITY_SNAPSHOT: 28,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
@@ -153,6 +155,22 @@ export interface TimeSyncMessage {
   timeTick: number;
 }
 
+/** 快照里的一个实体。 */
+export interface SnapshotEntity {
+  id: number;
+  /** 实体类型（生物种类 / item / xp_orb 等）。 */
+  kind: string;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+}
+
+export interface EntitySnapshotMessage {
+  type: typeof MessageType.ENTITY_SNAPSHOT;
+  entities: SnapshotEntity[];
+}
+
 /** 任意一条协议消息。 */
 export type NetMessage =
   | HelloMessage
@@ -168,7 +186,8 @@ export type NetMessage =
   | PlayerLeaveMessage
   | PlayerMoveMessage
   | ChatBroadcastMessage
-  | TimeSyncMessage;
+  | TimeSyncMessage
+  | EntitySnapshotMessage;
 
 // ---------------------------------------------------------------- 编码
 
@@ -382,6 +401,17 @@ export function encodeMessage(message: NetMessage): Uint8Array {
     case MessageType.TIME_SYNC:
       w.u32(message.timeTick);
       break;
+    case MessageType.ENTITY_SNAPSHOT:
+      w.u16(message.entities.length);
+      for (const entity of message.entities) {
+        w.u32(entity.id);
+        w.str(entity.kind, MAX_NAME_BYTES);
+        w.f32(entity.x);
+        w.f32(entity.y);
+        w.f32(entity.z);
+        w.f32(entity.yaw);
+      }
+      break;
     default:
       throw new Error(`未知消息类型：${(message as { type: number }).type}`);
   }
@@ -479,6 +509,14 @@ function decodeBody(r: Reader, type: number): NetMessage | null {
       return { type: MessageType.CHAT_BROADCAST, text: r.str() };
     case MessageType.TIME_SYNC:
       return { type: MessageType.TIME_SYNC, timeTick: r.u32() };
+    case MessageType.ENTITY_SNAPSHOT: {
+      const count = r.u16();
+      const entities: SnapshotEntity[] = [];
+      for (let i = 0; i < count; i++) {
+        entities.push({ id: r.u32(), kind: r.str(), x: r.f32(), y: r.f32(), z: r.f32(), yaw: r.f32() });
+      }
+      return { type: MessageType.ENTITY_SNAPSHOT, entities };
+    }
     default:
       return null;
   }

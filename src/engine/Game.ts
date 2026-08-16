@@ -214,7 +214,7 @@ import { SaveManager, type WorldMeta, type WorldSave } from './save/SaveManager'
 import { TextureAtlas } from './textures/TextureAtlas';
 import { createRng, hashString } from './textures/PixelCanvas';
 import type { Chunk } from './world/Chunk';
-import { toChunkCoord } from './world/Chunk';
+import { chunkKey, toChunkCoord } from './world/Chunk';
 import { createDimensionGenerator, type ChunkGenerator } from './world/ChunkGenerator';
 import { ChunkManager } from './world/ChunkManager';
 import { FluidSimulator } from './world/FluidSimulator';
@@ -313,8 +313,9 @@ const CRYSTAL_HIT_TOLERANCE = 1.5;
 const CRYSTAL_EXTRA_REACH = 3;
 /** 末影水晶治疗末影龙的距离平方。 */
 const CRYSTAL_HEAL_RANGE_SQ = ENDER_CRYSTAL_HEAL_RANGE * ENDER_CRYSTAL_HEAL_RANGE;
-/** 作为主机时多久给客人同步一次时间。 */
+/** 作为主机时多久给客人同步一次时间与实体快照。 */
 const HOST_TIME_SYNC_TICKS = 100;
+const HOST_ENTITY_SYNC_TICKS = 4;
 /** 聊天栏最多保留多少行与多少条历史输入。 */
 const CHAT_MESSAGE_LIMIT = 60;
 const CHAT_HISTORY_LIMIT = 30;
@@ -529,6 +530,8 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   private hostServer: ServerCore | null = null;
   /** 正在等待回应码的那次邀请。 */
   private pendingInvite: RtcInvite | null = null;
+  /** 已经收到服务端真数据的 chunk（本地空占位不算）。 */
+  private readonly receivedChunks = new Set<number>();
   /** 连接建立前攒下的 chunk 请求。 */
   private readonly pendingChunkRequests: [number, number][] = [];
   /** 正在应用服务端下发的方块变更（避免又把它当成本地意图发回去）。 */
@@ -922,6 +925,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.renderer.chunks.update(this.player.x, this.player.z);
     const minLight = this.minLight();
     this.renderer.entities.updateRemotePlayers(this.remotePlayers);
+    // 联机客户端的生物 / 掉落物都来自服务端快照
+    if (this.net) {
+      this.renderer.entities.updateRemoteEntities(this.net.entities);
+    }
     this.renderer.entities.update(
       this.entities.values(),
       this.renderer.sky.skyLevel,
@@ -1313,6 +1320,9 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       onPlayersChanged: () => {
         /* 渲染时直接读 remotePlayers，这里不用做别的 */
       },
+      onEntitySnapshot: () => {
+        /* 渲染时直接读 net.entities，这里不用做别的 */
+      },
       onDisconnect: () => {
         this.net = null;
         this.reply('与服务端的连接已断开');
@@ -1351,6 +1361,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   private onNetChunkData(cx: number, cz: number, blocks: Uint32Array, meta: Uint32Array): void {
     const chunk = deserializeChunk({ cx, cz, blocks, meta }, this.world.hasSkyLight);
     this.chunkManager.addLoadedChunk(chunk);
+    this.receivedChunks.add(chunkKey(cx, cz));
   }
 
   /** 服务端确认的方块变更（包括自己刚才那一下）。 */
@@ -1375,8 +1386,15 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
 
   /** 作为主机时定期给客人同步时间。 */
   private tickHosting(): void {
-    if (this.hostServer && this.tick % HOST_TIME_SYNC_TICKS === 0) {
+    if (!this.hostServer) {
+      return;
+    }
+    if (this.tick % HOST_TIME_SYNC_TICKS === 0) {
       this.hostServer.syncTime();
+    }
+    if (this.tick % HOST_ENTITY_SYNC_TICKS === 0) {
+      this.hostServer.syncEntities();
+      this.hostServer.syncHostPlayer();
     }
   }
 
@@ -1420,6 +1438,18 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       worldType: this.meta.worldType ?? WorldType.DEFAULT,
       currentTime: () => this.timeTick,
       spawnPoint: () => ({ x: this.player.x, y: this.player.y, z: this.player.z }),
+      hostPlayer: () => ({
+        name: '房主',
+        x: this.player.x,
+        y: this.player.y,
+        z: this.player.z,
+        yaw: this.player.yaw,
+        pitch: this.player.pitch,
+      }),
+      entities: () =>
+        [...this.entities.values()]
+          .filter((e) => !e.isDead)
+          .map((e) => ({ id: e.id, kind: e.type, x: e.x, y: e.y, z: e.z, yaw: e.yaw })),
       onBroadcast: (message) => {
         // 主机自己不在服务端的玩家表里，聊天要单独显示一份
         if (message.type === MessageType.CHAT_BROADCAST) {
@@ -1814,6 +1844,19 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.player.vx = 0;
     this.player.vy = 0;
     this.player.vz = 0;
+  }
+
+  /**
+   * 联机客户端：脚下那块地还没从服务端到达。
+   * 只看 hasChunkAt 不够 —— 本地那个空占位 chunk 也算"已加载"，人照样会掉下去。
+   */
+  private isWaitingForTerrain(): boolean {
+    if (!this.isNetworkClient) {
+      return false;
+    }
+    const cx = toChunkCoord(Math.floor(this.player.x));
+    const cz = toChunkCoord(Math.floor(this.player.z));
+    return !this.receivedChunks.has(chunkKey(cx, cz));
   }
 
   /** 玩家是不是在矿车上（移动逻辑要跳过自己走路）。 */
@@ -2626,6 +2669,14 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     const p = this.player;
     p.yaw = this.controls.yaw;
     p.pitch = this.controls.pitch;
+    // 联机刚进场时地形还在路上，先把人悬在原地，别让他掉进虚空摔死
+    if (this.isWaitingForTerrain()) {
+      p.vx = 0;
+      p.vy = 0;
+      p.vz = 0;
+      p.fallDistance = 0;
+      return;
+    }
     if (p.health <= 0) {
       p.move(this, dt);
       return;

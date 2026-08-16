@@ -46,7 +46,8 @@
   （`npm run server -- --port 8080 --seed 我的世界`，启动后打印局域网地址）；
   主菜单「多人游戏」填地址即可加入，地形全部来自服务端，能看到其他玩家的模型、共享方块改动与聊天。
   也可以不开服务端：主机在暂停菜单「对局域网开放」生成房间码，朋友在主菜单「用房间码加入」
-  粘贴后把回应码发回来即可 —— WebRTC 直连，不经过任何中转服务器
+  粘贴后把回应码发回来即可 —— WebRTC 直连，不经过任何中转服务器。
+  联机时生物与掉落物按快照同步给客人，其他玩家头顶有名牌；刚加入时会等地形到位再落地，不会摔进虚空
 - **聊天与指令**：T 打开聊天栏、`/` 直接输指令，支持上下键翻历史与 Tab 补全指令名；
   18 条指令：/help /gamemode /tp（支持 ~ 相对坐标）/time /weather /difficulty /give /clear /kill /xp
   /effect /enchant /setblock /fill /summon /spawnpoint /seed /gamerule /say

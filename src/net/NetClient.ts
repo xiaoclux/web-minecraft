@@ -5,7 +5,14 @@
  * 这样所有人看到的世界一定一致（局域网延迟很低，手感上几乎察觉不到）。
  */
 
-import { MessageType, decodeMessage, encodeMessage, type NetMessage, type WelcomeMessage } from './protocol';
+import {
+  MessageType,
+  decodeMessage,
+  encodeMessage,
+  type NetMessage,
+  type SnapshotEntity,
+  type WelcomeMessage,
+} from './protocol';
 
 /** 一条到服务端的连接（WebSocket 或 DataChannel）。 */
 export interface ClientTransport {
@@ -42,6 +49,8 @@ export interface NetClientHandlers {
   onTimeSync(timeTick: number): void;
   /** 玩家列表有变化（加入 / 离开 / 移动）。 */
   onPlayersChanged(): void;
+  /** 收到实体快照。 */
+  onEntitySnapshot(entities: readonly SnapshotEntity[]): void;
   /** 连接断开。 */
   onDisconnect(): void;
 }
@@ -53,6 +62,7 @@ export const MOVE_REPORT_INTERVAL_TICKS = 2;
 export class NetClient {
   private readonly players = new Map<number, RemotePlayer>();
   private selfId = 0;
+  private remoteEntities: readonly SnapshotEntity[] = [];
   private connected = true;
 
   constructor(
@@ -81,6 +91,11 @@ export class NetClient {
   /** 其他玩家（不含自己）。 */
   get remotePlayers(): readonly RemotePlayer[] {
     return [...this.players.values()];
+  }
+
+  /** 服务端最近一次快照里的实体。 */
+  get entities(): readonly SnapshotEntity[] {
+    return this.remoteEntities;
   }
 
   private handle(bytes: Uint8Array): void {
@@ -132,6 +147,10 @@ export class NetClient {
         break;
       case MessageType.TIME_SYNC:
         this.handlers.onTimeSync(message.timeTick);
+        break;
+      case MessageType.ENTITY_SNAPSHOT:
+        this.remoteEntities = message.entities;
+        this.handlers.onEntitySnapshot(message.entities);
         break;
       default:
         // C→S 的消息不该由服务端发过来，忽略

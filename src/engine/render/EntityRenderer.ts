@@ -14,6 +14,7 @@ import { WitherSkullEntity } from '../entities/WitherSkullEntity';
 import { MinecartEntity } from '../entities/MinecartEntity';
 import type { ItemStack } from '../items/ItemStack';
 import { Mob } from '../entities/Mob';
+import { isMobType } from '../entities/MobDefs';
 import { getItem, ItemKind } from '../items/ItemRegistry';
 import { PixelCanvas, createRng, hashString, hex } from '../textures/PixelCanvas';
 import { paintBlockTexture } from '../textures/blockTextures';
@@ -36,6 +37,14 @@ const ARROW_LENGTH = 0.6;
 const XP_ORB_COLOR = 0x8fff26;
 const XP_ORB_PULSE_SPEED = 6;
 const ARROW_THICKNESS = 0.06;
+/** 名牌：画布尺寸、字号、世界里的大小与离脚底的高度。 */
+const NAMEPLATE_CANVAS_WIDTH = 256;
+const NAMEPLATE_CANVAS_HEIGHT = 64;
+const NAMEPLATE_FONT_PX = 40;
+const NAMEPLATE_MAX_CHARS = 12;
+const NAMEPLATE_WORLD_WIDTH = 1.6;
+const NAMEPLATE_WORLD_HEIGHT = 0.4;
+const NAMEPLATE_HEIGHT = 2.2;
 /** 末影水晶的渲染尺寸。 */
 const CRYSTAL_RENDER_SIZE = 1.2;
 /** 末影龙即使在暗处也保留一点可见度。 */
@@ -55,6 +64,8 @@ export class EntityRenderer {
   private readonly rendered = new Map<number, RenderedEntity>();
   /** 其他玩家的模型（联机）。 */
   private readonly remotePlayers = new Map<number, RenderedEntity>();
+  /** 服务端同步过来的实体模型（联机客户端用）。 */
+  private readonly remoteEntities = new Map<number, RenderedEntity>();
   private readonly textureCache = new Map<string, THREE.Texture>();
   private readonly geometryCache = new Map<string, THREE.BoxGeometry>();
 
@@ -63,13 +74,15 @@ export class EntityRenderer {
   /**
    * 更新其他玩家的模型（联机用）。用与僵尸同款的人形模型，只是配色不同。
    */
-  updateRemotePlayers(players: readonly { id: number; x: number; y: number; z: number; yaw: number }[]): void {
+  updateRemotePlayers(
+    players: readonly { id: number; name: string; x: number; y: number; z: number; yaw: number }[],
+  ): void {
     const alive = new Set<number>();
     for (const player of players) {
       alive.add(player.id);
       let rendered = this.remotePlayers.get(player.id);
       if (!rendered) {
-        rendered = this.createRemotePlayer();
+        rendered = this.createRemotePlayer(player.name);
         this.group.add(rendered.group);
         this.remotePlayers.set(player.id, rendered);
       }
@@ -87,8 +100,76 @@ export class EntityRenderer {
     }
   }
 
+  /**
+   * 画服务端同步过来的实体（生物 / 掉落物）。这些实体在本地没有逻辑，只有位置与朝向。
+   */
+  updateRemoteEntities(entities: readonly { id: number; kind: string; x: number; y: number; z: number; yaw: number }[]): void {
+    const alive = new Set<number>();
+    for (const entity of entities) {
+      alive.add(entity.id);
+      let rendered = this.remoteEntities.get(entity.id);
+      if (!rendered) {
+        const created = this.createRemoteEntity(entity.kind);
+        if (!created) {
+          continue;
+        }
+        rendered = created;
+        this.group.add(rendered.group);
+        this.remoteEntities.set(entity.id, rendered);
+      }
+      rendered.group.position.set(entity.x, entity.y, entity.z);
+      rendered.group.rotation.set(0, entity.yaw, 0);
+    }
+    for (const [id, rendered] of this.remoteEntities) {
+      if (!alive.has(id)) {
+        this.group.remove(rendered.group);
+        for (const m of rendered.materials) {
+          m.dispose();
+        }
+        this.remoteEntities.delete(id);
+      }
+    }
+  }
+
+  /** 按类型造一个只用来看的实体模型；不认识的类型返回 null。 */
+  private createRemoteEntity(kind: string): RenderedEntity | null {
+    if (isMobType(kind)) {
+      // 借用生物模型：只需要类型与"有没有毛"，这里都按默认值来
+      const fake = new Mob(kind);
+      return this.createMob(fake);
+    }
+    if (kind === 'item' || kind === 'xp_orb') {
+      const group = new THREE.Group();
+      const m = new THREE.MeshLambertMaterial({ color: kind === 'xp_orb' ? 0x8ce63a : 0xd0d0d0 });
+      const size = kind === 'xp_orb' ? 0.2 : 0.3;
+      group.add(new THREE.Mesh(this.boxGeometry(size, size, size), m));
+      return { group, parts: [], materials: [m], kind: 'item' };
+    }
+    return null;
+  }
+
   /** 其他玩家的模型：头 + 身体 + 四肢的简化 Steve。 */
-  private createRemotePlayer(): RenderedEntity {
+  /** 名牌：把名字画到一张小画布上，用 Sprite 贴在头顶（始终朝向相机）。 */
+  private createNameplate(name: string): THREE.Sprite {
+    const canvas = document.createElement('canvas');
+    canvas.width = NAMEPLATE_CANVAS_WIDTH;
+    canvas.height = NAMEPLATE_CANVAS_HEIGHT;
+    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `${NAMEPLATE_FONT_PX}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name.slice(0, NAMEPLATE_MAX_CHARS), canvas.width / 2, canvas.height / 2);
+    const texture = new THREE.CanvasTexture(canvas);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false }));
+    sprite.scale.set(NAMEPLATE_WORLD_WIDTH, NAMEPLATE_WORLD_HEIGHT, 1);
+    sprite.position.y = NAMEPLATE_HEIGHT;
+    return sprite;
+  }
+
+  private createRemotePlayer(name: string): RenderedEntity {
     const group = new THREE.Group();
     const skin = new THREE.MeshLambertMaterial({ color: 0xc98d63 });
     const shirt = new THREE.MeshLambertMaterial({ color: 0x2e8b8b });
@@ -105,7 +186,7 @@ export class EntityRenderer {
     legL.position.set(0.125, 0.375, 0);
     const legR = legL.clone();
     legR.position.x = -0.125;
-    group.add(head, body, armL, armR, legL, legR);
+    group.add(head, body, armL, armR, legL, legR, this.createNameplate(name));
     return { group, parts: [], materials: [skin, shirt, pants], kind: 'mob' };
   }
 

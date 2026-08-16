@@ -48,6 +48,7 @@ function setup(): { transport: FakeTransport; client: NetClient; handlers: NetCl
     onChat: vi.fn(),
     onTimeSync: vi.fn(),
     onPlayersChanged: vi.fn(),
+    onEntitySnapshot: vi.fn(),
     onDisconnect: vi.fn(),
   };
   const client = new NetClient(transport, handlers, '小明');
