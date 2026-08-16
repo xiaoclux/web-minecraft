@@ -4,6 +4,7 @@ import { CHUNK_SIZE, SEA_LEVEL, WORLD_SIZE_Y } from '../constants/world';
 import { createRng, hashCoords, hashString } from '../textures/PixelCanvas';
 import type { Chunk } from './Chunk';
 import type { ChunkGenerator, SpawnPoint } from './ChunkGenerator';
+import { DesertTempleGenerator } from './structures/DesertTempleGenerator';
 import { DungeonGenerator } from './structures/DungeonGenerator';
 import { VillageGenerator, VillageStyle } from './structures/VillageGenerator';
 import {
@@ -127,6 +128,7 @@ export class TerrainGenerator implements ChunkGenerator {
   /** 村庄生成器（关闭结构时为 null）。 */
   readonly villages: VillageGenerator | null;
   private readonly dungeons: DungeonGenerator | null;
+  private readonly temples: DesertTempleGenerator | null;
   private readonly columnCache = new Map<number, ColumnInfo>();
 
   constructor(
@@ -142,6 +144,13 @@ export class TerrainGenerator implements ChunkGenerator {
     this.cave = createNoise3D(createRng(this.base + 6));
     this.dungeons = generateStructures
       ? new DungeonGenerator(seed, (x, y, z) => y < this.heightAt(x, z) - DUNGEON_MIN_COVER)
+      : null;
+    this.temples = generateStructures
+      ? new DesertTempleGenerator(
+          seed,
+          (x, z) => this.heightAt(x, z),
+          (x, z) => this.biomeAt(x, z) === Biome.DESERT,
+        )
       : null;
     this.villages = generateStructures
       ? new VillageGenerator(
@@ -169,7 +178,7 @@ export class TerrainGenerator implements ChunkGenerator {
 
   /** 某列是否被村庄建筑占用。 */
   private isReservedColumn(x: number, z: number): boolean {
-    return this.villages?.isReserved(x, z) ?? false;
+    return (this.villages?.isReserved(x, z) ?? false) || (this.temples?.isReserved(x, z) ?? false);
   }
 
   /** 位置相关的确定性随机数生成器。 */
@@ -255,6 +264,7 @@ export class TerrainGenerator implements ChunkGenerator {
     this.generatePlants(chunk);
     this.generateSandPlants(chunk);
     this.dungeons?.placeInChunk(chunk);
+    this.temples?.placeInChunk(chunk);
     this.villages?.placeInChunk(chunk);
   }
 
