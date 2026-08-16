@@ -54,6 +54,11 @@ const shapeless = (ingredients: string[], result: string, count = 1): ShapelessR
   result: createStack(result, count),
 });
 
+/** 三种石头变种各自能磨成磨制版（2×2 出 4 个）。 */
+function polishedStoneRecipes(): Recipe[] {
+  return ['granite', 'diorite', 'andesite'].map((id) => shaped(['SS', 'SS'], { S: id }, `polished_${id}`, 4));
+}
+
 /** 每种原木都能砍成同种木板。 */
 function woodRecipes(): Recipe[] {
   return LOG_ITEM_IDS.map((logId, index) => shapeless([logId], PLANK_ITEM_IDS[index], 4));
@@ -152,6 +157,7 @@ export const RECIPES: Recipe[] = [
   shapeless(['melon_slice'], 'wheat_seeds'),
   shaped(['MMM', 'MMM', 'MMM'], { M: 'melon_slice' }, 'melon'),
   ...woodRecipes(),
+  ...polishedStoneRecipes(),
   ...toolRecipes(),
   ...slabAndStairsRecipes(),
   ...armorRecipes(),

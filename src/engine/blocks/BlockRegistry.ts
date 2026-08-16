@@ -65,6 +65,8 @@ export interface BlockVariant {
   name: string;
   label: string;
   textures: BlockFaceTextures;
+  /** 掉落表；不填则掉自己（石头变种里只有原版石头掉圆石）。 */
+  drops?: BlockDrop[];
 }
 
 /** 变种序号的默认掩码（meta 低 4 位）。 */
@@ -202,6 +204,13 @@ export const BlockId = {
 } as const;
 export type BlockId = (typeof BlockId)[keyof typeof BlockId];
 
+/** 三种石头变种的 id 与中文名（贴图在 blockTextures 里按同样的 id 生成）。 */
+const STONE_VARIANTS: readonly { id: string; label: string }[] = [
+  { id: 'granite', label: '花岗岩' },
+  { id: 'diorite', label: '闪长岩' },
+  { id: 'andesite', label: '安山岩' },
+];
+
 /** 六种木材的 id 与中文名（贴图在 blockTextures.WOOD_TYPES 里按同样的 id 生成）。 */
 const WOOD_VARIANTS: readonly { id: string; label: string }[] = [
   { id: 'oak', label: '橡木' },
@@ -309,7 +318,14 @@ export const BLOCK_DEFS: BlockDef[] = [
   },
   cube(BlockId.STONE, 'stone', '石头', same('stone'), 1.5, ToolType.PICKAXE, {
     minTier: ToolTier.WOOD,
-    drops: [{ item: 'cobblestone', min: 1, max: 1 }],
+    // 只有原版石头掉圆石，三种变种及其磨制版都掉自己
+    variants: [
+      { name: 'stone', label: '石头', textures: same('stone'), drops: [{ item: 'cobblestone', min: 1, max: 1 }] },
+      ...STONE_VARIANTS.flatMap((v) => [
+        { name: v.id, label: v.label, textures: same(v.id) },
+        { name: `polished_${v.id}`, label: `磨制${v.label}`, textures: same(`polished_${v.id}`) },
+      ]),
+    ],
   }),
   cube(BlockId.GRASS, 'grass_block', '草方块', topSide('grass_top', 'grass_side', 'dirt'), 0.6, ToolType.SHOVEL, {
     drops: [{ item: 'dirt', min: 1, max: 1 }],

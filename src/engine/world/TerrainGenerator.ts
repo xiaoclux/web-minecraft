@@ -62,6 +62,8 @@ const Salt = {
 /** 矿脉配置。 */
 interface OreConfig {
   block: number;
+  /** 写入的 meta（方块变种，如石头变种）。 */
+  meta?: number;
   minY: number;
   maxY: number;
   /** 每 chunk 尝试次数。 */
@@ -70,6 +72,10 @@ interface OreConfig {
 }
 /** 矿脉分布高度取自 1.8.9（煤 ≤128、铁 ≤64、金 ≤32、钻石 ≤16）。 */
 const ORES: OreConfig[] = [
+  // 三种石头变种按 1.8.9 的方式当作大矿脉散布在石头里（meta 1/3/5 = 花岗岩/闪长岩/安山岩）
+  { block: BlockId.STONE, meta: 1, minY: 1, maxY: 80, attempts: 10, size: 33 },
+  { block: BlockId.STONE, meta: 3, minY: 1, maxY: 80, attempts: 10, size: 33 },
+  { block: BlockId.STONE, meta: 5, minY: 1, maxY: 80, attempts: 10, size: 33 },
   { block: BlockId.COAL_ORE, minY: 5, maxY: 128, attempts: 20, size: 10 },
   { block: BlockId.IRON_ORE, minY: 2, maxY: 64, attempts: 16, size: 6 },
   { block: BlockId.GOLD_ORE, minY: 2, maxY: 32, attempts: 3, size: 5 },
@@ -308,7 +314,7 @@ export class TerrainGenerator implements ChunkGenerator {
     let pz = z;
     for (let i = 0; i < ore.size; i++) {
       if (chunk.getWorld(px, py, pz) === BlockId.STONE) {
-        chunk.setWorld(px, py, pz, ore.block);
+        chunk.setWorld(px, py, pz, ore.block, ore.meta ?? 0);
       }
       px += Math.floor(rng() * 3) - 1;
       py += Math.floor(rng() * 3) - 1;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bytesEqual, collectBlockIds, generateArea } from './helpers';
-import { BlockId } from '../src/engine/blocks/BlockRegistry';
+import { BlockId, getBlockByName } from '../src/engine/blocks/BlockRegistry';
+import { rollDrops } from '../src/engine/blocks/blockBreaking';
 import { CHUNK_SIZE, SEA_LEVEL, WorldType } from '../src/engine/constants/world';
 import { Chunk } from '../src/engine/world/Chunk';
 import { createChunkGenerator } from '../src/engine/world/ChunkGenerator';
@@ -103,5 +104,31 @@ describe('地下岩浆', () => {
     }
     expect(deepLava).toBeGreaterThan(0);
     expect(shallowLava).toBe(0);
+  });
+});
+
+describe('石头变种', () => {
+  it('地下会生成花岗岩 / 闪长岩 / 安山岩，且只有原版石头掉圆石', () => {
+    const world = generateArea(new TerrainGenerator('stone-variants'), -2, 2);
+    const metas = new Set<number>();
+    for (const chunk of world.chunks.values()) {
+      for (let y = 1; y < 80; y++) {
+        for (let lz = 0; lz < 16; lz++) {
+          for (let lx = 0; lx < 16; lx++) {
+            if (chunk.getLocal(lx, y, lz) === BlockId.STONE) {
+              metas.add(chunk.getLocalMeta(lx, y, lz));
+            }
+          }
+        }
+      }
+    }
+    for (const meta of [0, 1, 3, 5]) {
+      expect(metas.has(meta), `meta ${meta}`).toBe(true);
+    }
+    const stone = getBlockByName('stone')!;
+    const pick = { id: 'iron_pickaxe', count: 1 };
+    expect(rollDrops(stone, 0, pick, () => 0)[0].id).toBe('cobblestone');
+    expect(rollDrops(stone, 1, pick, () => 0)[0].id).toBe('granite');
+    expect(rollDrops(stone, 2, pick, () => 0)[0].id).toBe('polished_granite');
   });
 });

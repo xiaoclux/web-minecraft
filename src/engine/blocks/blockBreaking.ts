@@ -39,7 +39,8 @@ export function rollDrops(def: BlockDef, meta: number, held: ItemStack | null, r
   if (!canHarvest(def, held)) {
     return [];
   }
-  const table: BlockDrop[] = def.drops ?? [{ item: blockVariant(def, meta).name, min: 1, max: 1 }];
+  const variant = blockVariant(def, meta);
+  const table: BlockDrop[] = variant.drops ?? def.drops ?? [{ item: variant.name, min: 1, max: 1 }];
   const out: ItemStack[] = [];
   for (const drop of table) {
     if (drop.chance !== undefined && random() > drop.chance) {

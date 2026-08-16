@@ -550,6 +550,36 @@ function saplingOf(color: Rgba): Painter {
 }
 const sapling: Painter = saplingOf(hex('#3d7a24'));
 
+/** 石头变种：底色 + 两种斑点色；磨制版斑点更少更规整。 */
+function speckledStone(base: Rgba, light: Rgba, dark: Rgba, polished: boolean): Painter {
+  return (c, rng) => {
+    c.noise(base, polished ? 0.04 : 0.1, rng);
+    c.speckle(light, polished ? 8 : 30, rng);
+    c.speckle(dark, polished ? 6 : 24, rng);
+    if (polished) {
+      c.rect(0, 0, 16, 1, shade(base, 1.15));
+      c.rect(0, 15, 16, 1, shade(base, 0.85));
+    }
+  };
+}
+
+/** 三种石头变种（与 1.8.9 一致）：花岗岩偏红、闪长岩偏白、安山岩偏灰。 */
+export const STONE_VARIANT_COLORS = [
+  { id: 'granite', label: '花岗岩', base: hex('#9a6a55'), light: hex('#b98c72'), dark: hex('#7a4f3e') },
+  { id: 'diorite', label: '闪长岩', base: hex('#cfcfcf'), light: hex('#f0f0f0'), dark: hex('#8a8a8a') },
+  { id: 'andesite', label: '安山岩', base: hex('#8a8a8a'), light: hex('#a8a8a8'), dark: hex('#6a6a6a') },
+] as const;
+
+/** 三种石头变种及其磨制版的贴图。 */
+function stoneVariantTextures(): Record<string, Painter> {
+  const out: Record<string, Painter> = {};
+  for (const v of STONE_VARIANT_COLORS) {
+    out[v.id] = speckledStone(v.base, v.light, v.dark, false);
+    out[`polished_${v.id}`] = speckledStone(v.base, v.light, v.dark, true);
+  }
+  return out;
+}
+
 /**
  * 六种木材（与 1.8.9 一致）的配色，据此批量生成木板 / 原木 / 树叶 / 树苗贴图。
  * 贴图 key 形如 `planks_spruce`、`log_side_birch`。
@@ -681,6 +711,7 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   furnace_front: furnaceFront,
   furnace_side: furnaceSide,
   ...woodTextures(),
+  ...stoneVariantTextures(),
   chest_top: chestTop,
   chest_front: chestFront,
   chest_side: chestSide,
