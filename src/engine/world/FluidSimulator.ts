@@ -1,11 +1,16 @@
 import { BlockId, getBlock } from '../blocks/BlockRegistry';
 import {
+  LAVA_FLOW_SEARCH_RANGE,
+  LAVA_MAX_LEVEL,
+  LAVA_TICK_INTERVAL,
   WATER_FALLING_META,
   WATER_FLOW_BLOCKED_COST,
   WATER_FLOW_SEARCH_RANGE,
   WATER_INFINITE_SOURCE_COUNT,
   WATER_MAX_LEVEL,
   WATER_SOURCE_META,
+  WATER_TICK_INTERVAL,
+  type FluidSpec,
 } from '../constants/fluids';
 import { CHUNK_SIZE, WORLD_SIZE_Y } from '../constants/world';
 import type { Chunk } from './Chunk';
@@ -34,16 +39,43 @@ const NEIGHBORS: readonly (readonly [number, number, number])[] = [
   [0, 0, -1],
 ];
 
-/** 被水冲走的方块回调（用于掉落植物等）。 */
+/** 被流体冲走的方块回调（用于掉落植物等）。 */
 export type WashedListener = (x: number, y: number, z: number, blockId: number) => void;
 
+/** 各流体的行为参数（按方块 id 查）。 */
+export const FLUID_SPECS: Record<number, FluidSpec> = {
+  [BlockId.WATER]: {
+    block: BlockId.WATER,
+    maxLevel: WATER_MAX_LEVEL,
+    tickInterval: WATER_TICK_INTERVAL,
+    infiniteSource: true,
+    flowSearchRange: WATER_FLOW_SEARCH_RANGE,
+  },
+  [BlockId.LAVA]: {
+    block: BlockId.LAVA,
+    maxLevel: LAVA_MAX_LEVEL,
+    tickInterval: LAVA_TICK_INTERVAL,
+    infiniteSource: false,
+    flowSearchRange: LAVA_FLOW_SEARCH_RANGE,
+  },
+};
+
+/** 取某个方块 id 的流体参数；不是流体返回 null。 */
+export function fluidSpecOf(blockId: number): FluidSpec | null {
+  return FLUID_SPECS[blockId] ?? null;
+}
+
 /**
- * 水的流动模拟（1.8 规则简化版）：
- * 源(0) 向下形成下落水(8)，向侧面按 1..7 递减扩散；失去供给的流动水逐级消退；
- * 两侧都是源且下方稳固的流动水升级为源（无限水）。
+ * 流体的流动模拟（1.8 规则简化版），水与岩浆共用同一套算法、参数不同：
+ * 源(0) 向下形成下落流体(8)，向侧面按 1..maxLevel 递减扩散；失去供给的流体逐级消退；
+ * 支持无限源的流体在两侧都是源且下方稳固时升级为源。
+ * 岩浆碰到水会凝固：源变黑曜石、流动的变圆石。
  */
 export class FluidSimulator {
-  private pending = new Set<number>();
+  /** 按流体方块 id 分开的待更新位置（不同流体的更新频率不同）。 */
+  private readonly pendingByFluid = new Map<number, Set<number>>();
+  /** 已经调用过多少次 tick，用来按各流体的间隔分频。 */
+  private tickCount = 0;
   private readonly washedListeners = new Set<WashedListener>();
 
   constructor(private readonly world: World) {
@@ -64,14 +96,18 @@ export class FluidSimulator {
 
   /** 待处理位置数（测试 / 调试用）。 */
   get pendingCount(): number {
-    return this.pending.size;
+    let total = 0;
+    for (const set of this.pendingByFluid.values()) {
+      total += set.size;
+    }
+    return total;
   }
 
   /** 方块变化后：把该位置及六邻中的水加入待更新。 */
   scheduleAround(x: number, y: number, z: number): void {
-    this.scheduleIfWater(x, y, z);
+    this.scheduleIfFluid(x, y, z);
     for (const [dx, dy, dz] of NEIGHBORS) {
-      this.scheduleIfWater(x + dx, y + dy, z + dz);
+      this.scheduleIfFluid(x + dx, y + dy, z + dz);
     }
   }
 
@@ -85,44 +121,73 @@ export class FluidSimulator {
       for (let lz = 0; lz < CHUNK_SIZE; lz++) {
         for (let lx = 0; lx < CHUNK_SIZE; lx++) {
           const idx = sectionIndex(lx, y, lz);
-          if (section.blocks[idx] === BlockId.WATER && section.meta[idx] !== WATER_SOURCE_META) {
-            this.pending.add(packPos(chunk.originX + lx, y, chunk.originZ + lz));
+          if (fluidSpecOf(section.blocks[idx]) && section.meta[idx] !== WATER_SOURCE_META) {
+            this.schedule(chunk.originX + lx, y, chunk.originZ + lz, section.blocks[idx]);
           }
         }
       }
     }
   }
 
-  private scheduleIfWater(x: number, y: number, z: number): void {
-    if (this.world.getBlock(x, y, z) === BlockId.WATER) {
-      this.pending.add(packPos(x, y, z));
+  private scheduleIfFluid(x: number, y: number, z: number): void {
+    const id = this.world.getBlock(x, y, z);
+    if (fluidSpecOf(id)) {
+      this.schedule(x, y, z, id);
     }
   }
 
-  /** 处理一轮待更新的水（每 WATER_TICK_INTERVAL 个游戏 tick 调用一次）。 */
+  /** 按流体种类放进对应的待更新集合。 */
+  private schedule(x: number, y: number, z: number, blockId: number): void {
+    this.pendingFor(blockId).add(packPos(x, y, z));
+  }
+
+  private pendingFor(blockId: number): Set<number> {
+    let set = this.pendingByFluid.get(blockId);
+    if (!set) {
+      set = new Set<number>();
+      this.pendingByFluid.set(blockId, set);
+    }
+    return set;
+  }
+
+  /**
+   * 处理一轮待更新的流体（每 WATER_TICK_INTERVAL 个游戏 tick 调用一次）。
+   * 更新更慢的流体（岩浆）按自己的间隔分频。
+   */
   tick(): void {
-    if (this.pending.size === 0) {
-      return;
-    }
-    const batch = this.pending;
-    this.pending = new Set<number>();
-    for (const key of batch) {
-      const y = key % WORLD_SIZE_Y;
-      const rest = (key - y) / WORLD_SIZE_Y;
-      const z = (rest % POS_SPAN) - POS_OFFSET;
-      const x = (rest - (z + POS_OFFSET)) / POS_SPAN - POS_OFFSET;
-      this.updateWater(x, y, z);
+    this.tickCount++;
+    for (const [blockId, set] of this.pendingByFluid) {
+      const spec = fluidSpecOf(blockId);
+      if (!spec || set.size === 0) {
+        continue;
+      }
+      const everyNCalls = Math.max(1, Math.round(spec.tickInterval / WATER_TICK_INTERVAL));
+      if (this.tickCount % everyNCalls !== 0) {
+        continue;
+      }
+      const batch = [...set];
+      set.clear();
+      for (const key of batch) {
+        const y = key % WORLD_SIZE_Y;
+        const rest = (key - y) / WORLD_SIZE_Y;
+        const z = (rest % POS_SPAN) - POS_OFFSET;
+        const x = (rest - (z + POS_OFFSET)) / POS_SPAN - POS_OFFSET;
+        this.updateFluid(x, y, z, spec);
+      }
     }
   }
 
-  private updateWater(x: number, y: number, z: number): void {
+  private updateFluid(x: number, y: number, z: number, spec: FluidSpec): void {
     const world = this.world;
-    if (world.getBlock(x, y, z) !== BlockId.WATER) {
+    if (world.getBlock(x, y, z) !== spec.block) {
       return;
     }
     let meta = world.getMeta(x, y, z);
+    if (this.solidifyLavaOnContact(x, y, z, spec, meta)) {
+      return;
+    }
     if (meta !== WATER_SOURCE_META) {
-      const next = this.recomputeLevel(x, y, z);
+      const next = this.recomputeLevel(x, y, z, spec);
       if (next === null) {
         world.setBlock(x, y, z, BlockId.AIR);
         this.scheduleAround(x, y, z);
@@ -136,31 +201,49 @@ export class FluidSimulator {
     }
     const spreadLevel = effectiveLevel(meta);
     if (this.canFlowInto(x, y - 1, z)) {
-      this.flowInto(x, y - 1, z, WATER_FALLING_META);
+      this.flowInto(x, y - 1, z, WATER_FALLING_META, spec);
       return;
     }
     const belowSolid = getBlock(world.getBlock(x, y - 1, z)).solid;
     const canSpread = meta === WATER_SOURCE_META || belowSolid;
-    if (!canSpread || spreadLevel + 1 > WATER_MAX_LEVEL) {
+    if (!canSpread || spreadLevel + 1 > spec.maxLevel) {
       return;
     }
-    for (const [dx, dz] of this.optimalFlowDirections(x, y, z)) {
+    for (const [dx, dz] of this.optimalFlowDirections(x, y, z, spec)) {
       if (this.canFlowInto(x + dx, y, z + dz)) {
-        this.flowInto(x + dx, y, z + dz, spreadLevel + 1);
+        this.flowInto(x + dx, y, z + dz, spreadLevel + 1, spec);
       }
     }
   }
 
-  /** 由邻居重新推算流动水的 meta；返回 null 表示应消失。 */
-  private recomputeLevel(x: number, y: number, z: number): number | null {
+  /** 岩浆碰到水就凝固：源变黑曜石、流动的变圆石。返回是否已凝固。 */
+  private solidifyLavaOnContact(x: number, y: number, z: number, spec: FluidSpec, meta: number): boolean {
+    if (spec.block !== BlockId.LAVA) {
+      return false;
+    }
     const world = this.world;
-    if (world.getBlock(x, y + 1, z) === BlockId.WATER) {
+    let touchesWater = world.getBlock(x, y + 1, z) === BlockId.WATER;
+    for (const [dx, dz] of SIDES) {
+      touchesWater = touchesWater || world.getBlock(x + dx, y, z + dz) === BlockId.WATER;
+    }
+    if (!touchesWater) {
+      return false;
+    }
+    world.setBlock(x, y, z, meta === WATER_SOURCE_META ? BlockId.OBSIDIAN : BlockId.COBBLESTONE);
+    this.scheduleAround(x, y, z);
+    return true;
+  }
+
+  /** 由邻居重新推算流动水的 meta；返回 null 表示应消失。 */
+  private recomputeLevel(x: number, y: number, z: number, spec: FluidSpec): number | null {
+    const world = this.world;
+    if (world.getBlock(x, y + 1, z) === spec.block) {
       return WATER_FALLING_META;
     }
     let min = Infinity;
     let sources = 0;
     for (const [dx, dz] of SIDES) {
-      if (world.getBlock(x + dx, y, z + dz) !== BlockId.WATER) {
+      if (world.getBlock(x + dx, y, z + dz) !== spec.block) {
         continue;
       }
       const m = world.getMeta(x + dx, y, z + dz);
@@ -171,11 +254,11 @@ export class FluidSimulator {
     }
     const belowId = world.getBlock(x, y - 1, z);
     const belowStable =
-      getBlock(belowId).solid || (belowId === BlockId.WATER && world.getMeta(x, y - 1, z) === WATER_SOURCE_META);
-    if (sources >= WATER_INFINITE_SOURCE_COUNT && belowStable) {
+      getBlock(belowId).solid || (belowId === spec.block && world.getMeta(x, y - 1, z) === WATER_SOURCE_META);
+    if (spec.infiniteSource && sources >= WATER_INFINITE_SOURCE_COUNT && belowStable) {
       return WATER_SOURCE_META;
     }
-    if (min === Infinity || min + 1 > WATER_MAX_LEVEL) {
+    if (min === Infinity || min + 1 > spec.maxLevel) {
       return null;
     }
     return min + 1;
@@ -194,19 +277,27 @@ export class FluidSimulator {
     return !def.solid && !def.isLiquid;
   }
 
-  private flowInto(x: number, y: number, z: number, meta: number): void {
+  private flowInto(x: number, y: number, z: number, meta: number, spec: FluidSpec): void {
     const old = this.world.getBlock(x, y, z);
     if (old !== BlockId.AIR) {
       for (const listener of this.washedListeners) {
         listener(x, y, z, old);
       }
     }
-    this.world.setBlock(x, y, z, BlockId.WATER, meta);
+    this.world.setBlock(x, y, z, spec.block, meta);
     this.scheduleAround(x, y, z);
   }
 
   /** 沿某方向寻找落差的代价（1.8 calculateFlowCost 简化版）。 */
-  private flowCost(x: number, y: number, z: number, depth: number, fromDx: number, fromDz: number): number {
+  private flowCost(
+    x: number,
+    y: number,
+    z: number,
+    depth: number,
+    fromDx: number,
+    fromDz: number,
+    spec: FluidSpec,
+  ): number {
     let best = WATER_FLOW_BLOCKED_COST;
     for (const [dx, dz] of SIDES) {
       if (dx === -fromDx && dz === -fromDz) {
@@ -214,21 +305,21 @@ export class FluidSimulator {
       }
       const nx = x + dx;
       const nz = z + dz;
-      if (!this.isPassable(nx, y, nz)) {
+      if (!this.isPassable(nx, y, nz, spec)) {
         continue;
       }
       if (this.canFlowInto(nx, y - 1, nz)) {
         return depth;
       }
-      if (depth < WATER_FLOW_SEARCH_RANGE) {
-        best = Math.min(best, this.flowCost(nx, y, nz, depth + 1, dx, dz));
+      if (depth < spec.flowSearchRange) {
+        best = Math.min(best, this.flowCost(nx, y, nz, depth + 1, dx, dz, spec));
       }
     }
     return best;
   }
 
-  /** 搜索路径上可穿过：非实心且不是水源（流动水可以穿过）。 */
-  private isPassable(x: number, y: number, z: number): boolean {
+  /** 搜索路径上可穿过：非实心且不是同种流体的源（流动的可以穿过）。 */
+  private isPassable(x: number, y: number, z: number, spec: FluidSpec): boolean {
     const chunk = this.world.getChunkAt(x, z);
     if (!chunk) {
       return false;
@@ -239,22 +330,22 @@ export class FluidSimulator {
     }
     const idx = sectionIndex(x - chunk.originX, y, z - chunk.originZ);
     const id = section.blocks[idx];
-    if (id === BlockId.WATER) {
+    if (id === spec.block) {
       return section.meta[idx] !== WATER_SOURCE_META;
     }
     return !getBlock(id).solid;
   }
 
   /** 选出离“落差”最近的扩散方向（可能多个）。 */
-  private optimalFlowDirections(x: number, y: number, z: number): (readonly [number, number])[] {
+  private optimalFlowDirections(x: number, y: number, z: number, spec: FluidSpec): (readonly [number, number])[] {
     const costs: number[] = [];
     let min = WATER_FLOW_BLOCKED_COST;
     for (const [dx, dz] of SIDES) {
       const nx = x + dx;
       const nz = z + dz;
       let cost = WATER_FLOW_BLOCKED_COST;
-      if (this.isPassable(nx, y, nz)) {
-        cost = this.canFlowInto(nx, y - 1, nz) ? 0 : this.flowCost(nx, y, nz, 1, dx, dz);
+      if (this.isPassable(nx, y, nz, spec)) {
+        cost = this.canFlowInto(nx, y - 1, nz) ? 0 : this.flowCost(nx, y, nz, 1, dx, dz, spec);
       }
       costs.push(cost);
       min = Math.min(min, cost);

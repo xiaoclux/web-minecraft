@@ -391,9 +391,9 @@ export class Mob extends LivingEntity {
     }
   }
 
-  /** 是否正在燃烧（用于渲染）。 */
+  /** 是否正在燃烧（用于渲染）：阳光灼烧或被岩浆 / 火点着。 */
   get isBurning(): boolean {
-    return this.burnTicks > 0;
+    return this.burnTicks > 0 || this.isOnFire;
   }
 
   protected override onHurt(ctx: EntityContext, _amount: number, source: Entity | null): void {

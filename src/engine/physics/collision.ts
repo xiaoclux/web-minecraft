@@ -158,6 +158,26 @@ export function isBoxInLiquid(world: World, box: AABB, fraction = 0.5): boolean 
   );
 }
 
+/** 包围盒是否与指定方块 id 相交。 */
+export function isBoxTouchingBlock(world: World, box: AABB, blockId: number): boolean {
+  const x0 = Math.floor(box.minX);
+  const x1 = Math.floor(box.maxX - EPSILON);
+  const y0 = Math.floor(box.minY);
+  const y1 = Math.floor(box.maxY - EPSILON);
+  const z0 = Math.floor(box.minZ);
+  const z1 = Math.floor(box.maxZ - EPSILON);
+  for (let y = y0; y <= y1; y++) {
+    for (let z = z0; z <= z1; z++) {
+      for (let x = x0; x <= x1; x++) {
+        if (world.getBlock(x, y, z) === blockId) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 /** 包围盒是否与任何液体方块相交。 */
 export function isBoxTouchingLiquid(world: World, box: AABB): boolean {
   const x0 = Math.floor(box.minX);

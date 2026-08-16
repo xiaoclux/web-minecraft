@@ -19,6 +19,7 @@ import {
 } from '../constants/game';
 import type { EntityContext } from '../entities/EntityContext';
 import { LivingEntity } from '../entities/LivingEntity';
+import { BlockId } from '../blocks/BlockRegistry';
 import { Inventory } from '../items/Inventory';
 import { getItem } from '../items/ItemRegistry';
 import type { ItemStack } from '../items/ItemStack';
@@ -119,7 +120,7 @@ export class Player extends LivingEntity {
   }
 
   private tickAir(ctx: EntityContext, rules: PlayerRules): void {
-    const headInWater = ctx.world.isLiquidAt(Math.floor(this.x), Math.floor(this.eyeY), Math.floor(this.z));
+    const headInWater = ctx.world.getBlock(Math.floor(this.x), Math.floor(this.eyeY), Math.floor(this.z)) === BlockId.WATER;
     if (!headInWater) {
       this.air = Math.min(AIR_TICKS_MAX, this.air + 4);
       this.drownTimer = 0;
@@ -240,9 +241,12 @@ export class Player extends LivingEntity {
     this.hurtTicks = 0;
   }
 
-  /** 覆盖：玩家死亡由 Game 处理，这里不做动画计时。 */
-  override tick(_ctx: EntityContext): void {
+  /** 覆盖：玩家死亡由 Game 处理，这里不做动画计时，但仍要处理岩浆 / 着火。 */
+  override tick(ctx: EntityContext): void {
     this.age++;
+    if (this.health > 0) {
+      this.tickFire(ctx);
+    }
   }
 
   protected override onDeath(_ctx: EntityContext, _byPlayer: boolean): void {

@@ -425,15 +425,17 @@ export class ChunkMesher {
             this.boxes(def.render === RenderType.CUTOUT ? cutout : opaque, def, x, y, z);
             continue;
           }
+          if (def.isLiquid) {
+            // 液体按水位做斜面；水是半透明层、岩浆是不透明层
+            this.liquid(def.render === RenderType.TRANSLUCENT ? translucent : opaque, def, x, y, z);
+            continue;
+          }
           switch (def.render) {
             case RenderType.OPAQUE:
               this.cube(opaque, def, x, y, z);
               break;
             case RenderType.CUTOUT:
               this.cube(cutout, def, x, y, z);
-              break;
-            case RenderType.TRANSLUCENT:
-              this.water(translucent, def, x, y, z);
               break;
             default:
               break;
@@ -533,9 +535,9 @@ export class ChunkMesher {
     }
   }
 
-  private water(builder: BufferBuilder, def: BlockDef, x: number, y: number, z: number): void {
+  private liquid(builder: BufferBuilder, def: BlockDef, x: number, y: number, z: number): void {
     const snap = this.snap;
-    const heights = this.waterCornerHeights(x, y, z);
+    const heights = this.liquidCornerHeights(def.id, x, y, z);
     for (const face of FACES) {
       const nx = x + face.normal[0];
       const ny = y + face.normal[1];
@@ -556,23 +558,23 @@ export class ChunkMesher {
     }
   }
 
-  /** 该位置若是水，返回其表面高度；否则返回 -1。 */
-  private waterHeightAt(x: number, y: number, z: number): number {
+  /** 该位置若是同种液体，返回其表面高度；否则返回 -1。 */
+  private liquidHeightAt(liquidId: number, x: number, y: number, z: number): number {
     const snap = this.snap;
     const idx = snap.at(x, y, z);
-    if (snap.blocks[idx] !== BlockId.WATER) {
+    if (snap.blocks[idx] !== liquidId) {
       return -1;
     }
-    const aboveIsWater = y + 1 < WORLD_SIZE_Y && snap.blocks[snap.at(x, y + 1, z)] === BlockId.WATER;
-    return waterHeight(snap.meta[idx], aboveIsWater);
+    const aboveIsSame = y + 1 < WORLD_SIZE_Y && snap.blocks[snap.at(x, y + 1, z)] === liquidId;
+    return waterHeight(snap.meta[idx], aboveIsSame);
   }
 
   /**
-   * 水面四角高度（索引 cx*2+cz）：取该角周围 4 个水块高度的平均，形成 1.8 式斜面；
-   * 任一相邻水块上方仍是水则该角为满高。
+   * 液面四角高度（索引 cx*2+cz）：取该角周围 4 格同种液体高度的平均，形成 1.8 式斜面；
+   * 任一相邻格上方仍是同种液体则该角为满高。
    */
-  private waterCornerHeights(x: number, y: number, z: number): [number, number, number, number] {
-    const own = this.waterHeightAt(x, y, z);
+  private liquidCornerHeights(liquidId: number, x: number, y: number, z: number): [number, number, number, number] {
+    const own = this.liquidHeightAt(liquidId, x, y, z);
     if (own >= 1) {
       return [1, 1, 1, 1];
     }
@@ -580,7 +582,7 @@ export class ChunkMesher {
     const around: number[] = [];
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
-        around.push(dx === 0 && dz === 0 ? own : this.waterHeightAt(x + dx, y, z + dz));
+        around.push(dx === 0 && dz === 0 ? own : this.liquidHeightAt(liquidId, x + dx, y, z + dz));
       }
     }
     const sampleAt = (dx: number, dz: number): number => around[(dz + 1) * 3 + (dx + 1)];

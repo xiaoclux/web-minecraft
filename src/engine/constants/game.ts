@@ -101,3 +101,7 @@ export const ARMOR_DAMAGE_REDUCTION_PER_POINT = 0.04;
 export const ARMOR_MAX_POINTS = 20;
 /** 受伤时盔甲的耐久消耗：伤害的 1/4，至少 1 点。 */
 export const ARMOR_DURABILITY_DAMAGE_DIVISOR = 4;
+
+/** 着火时每隔多少 tick 掉多少血。 */
+export const FIRE_DAMAGE_INTERVAL_TICKS = 20;
+export const FIRE_DAMAGE = 1;

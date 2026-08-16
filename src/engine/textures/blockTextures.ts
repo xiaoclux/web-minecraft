@@ -341,6 +341,14 @@ const bedHeadEnd: Painter = (c, rng) => {
 /** 不挂在任何方块上、但需要进图集的贴图（粒子等）。 */
 export const EXTRA_TEXTURE_KEYS = ['particle_heart'] as const;
 
+/** 岩浆：橙红底 + 亮黄斑块。 */
+const LAVA = hex('#d45a12');
+const lava: Painter = (c, rng) => {
+  c.noise(LAVA, 0.18, rng);
+  c.speckle(hex('#ffc24a'), 26, rng);
+  c.speckle(hex('#8a2b06'), 18, rng);
+};
+
 /** 爱心粒子：粒子系统只取 2×2 像素，所以纯色即可。 */
 const particleHeart: Painter = (c, rng) => {
   c.noise(hex('#f04a6a'), 0.1, rng);
@@ -613,6 +621,7 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   bed_foot_end: bedFootEnd,
   ladder,
   particle_heart: particleHeart,
+  lava,
   door_lower: doorLower,
   door_upper: doorUpper,
   farmland_dry: farmlandDry,
