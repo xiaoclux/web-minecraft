@@ -71,11 +71,29 @@ export interface ItemDef {
   durability?: number;
 }
 
-const TIER_SPEED: Record<number, number> = { 0: 2, 1: 4, 2: 6, 3: 8 };
-const TIER_DURABILITY: Record<number, number> = { 0: 59, 1: 131, 2: 250, 3: 1561 };
-const TIER_ATTACK_BASE: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3 };
-const TIER_LABEL: Record<number, string> = { 0: '木', 1: '石', 2: '铁', 3: '钻石' };
-const TIER_NAME: Record<number, string> = { 0: 'wooden', 1: 'stone', 2: 'iron', 3: 'diamond' };
+/** 工具材质：挖掘等级、速度、耐久与攻击加成都取自 1.8.9（金的挖掘等级同木、但快而脆）。 */
+interface ToolMaterialSpec {
+  /** 物品 id 前缀。 */
+  id: string;
+  label: string;
+  /** 挖掘等级（决定能不能挖到掉落）。 */
+  tier: ToolTier;
+  speed: number;
+  durability: number;
+  /** 在工具类型基础伤害之上的加成。 */
+  attackBonus: number;
+  /** 合成材料的物品 id。 */
+  material: string;
+}
+
+export const TOOL_MATERIALS: readonly ToolMaterialSpec[] = [
+  { id: 'wooden', label: '木', tier: ToolTier.WOOD, speed: 2, durability: 59, attackBonus: 0, material: 'planks' },
+  { id: 'stone', label: '石', tier: ToolTier.STONE, speed: 4, durability: 131, attackBonus: 1, material: 'cobblestone' },
+  { id: 'iron', label: '铁', tier: ToolTier.IRON, speed: 6, durability: 250, attackBonus: 2, material: 'iron_ingot' },
+  { id: 'golden', label: '金', tier: ToolTier.WOOD, speed: 12, durability: 32, attackBonus: 0, material: 'gold_ingot' },
+  { id: 'diamond', label: '钻石', tier: ToolTier.DIAMOND, speed: 8, durability: 1561, attackBonus: 3, material: 'diamond' },
+];
+
 const TOOL_LABEL: Record<ToolType, string> = { pickaxe: '镐', axe: '斧', shovel: '锹', sword: '剑', hoe: '锄' };
 /** 各工具类型的基础伤害（在材质加成之上）。 */
 const TOOL_ATTACK: Record<ToolType, number> = { sword: 4, axe: 3, pickaxe: 2, shovel: 1, hoe: 1 };
@@ -85,18 +103,18 @@ const LOG_BURN_TICKS = 300;
 const PLANKS_BURN_TICKS = 300;
 const STICK_BURN_TICKS = 100;
 
-const tool = (type: ToolType, tier: ToolTier): ItemDef => ({
-  id: `${TIER_NAME[tier]}_${type}`,
-  label: `${TIER_LABEL[tier]}${TOOL_LABEL[type]}`,
+const tool = (type: ToolType, mat: ToolMaterialSpec): ItemDef => ({
+  id: `${mat.id}_${type}`,
+  label: `${mat.label}${TOOL_LABEL[type]}`,
   kind: ItemKind.TOOL,
   maxStack: 1,
-  icon: `${TIER_NAME[tier]}_${type}`,
+  icon: `${mat.id}_${type}`,
   tool: {
     type,
-    tier,
-    attackDamage: TOOL_ATTACK[type] + TIER_ATTACK_BASE[tier],
-    speed: TIER_SPEED[tier],
-    durability: TIER_DURABILITY[tier],
+    tier: mat.tier,
+    attackDamage: TOOL_ATTACK[type] + mat.attackBonus,
+    speed: mat.speed,
+    durability: mat.durability,
   },
 });
 
@@ -180,12 +198,11 @@ function blockItem(def: BlockDef): ItemDef {
 }
 
 const TOOL_TYPES: ToolType[] = [ToolType.SWORD, ToolType.PICKAXE, ToolType.AXE, ToolType.SHOVEL, ToolType.HOE];
-const TIERS: ToolTier[] = [ToolTier.WOOD, ToolTier.STONE, ToolTier.IRON, ToolTier.DIAMOND];
 
 /** 全部物品定义。 */
 export const ITEM_DEFS: ItemDef[] = [
   ...BLOCK_DEFS.filter((b) => b.name !== 'air' && b.name !== 'water' && !b.noItem).map(blockItem),
-  ...TIERS.flatMap((tier) => TOOL_TYPES.map((type) => tool(type, tier))),
+  ...TOOL_MATERIALS.flatMap((mat) => TOOL_TYPES.map((type) => tool(type, mat))),
   ...armorItems(),
   material('stick', '木棍', { burnTicks: STICK_BURN_TICKS }),
   material('coal', '煤炭', { burnTicks: FURNACE_ITEM_BURN_TICKS }),

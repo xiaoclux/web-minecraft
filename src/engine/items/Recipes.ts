@@ -1,4 +1,4 @@
-import { requireItem } from './ItemRegistry';
+import { TOOL_MATERIALS, requireItem } from './ItemRegistry';
 import { createStack, type ItemStack } from './ItemStack';
 
 /** 有序配方。 */
@@ -31,22 +31,15 @@ const shapeless = (ingredients: string[], result: string, count = 1): ShapelessR
   result: createStack(result, count),
 });
 
-const TIER_MATERIAL: Record<string, string> = {
-  wooden: 'planks',
-  stone: 'cobblestone',
-  iron: 'iron_ingot',
-  diamond: 'diamond',
-};
-
 function toolRecipes(): ShapedRecipe[] {
   const out: ShapedRecipe[] = [];
-  for (const [tier, mat] of Object.entries(TIER_MATERIAL)) {
-    const key = { M: mat, S: 'stick' };
-    out.push(shaped(['MMM', ' S ', ' S '], key, `${tier}_pickaxe`));
-    out.push(shaped(['MM', 'MS', ' S'], key, `${tier}_axe`));
-    out.push(shaped(['M', 'S', 'S'], key, `${tier}_shovel`));
-    out.push(shaped(['M', 'M', 'S'], key, `${tier}_sword`));
-    out.push(shaped(['MM', ' S', ' S'], key, `${tier}_hoe`));
+  for (const mat of TOOL_MATERIALS) {
+    const key = { M: mat.material, S: 'stick' };
+    out.push(shaped(['MMM', ' S ', ' S '], key, `${mat.id}_pickaxe`));
+    out.push(shaped(['MM', 'MS', ' S'], key, `${mat.id}_axe`));
+    out.push(shaped(['M', 'S', 'S'], key, `${mat.id}_shovel`));
+    out.push(shaped(['M', 'M', 'S'], key, `${mat.id}_sword`));
+    out.push(shaped(['MM', ' S', ' S'], key, `${mat.id}_hoe`));
   }
   return out;
 }

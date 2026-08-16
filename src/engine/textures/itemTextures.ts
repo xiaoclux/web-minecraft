@@ -8,6 +8,7 @@ const TIER_COLORS: Record<string, Rgba> = {
   wooden: hex('#a37c4a'),
   stone: hex('#8a8a8a'),
   iron: hex('#d8d8d8'),
+  golden: hex('#f0c040'),
   diamond: hex('#4be3d6'),
 };
 

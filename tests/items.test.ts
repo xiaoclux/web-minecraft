@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getBlockByName } from '../src/engine/blocks/BlockRegistry';
 import { breakTicks, canHarvest } from '../src/engine/blocks/blockBreaking';
 import { Inventory } from '../src/engine/items/Inventory';
-import { ITEM_DEFS, getItem } from '../src/engine/items/ItemRegistry';
+import { ITEM_DEFS, TOOL_MATERIALS, getItem } from '../src/engine/items/ItemRegistry';
 import { matchRecipe, RECIPES } from '../src/engine/items/Recipes';
 import type { ItemStack } from '../src/engine/items/ItemStack';
 import { createFurnace, SMELT_TICKS, tickFurnace } from '../src/engine/items/Furnace';
@@ -133,5 +133,32 @@ describe('护甲', () => {
     expect(player.inventory.getArmor(1)?.damage).toBe(2);
     // 皮革头盔 1 + 铁胸甲 6 = 7 点护甲 → 减伤 28%（损毁的那件仍为这一下提供保护）
     expect(player.health).toBeCloseTo(20 - 8 * 0.72, 4);
+  });
+});
+
+describe('工具材质', () => {
+  it('五种材质都有全套工具与配方', () => {
+    const results = new Set(RECIPES.map((r) => r.result.id));
+    for (const mat of TOOL_MATERIALS) {
+      for (const type of ['pickaxe', 'axe', 'shovel', 'sword', 'hoe']) {
+        const id = `${mat.id}_${type}`;
+        expect(getItem(id), id).toBeDefined();
+        expect(results.has(id), id).toBe(true);
+      }
+    }
+  });
+
+  it('金工具挖得快但脆，挖掘等级和木头一样', () => {
+    const gold = getItem('golden_pickaxe')?.tool;
+    const wood = getItem('wooden_pickaxe')?.tool;
+    const diamond = getItem('diamond_pickaxe')?.tool;
+    expect(gold?.tier).toBe(wood?.tier);
+    expect(gold?.speed).toBeGreaterThan(diamond?.speed ?? 0);
+    expect(gold?.durability).toBeLessThan(wood?.durability ?? 0);
+  });
+
+  it('金镐挖不到钻石（挖掘等级不够）', () => {
+    expect(canHarvest(getBlockByName('diamond_ore')!, s('golden_pickaxe'))).toBe(false);
+    expect(canHarvest(getBlockByName('diamond_ore')!, s('iron_pickaxe'))).toBe(true);
   });
 });
