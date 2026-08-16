@@ -17,6 +17,10 @@ import {
   MAX_TOUCH_LOOK_SENSITIVITY,
   MIN_MOUSE_SENSITIVITY,
   MIN_TOUCH_LOOK_SENSITIVITY,
+  DEFAULT_MASTER_VOLUME,
+  DEFAULT_MUSIC_VOLUME,
+  DEFAULT_SFX_VOLUME,
+  MAX_VOLUME,
   SETTINGS_PERSIST_DEBOUNCE_MS,
   STORAGE_KEY_SETTINGS,
   TOUCH_MEDIA_QUERY,
@@ -48,6 +52,12 @@ export interface GameSettings {
   touchLookSensitivity: number;
   /** 是否显示触屏按钮。 */
   touchControlsEnabled: boolean;
+  /** 总音量 0~1。 */
+  masterVolume: number;
+  /** 音效音量 0~1。 */
+  sfxVolume: number;
+  /** 音乐音量 0~1。 */
+  musicVolume: number;
 }
 
 /** 出厂默认设置。 */
@@ -68,6 +78,9 @@ export const DEFAULT_SETTINGS: GameSettings = {
   touchLookSensitivity: DEFAULT_TOUCH_LOOK_SENSITIVITY,
   // 纯常量：是否真的显示触屏按钮 = 本项 && 当前是粗指针设备，设备判定只在使用点做一次
   touchControlsEnabled: true,
+  masterVolume: DEFAULT_MASTER_VOLUME,
+  sfxVolume: DEFAULT_SFX_VOLUME,
+  musicVolume: DEFAULT_MUSIC_VOLUME,
 };
 
 /** 缓存 MediaQueryList，避免每次判定都新建对象。 */
@@ -126,6 +139,9 @@ export function normalizeSettings(raw: unknown): GameSettings {
       typeof source.touchControlsEnabled === 'boolean'
         ? source.touchControlsEnabled
         : DEFAULT_SETTINGS.touchControlsEnabled,
+    masterVolume: clamp(source.masterVolume, 0, MAX_VOLUME, DEFAULT_SETTINGS.masterVolume),
+    sfxVolume: clamp(source.sfxVolume, 0, MAX_VOLUME, DEFAULT_SETTINGS.sfxVolume),
+    musicVolume: clamp(source.musicVolume, 0, MAX_VOLUME, DEFAULT_SETTINGS.musicVolume),
   };
 }
 

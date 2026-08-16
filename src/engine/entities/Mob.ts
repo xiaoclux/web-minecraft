@@ -26,6 +26,8 @@ import {
   SKELETON_SHOOT_RANGE,
 } from '../constants/mobs';
 import { HOSTILE_SPAWN_LIGHT_MAX } from '../constants/mobs';
+import { MobSoundKind } from './mobSounds';
+
 import { EnchantmentId, enchantLevel } from '../items/enchantments';
 import { AABB } from '../physics/AABB';
 import { isBoxBlocked } from '../physics/collision';
@@ -59,6 +61,9 @@ export const MobState = {
 export type MobState = (typeof MobState)[keyof typeof MobState];
 
 /** 生物（含友善与敌对），行为由 MobDef 参数化。 */
+/** 闲置叫声的平均间隔（tick）：约 15 秒一次。 */
+const IDLE_SOUND_INTERVAL_TICKS = 300;
+
 export class Mob extends LivingEntity {
   readonly type: MobType;
   readonly def: MobDef;
@@ -130,6 +135,7 @@ export class Mob extends LivingEntity {
   }
 
   override tick(ctx: EntityContext): void {
+    this.tickIdleSound(ctx);
     if (this.health > 0) {
       this.tickBreeding();
       this.think(ctx);
@@ -437,7 +443,16 @@ export class Mob extends LivingEntity {
     }
   }
 
+  /** 闲置叫声：平均每 IDLE_SOUND_INTERVAL_TICKS 出一次声。 */
+  private tickIdleSound(ctx: EntityContext): void {
+    if (ctx.random() >= 1 / IDLE_SOUND_INTERVAL_TICKS) {
+      return;
+    }
+    ctx.playMobSound(this.type, MobSoundKind.IDLE, this.x, this.y, this.z, this.isBaby);
+  }
+
   protected override onHurt(ctx: EntityContext, _amount: number, source: Entity | null): void {
+    ctx.playMobSound(this.type, MobSoundKind.HURT, this.x, this.y, this.z, this.isBaby);
     if (this.def.teleports && ctx.random() < TELEPORT_ON_HURT_CHANCE) {
       this.tryTeleport(ctx);
     }
@@ -464,6 +479,7 @@ export class Mob extends LivingEntity {
   }
 
   protected override onDeath(ctx: EntityContext, byPlayer: boolean): void {
+    ctx.playMobSound(this.type, MobSoundKind.DEATH, this.x, this.y, this.z, this.isBaby);
     this.trySplit(ctx);
     // 抢夺：玩家击杀时每级最多多掉 1 个（1.8.9 同）
     const looting = byPlayer ? enchantLevel(ctx.player.heldItem, EnchantmentId.LOOTING) : 0;

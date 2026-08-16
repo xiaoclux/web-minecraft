@@ -38,6 +38,7 @@ export const RenderType = {
 } as const;
 export type RenderType = (typeof RenderType)[keyof typeof RenderType];
 
+import type { SoundGroup } from './blockSounds';
 import { BED_HEAD_BIT, BlockShape, CROP_MAX_STAGE, DOOR_UPPER_BIT } from './blockShapes';
 
 /** 六个面各自的贴图 key。 */
@@ -125,6 +126,8 @@ export interface BlockDef {
   connectGroup?: string;
   /** 可燃：会被相邻的火点着并烧掉。 */
   flammable?: boolean;
+  /** 材质音效组；不写时由 blockSounds 按名字与工具推断。 */
+  soundGroup?: SoundGroup;
   /**
    * 变种：同一个方块 id 下按 meta 区分的若干种（木材、羊毛颜色、石头变种等），与 1.8.9 一致。
    * 有变种时，方块的物品、标签与贴图都按 meta 取对应变种。

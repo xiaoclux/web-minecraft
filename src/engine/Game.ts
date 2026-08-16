@@ -87,6 +87,7 @@ import {
 import { BlockEntityStore, BlockEntityType } from './world/BlockEntityStore';
 import { RandomTickSystem } from './systems/RandomTickSystem';
 import { WeatherSystem } from './systems/WeatherSystem';
+import { breakSound, digSound, placeSound, soundGroupOf, stepSound } from './blocks/blockSounds';
 import { AchievementSystem, StatId } from './systems/Achievements';
 import { potionOfItem } from './items/potions';
 import { biomeHasSnowfall, biomeLabel } from './world/biomes';
@@ -138,7 +139,9 @@ import { Player } from './player/Player';
 import type { Inventory } from './items/Inventory';
 import { Renderer } from './render/Renderer';
 import { Sky } from './render/Sky';
-import { SoundManager } from './render/SoundManager';
+import { BABY_PITCH, mobSound, MobSoundKind } from './entities/mobSounds';
+import { MusicPlayer } from './render/MusicPlayer';
+import { SoundManager, type SoundSpec } from './render/SoundManager';
 import { deserializeChunk, serializeChunk } from './save/chunkSerializer';
 import { SaveManager, type WorldMeta, type WorldSave } from './save/SaveManager';
 import { TextureAtlas } from './textures/TextureAtlas';
@@ -219,6 +222,13 @@ const BOOKSHELF_RING_OFFSETS: readonly (readonly (readonly [number, number])[])[
   [[2, -1], [2, 0], [2, 1]],
   [[2, 2]],
 ];
+/** 洞穴环境音的判定：埋得比地表低这么多且光照低于此值。 */
+const UNDERGROUND_DEPTH = 8;
+const UNDERGROUND_MAX_LIGHT = 6;
+/** 每走这么多格出一次脚步声。 */
+const FOOTSTEP_INTERVAL_BLOCKS = 2.2;
+/** 挖掘时每隔多少 tick 播一次碎响。 */
+const DIG_SOUND_INTERVAL_TICKS = 5;
 /** 夜视把世界亮度托到的下限（1 = 满亮，略低一点保留一点氛围）。 */
 const NIGHT_VISION_MIN_LIGHT = 0.9;
 /** 喷溅药水碎掉时的玻璃碎屑。 */
@@ -263,6 +273,7 @@ export class Game implements EntityContext, ContainerHost {
   private readonly controls: Controls;
   private readonly spawner = new MobSpawner();
   private readonly sound = new SoundManager();
+  private readonly music = new MusicPlayer(this.sound);
   private readonly saveManager: SaveManager;
   private readonly onExit: () => void;
   private readonly rng: () => number;
@@ -279,6 +290,10 @@ export class Game implements EntityContext, ContainerHost {
   /** 是否触屏设备（决定是否显示触屏按钮、是否请求指针锁定）。 */
   readonly isTouch = isTouchDevice();
   private breakTarget: { x: number; y: number; z: number; id: number } | null = null;
+  /** 脚步声：累计走过的水平距离与上一次采样点。 */
+  private stepDistance = 0;
+  private lastFootX = 0;
+  private lastFootZ = 0;
   private breakProgressTicks = 0;
   private breakNeededTicks = 0;
   private creativeBreakDelay = 0;
@@ -314,7 +329,11 @@ export class Game implements EntityContext, ContainerHost {
     this.atlas = new TextureAtlas();
     this.renderer = new Renderer(options.canvas, this.world, this.atlas);
     this.controls = new Controls(options.canvas, settingsStore.get());
-    this.unsubscribeSettings = settingsStore.subscribe(() => this.controls.setSettings(settingsStore.get()));
+    this.unsubscribeSettings = settingsStore.subscribe(() => {
+      this.controls.setSettings(settingsStore.get());
+      this.applyVolumes();
+    });
+    this.applyVolumes();
     this.store = new Store<GameUiState>({
       mode: options.meta.mode,
       health: this.player.health,
@@ -585,6 +604,7 @@ export class Game implements EntityContext, ContainerHost {
     this.renderer.particles.update(dt);
     this.renderer.hand.update(this.player.heldItem?.id ?? null, brightness);
     this.renderer.render(this.timeTick, this.isPlayerUnderwater(), this.weather.rainLevel, minLight);
+    this.music.update(this.rng);
   }
 
   private logicTick(): void {
@@ -644,7 +664,66 @@ export class Game implements EntityContext, ContainerHost {
         /* toast 已提示 */
       });
     }
+    this.tickFootsteps();
+    this.tickDigSound();
+    this.music.underground = this.isPlayerUnderground();
+    this.sound.update();
     this.syncStore();
+  }
+
+  /** 玩家是否在昏暗的地下（洞穴环境音的触发条件）。 */
+  private isPlayerUnderground(): boolean {
+    const p = this.player;
+    const x = Math.floor(p.x);
+    const z = Math.floor(p.z);
+    return p.y < this.world.getHeight(x, z) - UNDERGROUND_DEPTH && this.lightLevelAt(x, Math.floor(p.eyeY), z) < UNDERGROUND_MAX_LIGHT;
+  }
+
+  /** 把设置里的三档音量同步给音频总线。 */
+  private applyVolumes(): void {
+    const s = settingsStore.get();
+    this.sound.setVolumes(s.masterVolume, s.sfxVolume, s.musicVolume);
+  }
+
+  /** 播放一个方块材质音效（按与玩家的距离衰减）。 */
+  private playBlockSound(spec: SoundSpec, x: number, y: number, z: number, dedupeKey: string): void {
+    const distance = Math.hypot(x + 0.5 - this.player.x, y + 0.5 - this.player.y, z + 0.5 - this.player.z);
+    this.sound.playSpec(spec, distance, 1, 1, dedupeKey);
+  }
+
+  /**
+   * 脚步声：按走过的水平距离触发，声音取脚下方块的材质。
+   * 潜行时不出声（与 1.8.9 一致），空中与水里也不出声。
+   */
+  private tickFootsteps(): void {
+    const p = this.player;
+    if (!p.onGround || p.isSneaking || p.inWater) {
+      this.stepDistance = 0;
+      this.lastFootX = p.x;
+      this.lastFootZ = p.z;
+      return;
+    }
+    this.stepDistance += Math.hypot(p.x - this.lastFootX, p.z - this.lastFootZ);
+    this.lastFootX = p.x;
+    this.lastFootZ = p.z;
+    if (this.stepDistance < FOOTSTEP_INTERVAL_BLOCKS) {
+      return;
+    }
+    this.stepDistance = 0;
+    const below = getBlock(this.world.getBlock(Math.floor(p.x), Math.floor(p.y - 0.1), Math.floor(p.z)));
+    if (below.id === BlockId.AIR) {
+      return;
+    }
+    this.sound.playSpec(stepSound(soundGroupOf(below)), 0, 1, 1, 'step');
+  }
+
+  /** 挖掘过程中每隔几 tick 播一下碎响。 */
+  private tickDigSound(): void {
+    if (!this.breakTarget || this.tick % DIG_SOUND_INTERVAL_TICKS !== 0) {
+      return;
+    }
+    const { x, y, z, id } = this.breakTarget;
+    this.playBlockSound(digSound(soundGroupOf(getBlock(id))), x, y, z, 'dig');
   }
 
   /** 准星指向的方块名（带变种，如"云杉木板"）。 */
@@ -1167,7 +1246,7 @@ export class Game implements EntityContext, ContainerHost {
     if (partner && this.world.getBlock(partner.x, partner.y, partner.z) === id) {
       this.world.setBlock(partner.x, partner.y, partner.z, BlockId.AIR);
     }
-    this.sound.play('break');
+    this.playBlockSound(breakSound(soundGroupOf(def)), x, y, z, 'break');
     this.renderer.hand.swing();
     if (withDrops && !this.rules.infiniteItems && def.crop) {
       this.dropCrop(x, y, z, def.crop);
@@ -1319,7 +1398,7 @@ export class Game implements EntityContext, ContainerHost {
       // 原版行为：喝牛奶清掉身上所有状态效果
       this.player.clearEffects();
       this.replaceHeldItem('bucket');
-      this.sound.play('eat');
+      this.sound.play('drink');
       this.renderer.hand.swing();
       return;
     }
@@ -1347,7 +1426,7 @@ export class Game implements EntityContext, ContainerHost {
       this.player.addEffect(potion.effect, potion.ticks, potion.amplifier, this);
     }
     this.replaceHeldItem('glass_bottle');
-    this.sound.play('eat');
+    this.sound.play('drink');
     this.useCooldown = EAT_COOLDOWN_TICKS;
     this.renderer.hand.swing();
   }
@@ -1648,6 +1727,7 @@ export class Game implements EntityContext, ContainerHost {
           type: BlockEntityType.CHEST,
           items: new Array<ItemStack | null>(CHEST_SLOT_COUNT).fill(null),
         }));
+        this.sound.play('chest');
         this.openScreen(Screen.CHEST, { x: hit.x, y: hit.y, z: hit.z });
         return true;
       case BlockId.FURNACE:
@@ -1836,6 +1916,7 @@ export class Game implements EntityContext, ContainerHost {
       }
     }
     this.world.setBlock(px, py, pz, blockId, meta);
+    this.playBlockSound(placeSound(soundGroupOf(def)), px, py, pz, 'place');
     this.achievements.addStat(StatId.BLOCKS_PLACED);
     if (def.shape === BlockShape.BED) {
       const [fx, fz] = FACINGS[meta & FACING_MASK];
@@ -2159,7 +2240,7 @@ export class Game implements EntityContext, ContainerHost {
       this.player.removeXpLevels(result.cost);
     }
     this.anvilNameText = '';
-    this.sound.play('place');
+    this.sound.play('anvil');
   }
 
   /** 当前打开的酿造台状态。 */
@@ -2445,7 +2526,7 @@ export class Game implements EntityContext, ContainerHost {
     if (partner && this.world.getBlock(partner.x, partner.y, partner.z) === this.world.getBlock(x, y, z)) {
       apply(partner.x, partner.y, partner.z);
     }
-    this.sound.play('place');
+    this.sound.play('door');
   }
 
   /**
@@ -2665,6 +2746,11 @@ export class Game implements EntityContext, ContainerHost {
 
   random(): number {
     return this.rng();
+  }
+
+  playMobSound(mobType: string, kind: MobSoundKind, x: number, y: number, z: number, isBaby = false): void {
+    const distance = Math.hypot(x - this.player.x, y - this.player.y, z - this.player.z);
+    this.sound.playSpec(mobSound(mobType, kind), distance, isBaby ? BABY_PITCH : 1, 1, `mob:${mobType}:${kind}`);
   }
 
   playSound(name: string, x: number, y: number, z: number): void {

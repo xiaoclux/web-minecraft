@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  MAX_VOLUME,
   MAX_MOUSE_SENSITIVITY,
   MAX_TOUCH_LOOK_SENSITIVITY,
   MIN_MOUSE_SENSITIVITY,
@@ -26,6 +27,9 @@ interface SettingsPanelProps {
 }
 
 /** 灵敏度滑块显示成 0~100 的整数，避免暴露弧度小数。 */
+/** 音量滑杆步长。 */
+const VOLUME_STEP = 0.05;
+
 function percent(value: number, min: number, max: number): number {
   return Math.round(((value - min) / (max - min)) * 100);
 }
@@ -69,6 +73,33 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           ))}
         </div>
         <p className="muted">Esc（菜单）、数字键 1-9（快捷栏）与鼠标左/中/右键固定不可修改。</p>
+        <SliderRow
+          label="总音量"
+          min={0}
+          max={MAX_VOLUME}
+          step={VOLUME_STEP}
+          value={settings.masterVolume}
+          display={`${Math.round((settings.masterVolume / MAX_VOLUME) * 100)}%`}
+          onChange={(masterVolume) => updateSettings({ masterVolume })}
+        />
+        <SliderRow
+          label="音效音量"
+          min={0}
+          max={MAX_VOLUME}
+          step={VOLUME_STEP}
+          value={settings.sfxVolume}
+          display={`${Math.round((settings.sfxVolume / MAX_VOLUME) * 100)}%`}
+          onChange={(sfxVolume) => updateSettings({ sfxVolume })}
+        />
+        <SliderRow
+          label="音乐音量"
+          min={0}
+          max={MAX_VOLUME}
+          step={VOLUME_STEP}
+          value={settings.musicVolume}
+          display={`${Math.round((settings.musicVolume / MAX_VOLUME) * 100)}%`}
+          onChange={(musicVolume) => updateSettings({ musicVolume })}
+        />
         <SliderRow
           label="鼠标灵敏度"
           min={MIN_MOUSE_SENSITIVITY}

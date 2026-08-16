@@ -7,6 +7,12 @@ export const PORTRAIT_MEDIA_QUERY = '(orientation: portrait)';
 
 /** 设置持久化的 localStorage 键与写盘防抖间隔（滑块拖动时避免每帧同步写）。 */
 export const STORAGE_KEY_SETTINGS = 'mc.settings.v1';
+/** 音量设置：上限与三档默认值。 */
+export const MAX_VOLUME = 1;
+export const DEFAULT_MASTER_VOLUME = 0.8;
+export const DEFAULT_SFX_VOLUME = 1;
+export const DEFAULT_MUSIC_VOLUME = 0.5;
+
 export const SETTINGS_PERSIST_DEBOUNCE_MS = 200;
 
 /** 鼠标灵敏度默认值、可调范围与滑块步长（默认值必须落在范围内，否则会被 clamp 掉）。 */

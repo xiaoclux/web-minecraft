@@ -1,3 +1,4 @@
+import type { MobSoundKind } from './mobSounds';
 import type { Difficulty } from '../constants/game';
 import type { ItemStack } from '../items/ItemStack';
 import type { World } from '../world/World';
@@ -23,6 +24,8 @@ export interface EntityContext {
   onEntityKilled(entity: Entity, byPlayer: boolean): void;
   random(): number;
   playSound(name: string, x: number, y: number, z: number): void;
+  /** 播放生物叫声（闲置 / 受伤 / 死亡）。 */
+  playMobSound(mobType: string, kind: MobSoundKind, x: number, y: number, z: number, isBaby?: boolean): void;
   /** 某点附近（中心距离在 radius 内）的活体实体，含玩家。 */
   livingEntitiesNear(x: number, y: number, z: number, radius: number): LivingEntity[];
   /** 该方块位置的水流方向（单位向量；静水为 0）。 */
