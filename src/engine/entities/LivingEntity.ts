@@ -11,7 +11,7 @@ import {
 } from '../constants/game';
 import { LAVA_BURN_TICKS, LAVA_DAMAGE, LAVA_DAMAGE_INTERVAL_TICKS } from '../constants/fluids';
 import { MOB_DEATH_TICKS, MOB_HURT_TICKS } from '../constants/mobs';
-import { isBoxTouchingBlock } from '../physics/collision';
+import { boxTouchMask } from '../physics/collision';
 import {
   EFFECT_DEFS,
   EffectId,
@@ -23,6 +23,13 @@ import {
 } from './effects';
 import { Entity } from './Entity';
 import type { EntityContext } from './EntityContext';
+
+/** tickFire 一次扫描要找的环境方块，与下面的位掩码一一对应。 */
+const HAZARD_BLOCKS = [BlockId.CACTUS, BlockId.FIRE, BlockId.LAVA, BlockId.WATER] as const;
+const HAZARD_CACTUS = 1 << 0;
+const HAZARD_FIRE = 1 << 1;
+const HAZARD_LAVA = 1 << 2;
+const HAZARD_WATER = 1 << 3;
 
 /** 有生命值的实体。 */
 export abstract class LivingEntity extends Entity {
@@ -36,8 +43,8 @@ export abstract class LivingEntity extends Entity {
   lastAttackedByPlayer = false;
   /** 身上的状态效果。 */
   readonly effects = new Map<EffectId, ActiveEffect>();
-  /** 各效果距离下次周期性生效还有多少 tick。 */
-  private readonly effectTimers = new Map<EffectId, number>();
+  /** 效果集合每次增删都 +1，让 UI 层不用逐 tick 比较内容就能知道要不要刷新。 */
+  effectsVersion = 0;
   /** 着火剩余 tick。 */
   fireTicks = 0;
   private fireDamageTimer = 0;
@@ -89,19 +96,23 @@ export abstract class LivingEntity extends Entity {
       return;
     }
     this.effects.set(id, { id, amplifier, ticks });
-    this.effectTimers.set(id, this.periodOf(id, amplifier));
+    this.effectsVersion++;
   }
 
   /** 移除一个效果。 */
   removeEffect(id: EffectId): void {
-    this.effects.delete(id);
-    this.effectTimers.delete(id);
+    if (this.effects.delete(id)) {
+      this.effectsVersion++;
+    }
   }
 
   /** 清空所有效果（喝牛奶）。 */
   clearEffects(): void {
+    if (this.effects.size === 0) {
+      return;
+    }
     this.effects.clear();
-    this.effectTimers.clear();
+    this.effectsVersion++;
   }
 
   /** 效果等级：没有返回 0，I 级返回 1，依此类推。 */
@@ -113,12 +124,6 @@ export abstract class LivingEntity extends Entity {
   /** 是否有某个效果。 */
   hasEffect(id: EffectId): boolean {
     return this.effects.has(id);
-  }
-
-  /** 周期性效果的实际间隔：等级每高一级快一倍。 */
-  private periodOf(id: EffectId, amplifier: number): number {
-    const period = EFFECT_DEFS[id].periodTicks ?? 0;
-    return Math.max(1, period >> amplifier);
   }
 
   /** 瞬间治疗 / 瞬间伤害。 */
@@ -136,7 +141,8 @@ export abstract class LivingEntity extends Entity {
     if (this.effects.size === 0) {
       return;
     }
-    for (const effect of [...this.effects.values()]) {
+    // Map 允许在遍历中删除当前项，不用复制一份
+    for (const effect of this.effects.values()) {
       effect.ticks--;
       if (effect.ticks <= 0) {
         this.removeEffect(effect.id);
@@ -146,13 +152,11 @@ export abstract class LivingEntity extends Entity {
       if (!period) {
         continue;
       }
-      const remaining = (this.effectTimers.get(effect.id) ?? period) - 1;
-      if (remaining > 0) {
-        this.effectTimers.set(effect.id, remaining);
-        continue;
+      // 1.8.9 同款：用剩余时长取模决定周期，等级每高一级快一倍，不需要额外的计时器
+      const interval = Math.max(1, period >> effect.amplifier);
+      if (effect.ticks % interval === 0) {
+        this.applyPeriodic(ctx, effect.id);
       }
-      this.effectTimers.set(effect.id, this.periodOf(effect.id, effect.amplifier));
-      this.applyPeriodic(ctx, effect.id);
     }
   }
 
@@ -175,7 +179,7 @@ export abstract class LivingEntity extends Entity {
 
   /** 序列化身上的效果。 */
   serializeEffects(): ActiveEffect[] {
-    return [...this.effects.values()].map((e) => ({ ...e }));
+    return Array.from(this.effects.values(), (e) => ({ ...e }));
   }
 
   /** 反序列化效果（旧存档没有该字段时什么都不做）。 */
@@ -184,9 +188,9 @@ export abstract class LivingEntity extends Entity {
     for (const e of data ?? []) {
       if (isEffectId(e.id)) {
         this.effects.set(e.id, { ...e });
-        this.effectTimers.set(e.id, this.periodOf(e.id, e.amplifier));
       }
     }
+    this.effectsVersion++;
   }
 
   /** 让实体着火（取较长的时间）。 */
@@ -204,8 +208,9 @@ export abstract class LivingEntity extends Entity {
    * 离开岩浆后火还会烧一会儿，进水立刻熄灭。
    */
   protected tickFire(ctx: EntityContext): void {
-    const box = this.box();
-    if (isBoxTouchingBlock(ctx.world, box, BlockId.CACTUS)) {
+    // 一次扫描包围盒拿到所有环境方块的位掩码，而不是每种方块各扫一遍
+    const touched = boxTouchMask(ctx.world, this.box(), HAZARD_BLOCKS);
+    if (touched & HAZARD_CACTUS) {
       this.cactusDamageTimer++;
       if (this.cactusDamageTimer >= CACTUS_DAMAGE_INTERVAL_TICKS) {
         this.cactusDamageTimer = 0;
@@ -218,10 +223,10 @@ export abstract class LivingEntity extends Entity {
       this.fireTicks = 0;
       return;
     }
-    if (isBoxTouchingBlock(ctx.world, box, BlockId.FIRE)) {
+    if (touched & HAZARD_FIRE) {
       this.setOnFire(FIRE_TOUCH_BURN_TICKS);
     }
-    if (isBoxTouchingBlock(ctx.world, box, BlockId.LAVA)) {
+    if (touched & HAZARD_LAVA) {
       this.setOnFire(LAVA_BURN_TICKS);
       this.lavaDamageTimer++;
       if (this.lavaDamageTimer >= LAVA_DAMAGE_INTERVAL_TICKS) {
@@ -235,7 +240,7 @@ export abstract class LivingEntity extends Entity {
       return;
     }
     // 只有真的碰到水才灭火（inWater 对岩浆也是 true）
-    if (isBoxTouchingBlock(ctx.world, box, BlockId.WATER)) {
+    if (touched & HAZARD_WATER) {
       this.fireTicks = 0;
       return;
     }

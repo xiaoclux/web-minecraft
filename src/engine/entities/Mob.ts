@@ -428,11 +428,7 @@ export class Mob extends LivingEntity {
       const x = Math.floor(this.x) + Math.floor((ctx.random() - 0.5) * 2 * TELEPORT_RANGE);
       const z = Math.floor(this.z) + Math.floor((ctx.random() - 0.5) * 2 * TELEPORT_RANGE);
       const y = Math.floor(this.y) + Math.floor((ctx.random() - 0.5) * 2 * TELEPORT_VERTICAL_RANGE);
-      if (
-        ctx.world.isSolidAt(x, y - 1, z) &&
-        ctx.world.getBlock(x, y, z) === 0 &&
-        ctx.world.getBlock(x, y + 1, z) === 0
-      ) {
+      if (ctx.world.canStandAt(x, y, z)) {
         this.setPosition(x + 0.5, y, z + 0.5);
         ctx.playSound('hit', this.x, this.y, this.z);
         return;

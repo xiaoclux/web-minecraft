@@ -1,7 +1,7 @@
 import { BlockId } from '../../blocks/BlockRegistry';
 import { CHUNK_SIZE } from '../../constants/world';
 import { createRng, hashCoords, hashString } from '../../textures/PixelCanvas';
-import type { Chunk } from '../Chunk';
+import { chunkKey, type Chunk } from '../Chunk';
 import { LootTable } from './LootTables';
 import { boundsIntersectXZ, chunkBounds, placeBlocksInChunk, StructureBuilder } from './StructureBuilder';
 
@@ -19,6 +19,21 @@ const STEPS = 5;
 const VAULT_DEPTH = 9;
 const VAULT_RADIUS = 2;
 const SALT_TEMPLE = 313;
+/** 判断"整座神殿都在沙漠里"要检查的点：中心 + 底边四角。 */
+const FOOTPRINT_OFFSETS: readonly (readonly [number, number])[] = [
+  [0, 0],
+  [-BASE_RADIUS, -BASE_RADIUS],
+  [BASE_RADIUS, -BASE_RADIUS],
+  [-BASE_RADIUS, BASE_RADIUS],
+  [BASE_RADIUS, BASE_RADIUS],
+];
+/** 宝库四面墙边各一个箱子。 */
+const CHEST_OFFSETS: readonly (readonly [number, number])[] = [
+  [-VAULT_RADIUS, 0],
+  [VAULT_RADIUS, 0],
+  [0, -VAULT_RADIUS],
+  [0, VAULT_RADIUS],
+];
 
 /** 一座沙漠神殿。 */
 export interface DesertTemple {
@@ -26,6 +41,17 @@ export interface DesertTemple {
   centerZ: number;
   /** 地面高度（金字塔底面 y）。 */
   groundY: number;
+  /** 占用范围（供植被避让与 chunk 裁剪），创建时算好。 */
+  bounds: StructureBounds;
+}
+
+interface StructureBounds {
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
+  minY: number;
+  maxY: number;
 }
 
 /**
@@ -34,6 +60,8 @@ export interface DesertTemple {
  */
 export class DesertTempleGenerator {
   private readonly baseSeed: number;
+  /** 按格子缓存：植被生成对每一列都要问一遍，不缓存的话每 chunk 要重算几千次。 */
+  private readonly cache = new Map<number, DesertTemple | null>();
 
   constructor(
     seed: string,
@@ -45,6 +73,17 @@ export class DesertTempleGenerator {
 
   /** 某个格子里的神殿（没有则返回 null）。 */
   getTemple(cellX: number, cellZ: number): DesertTemple | null {
+    const key = chunkKey(cellX, cellZ);
+    const cached = this.cache.get(key);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const temple = this.rollTemple(cellX, cellZ);
+    this.cache.set(key, temple);
+    return temple;
+  }
+
+  private rollTemple(cellX: number, cellZ: number): DesertTemple | null {
     const rng = createRng(hashCoords(this.baseSeed, cellX, cellZ, SALT_TEMPLE));
     if (rng() >= TEMPLE_CHANCE) {
       return null;
@@ -53,51 +92,40 @@ export class DesertTempleGenerator {
     const centerX = cellX * TEMPLE_CELL_BLOCKS + TEMPLE_MARGIN + Math.floor(rng() * span);
     const centerZ = cellZ * TEMPLE_CELL_BLOCKS + TEMPLE_MARGIN + Math.floor(rng() * span);
     // 中心与四角都得在沙漠里，免得半座神殿插进草地
-    for (const [dx, dz] of [
-      [0, 0],
-      [-BASE_RADIUS, -BASE_RADIUS],
-      [BASE_RADIUS, -BASE_RADIUS],
-      [-BASE_RADIUS, BASE_RADIUS],
-      [BASE_RADIUS, BASE_RADIUS],
-    ]) {
+    for (const [dx, dz] of FOOTPRINT_OFFSETS) {
       if (!this.isDesert(centerX + dx, centerZ + dz)) {
         return null;
       }
     }
-    return { centerX, centerZ, groundY: this.groundHeightAt(centerX, centerZ) };
+    const groundY = this.groundHeightAt(centerX, centerZ);
+    return {
+      centerX,
+      centerZ,
+      groundY,
+      bounds: {
+        minX: centerX - BASE_RADIUS,
+        maxX: centerX + BASE_RADIUS,
+        minZ: centerZ - BASE_RADIUS,
+        maxZ: centerZ + BASE_RADIUS,
+        minY: groundY - VAULT_DEPTH,
+        maxY: groundY + STEPS + 2,
+      },
+    };
   }
 
   /** 把可能影响该 chunk 的神殿写进去。 */
   placeInChunk(chunk: Chunk): void {
     const cell = Math.floor((chunk.cx * CHUNK_SIZE) / TEMPLE_CELL_BLOCKS);
     const cellZ = Math.floor((chunk.cz * CHUNK_SIZE) / TEMPLE_CELL_BLOCKS);
+    const bounds = chunkBounds(chunk);
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
         const temple = this.getTemple(cell + dx, cellZ + dz);
-        if (temple && boundsIntersectXZ(chunkBounds(chunk), this.boundsOf(temple))) {
+        if (temple && boundsIntersectXZ(bounds, temple.bounds)) {
           this.build(chunk, temple);
         }
       }
     }
-  }
-
-  /** 神殿占用的 XZ 范围（供植被避让与 chunk 裁剪）。 */
-  boundsOf(temple: DesertTemple): {
-    minX: number;
-    minZ: number;
-    maxX: number;
-    maxZ: number;
-    minY: number;
-    maxY: number;
-  } {
-    return {
-      minX: temple.centerX - BASE_RADIUS,
-      maxX: temple.centerX + BASE_RADIUS,
-      minZ: temple.centerZ - BASE_RADIUS,
-      maxZ: temple.centerZ + BASE_RADIUS,
-      minY: temple.groundY - VAULT_DEPTH,
-      maxY: temple.groundY + STEPS + 2,
-    };
   }
 
   /** 该列是否被神殿占用（植被避让用）。 */
@@ -110,7 +138,7 @@ export class DesertTempleGenerator {
         if (!temple) {
           continue;
         }
-        const b = this.boundsOf(temple);
+        const b = temple.bounds;
         if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) {
           return true;
         }
@@ -159,12 +187,7 @@ export class DesertTempleGenerator {
     b.set(cx, vaultY, cz, BlockId.TNT);
     placeBlocksInChunk(chunk, b.list());
     // 四角各一个战利品箱
-    for (const [dx, dz] of [
-      [-VAULT_RADIUS, 0],
-      [VAULT_RADIUS, 0],
-      [0, -VAULT_RADIUS],
-      [0, VAULT_RADIUS],
-    ]) {
+    for (const [dx, dz] of CHEST_OFFSETS) {
       const x = cx + dx;
       const z = cz + dz;
       chunk.setWorld(x, vaultY + 1, z, BlockId.CHEST);

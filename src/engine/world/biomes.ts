@@ -50,6 +50,8 @@ export interface BiomeDef {
   heightBias: number;
   /** 地表铺雪。 */
   snow?: boolean;
+  /** 寒冷群系：下雨时落下的是雪花。 */
+  snowfall?: boolean;
   /** 地表随机露出石头的概率（山地）。 */
   stoneSurfaceChance?: number;
   /** 每列长仙人掌 / 甘蔗的概率。 */
@@ -129,6 +131,7 @@ export const BIOME_DEFS: Record<Biome, BiomeDef> = {
     grassChance: 0.03,
     flowerChance: 0.004,
     heightBias: 1,
+    snowfall: true,
   },
   snowy: {
     id: Biome.SNOWY,
@@ -141,6 +144,7 @@ export const BIOME_DEFS: Record<Biome, BiomeDef> = {
     flowerChance: 0,
     heightBias: 0,
     snow: true,
+    snowfall: true,
   },
   desert: {
     id: Biome.DESERT,
@@ -251,4 +255,9 @@ export function biomeFor(temperature: number, humidity: number): Biome {
 /** 群系 id → 中文名；未知 id 原样返回（超平坦等生成器可能给别的字符串）。 */
 export function biomeLabel(id: string): string {
   return BIOME_DEFS[id as Biome]?.label ?? id;
+}
+
+/** 该群系下雨时落的是不是雪（未知群系名如超平坦按下雨算）。 */
+export function biomeHasSnowfall(id: string): boolean {
+  return BIOME_DEFS[id as Biome]?.snowfall === true;
 }

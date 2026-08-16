@@ -54,6 +54,8 @@ export interface RandomTickHost {
   random(): number;
   /** 该位置的有效光照（取天空光与方块光的较大者，天空光已按昼夜衰减）。 */
   lightLevelAt(x: number, y: number, z: number): number;
+  /** 是否在下雨：露天的火会被浇灭。 */
+  readonly isRaining: boolean;
 }
 
 /**
@@ -242,6 +244,11 @@ export class RandomTickSystem {
    */
   private tickFire(x: number, y: number, z: number): void {
     const world = this.host.world;
+    // 下雨浇灭露天的火：火本来就按固定间隔更新，顺手在这里判断，不用另扫一遍地表
+    if (this.host.isRaining && world.getHeight(x, z) === y) {
+      world.setBlock(x, y, z, BlockId.AIR);
+      return;
+    }
     const belowDef = getBlock(world.getBlock(x, y - 1, z));
     const hasFuel = this.hasFlammableNeighbor(x, y, z);
     if (!belowDef.solid && !hasFuel) {

@@ -158,24 +158,32 @@ export function isBoxInLiquid(world: World, box: AABB, fraction = 0.5): boolean 
   );
 }
 
-/** 包围盒是否与指定方块 id 相交。 */
-export function isBoxTouchingBlock(world: World, box: AABB, blockId: number): boolean {
+/**
+ * 一次扫描包围盒，返回命中了 ids 中哪些方块的位掩码（第 i 位对应 ids[i]）。
+ * 供每 tick 要同时查多种方块的调用方使用，避免同一包围盒扫多遍。
+ */
+export function boxTouchMask(world: World, box: AABB, ids: readonly number[]): number {
   const x0 = Math.floor(box.minX);
   const x1 = Math.floor(box.maxX - EPSILON);
   const y0 = Math.floor(box.minY);
   const y1 = Math.floor(box.maxY - EPSILON);
   const z0 = Math.floor(box.minZ);
   const z1 = Math.floor(box.maxZ - EPSILON);
+  let mask = 0;
   for (let y = y0; y <= y1; y++) {
     for (let z = z0; z <= z1; z++) {
       for (let x = x0; x <= x1; x++) {
-        if (world.getBlock(x, y, z) === blockId) {
-          return true;
+        const id = world.getBlock(x, y, z);
+        for (let i = 0; i < ids.length; i++) {
+          if (ids[i] === id) {
+            mask |= 1 << i;
+            break;
+          }
         }
       }
     }
   }
-  return false;
+  return mask;
 }
 
 /** 包围盒是否与任何液体方块相交。 */

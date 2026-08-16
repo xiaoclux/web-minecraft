@@ -11,6 +11,7 @@ function host(world: World, light = MAX_LIGHT, values: number[] = []) {
   let i = 0;
   return {
     world,
+    isRaining: false,
     lightLevelAt: () => light,
     random: () => (values.length > 0 ? values[i++ % values.length] : Math.random()),
   };

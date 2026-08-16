@@ -5,6 +5,7 @@
 
 import type { FurnaceState } from '../items/Furnace';
 import type { ItemStack } from '../items/ItemStack';
+import type { MobType } from '../entities/MobDefs';
 
 /** 方块实体类型。 */
 export const BlockEntityType = {
@@ -29,8 +30,12 @@ export interface ChestBlockEntity {
 /** 刷怪笼。 */
 export interface SpawnerBlockEntity {
   type: typeof BlockEntityType.SPAWNER;
+  /** 自身坐标：每 tick 都要算与玩家的距离，不从字符串键反解析。 */
+  x: number;
+  y: number;
+  z: number;
   /** 生成的生物类型。 */
-  mob: string;
+  mob: MobType;
   /** 距离下次生成还有多少 tick。 */
   delay: number;
 }
@@ -85,11 +90,6 @@ export class BlockEntityStore {
   /** 遍历全部实体。 */
   values(): IterableIterator<BlockEntity> {
     return this.byKey.values();
-  }
-
-  /** 遍历 [坐标键, 实体]。 */
-  entries(): IterableIterator<[string, BlockEntity]> {
-    return this.byKey.entries();
   }
 
   serialize(): BlockEntitySaveData[] {

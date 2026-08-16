@@ -1,5 +1,6 @@
 import { BlockId } from '../../blocks/BlockRegistry';
 import { CHUNK_SIZE } from '../../constants/world';
+import { MobType } from '../../entities/MobDefs';
 import { createRng, hashCoords, hashString } from '../../textures/PixelCanvas';
 import type { Chunk } from '../Chunk';
 import { LootTable } from './LootTables';
@@ -19,7 +20,7 @@ const ROOM_HEIGHT = 3;
 const MOSSY_CHANCE = 0.35;
 /** 每个地牢的箱子数量与刷怪笼生物。 */
 const CHEST_ATTEMPTS = 2;
-const SPAWNER_MOBS = ['zombie', 'skeleton', 'spider'] as const;
+const SPAWNER_MOBS = [MobType.ZOMBIE, MobType.SKELETON, MobType.SPIDER] as const;
 const SALT_DUNGEON = 211;
 
 /** 一座地牢：位置、大小与刷怪笼生物。 */
@@ -29,7 +30,7 @@ interface Dungeon {
   z: number;
   radiusX: number;
   radiusZ: number;
-  mob: string;
+  mob: MobType;
   seed: number;
 }
 
@@ -56,7 +57,10 @@ export class DungeonGenerator {
     const rng = createRng(hashCoords(this.baseSeed, cx, cz, SALT_DUNGEON));
     const out: Dungeon[] = [];
     for (let i = 0; i < DUNGEON_ATTEMPTS; i++) {
-      const roll = rng();
+      // 先掷概率：99% 的尝试在这里就结束，后面的六个随机数不用白算
+      if (rng() >= DUNGEON_CHANCE) {
+        continue;
+      }
       const x = cx * CHUNK_SIZE + Math.floor(rng() * CHUNK_SIZE);
       const z = cz * CHUNK_SIZE + Math.floor(rng() * CHUNK_SIZE);
       const y = DUNGEON_MIN_Y + Math.floor(rng() * (DUNGEON_MAX_Y - DUNGEON_MIN_Y));
@@ -64,7 +68,7 @@ export class DungeonGenerator {
       const radiusZ = ROOM_MIN_RADIUS + Math.floor(rng() * (ROOM_MAX_RADIUS - ROOM_MIN_RADIUS + 1));
       const mob = SPAWNER_MOBS[Math.floor(rng() * SPAWNER_MOBS.length)];
       const seed = Math.floor(rng() * 0xffffffff);
-      if (roll < DUNGEON_CHANCE && this.isDeepUnderground(x, y + ROOM_HEIGHT + 1, z)) {
+      if (this.isDeepUnderground(x, y + ROOM_HEIGHT + 1, z)) {
         out.push({ x, y, z, radiusX, radiusZ, mob, seed });
       }
     }

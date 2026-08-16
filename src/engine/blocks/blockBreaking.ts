@@ -41,6 +41,11 @@ export function rollDrops(def: BlockDef, meta: number, held: ItemStack | null, r
   }
   const variant = blockVariant(def, meta);
   const table: BlockDrop[] = variant.drops ?? def.drops ?? [{ item: variant.name, min: 1, max: 1 }];
+  return rollDropTable(table, random);
+}
+
+/** 按掉落表逐项掷骰：先按概率决定出不出，再在 [min, max] 里取数量。方块掉落与战利品箱共用。 */
+export function rollDropTable(table: readonly BlockDrop[], random: () => number): ItemStack[] {
   const out: ItemStack[] = [];
   for (const drop of table) {
     if (drop.chance !== undefined && random() > drop.chance) {

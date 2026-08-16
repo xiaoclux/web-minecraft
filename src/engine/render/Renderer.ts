@@ -18,6 +18,7 @@ const AMBIENT_MIN = 0.35;
 /** 下雨时天光压暗的比例、雾色混入的灰色与比例。 */
 const RAIN_DARKEN = 0.35;
 const RAIN_FOG_COLOR = new THREE.Color(0x5a6472);
+const UNDERWATER_FOG_COLOR = new THREE.Color(0x1a3a8a);
 const RAIN_FOG_MIX = 0.7;
 const SUN_INTENSITY = 1.2;
 
@@ -89,10 +90,13 @@ export class Renderer {
     // 下雨时天光整体压暗，云雾也更灰
     const skyLevel = this.sky.skyLevel * (1 - RAIN_DARKEN * rainLevel);
     this.chunks.sharedUniforms.uSkyLevel.value = skyLevel;
-    const fogColor = isUnderwater
-      ? new THREE.Color(0x1a3a8a)
-      : this.sky.color.clone().lerp(RAIN_FOG_COLOR, rainLevel * RAIN_FOG_MIX);
-    this.chunks.sharedUniforms.uFogColor.value.copy(fogColor);
+    // 直接在 uniform 的 Color 上算，每帧零分配
+    const fogColor: THREE.Color = this.chunks.sharedUniforms.uFogColor.value;
+    if (isUnderwater) {
+      fogColor.copy(UNDERWATER_FOG_COLOR);
+    } else {
+      fogColor.copy(this.sky.color).lerp(RAIN_FOG_COLOR, rainLevel * RAIN_FOG_MIX);
+    }
     if (isUnderwater) {
       this.chunks.sharedUniforms.uFogNear.value = 2;
       this.chunks.sharedUniforms.uFogFar.value = 24;

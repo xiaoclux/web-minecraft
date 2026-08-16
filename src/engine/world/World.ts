@@ -358,6 +358,15 @@ export class World {
     return getBlock(this.getBlock(x, y, z)).opaque;
   }
 
+  /** 一个双格高的生物能否站在方块 (x, y, z) 上：脚下实心、身位两格空气。生成 / 传送落点共用。 */
+  canStandAt(x: number, y: number, z: number): boolean {
+    return (
+      this.isSolidAt(x, y - 1, z) &&
+      this.getBlock(x, y, z) === BlockId.AIR &&
+      this.getBlock(x, y + 1, z) === BlockId.AIR
+    );
+  }
+
   /** 该位置是否有碰撞（未加载 chunk 视为实心，形成临时边界；世界上方为空）。 */
   isSolidAt(x: number, y: number, z: number): boolean {
     if (y >= this.sizeY) {

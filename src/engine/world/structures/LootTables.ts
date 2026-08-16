@@ -1,13 +1,9 @@
+import { rollDropTable } from '../../blocks/blockBreaking';
+import type { BlockDrop } from '../../blocks/BlockRegistry';
 import type { ItemStack } from '../../items/ItemStack';
 
-/** 战利品表中的一项。 */
-interface LootEntry {
-  item: string;
-  /** 出现概率 0~1。 */
-  chance: number;
-  min: number;
-  max: number;
-}
+/** 战利品表中的一项：与方块掉落表同构，chance 必填。 */
+type LootEntry = BlockDrop & { chance: number };
 
 /** 战利品表 id。 */
 export const LootTable = {
@@ -66,19 +62,6 @@ const LOOT_TABLES: Record<LootTable, readonly LootEntry[]> = {
  * 逐项按概率决定是否出现，最多取 MAX_STACKS_PER_CHEST 种，保证箱子不会一次塞满。
  */
 export function rollLoot(table: LootTable, random: () => number): ItemStack[] {
-  const entries = LOOT_TABLES[table];
-  const out: ItemStack[] = [];
-  for (const entry of entries) {
-    if (out.length >= MAX_STACKS_PER_CHEST) {
-      break;
-    }
-    if (random() >= entry.chance) {
-      continue;
-    }
-    const count = entry.min + Math.floor(random() * (entry.max - entry.min + 1));
-    if (count > 0) {
-      out.push({ id: entry.item, count });
-    }
-  }
-  return out;
+  const out = rollDropTable(LOOT_TABLES[table], random);
+  return out.length > MAX_STACKS_PER_CHEST ? out.slice(0, MAX_STACKS_PER_CHEST) : out;
 }

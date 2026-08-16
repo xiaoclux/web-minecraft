@@ -467,14 +467,14 @@ export class TerrainGenerator implements ChunkGenerator {
         }
         const tall = 1 + Math.floor(heightRoll * PLANT_MAX_EXTRA_HEIGHT);
         if (roll < cactusChance) {
-          if (ground !== BlockId.SAND || this.hasSolidNeighbor(chunk, lx, h + 1, lz)) {
+          if (ground !== BlockId.SAND || this.hasNeighborBlock(chunk, lx, h + 1, lz, (id) => id !== BlockId.AIR)) {
             continue;
           }
           for (let i = 0; i < tall; i++) {
             chunk.setLocal(lx, h + 1 + i, lz, BlockId.CACTUS);
           }
         } else {
-          if ((ground !== BlockId.SAND && ground !== BlockId.GRASS) || !this.hasWaterNeighbor(chunk, lx, h, lz)) {
+          if ((ground !== BlockId.SAND && ground !== BlockId.GRASS) || !this.hasNeighborBlock(chunk, lx, h, lz, (id) => id === BlockId.WATER)) {
             continue;
           }
           for (let i = 0; i < tall; i++) {
@@ -485,21 +485,16 @@ export class TerrainGenerator implements ChunkGenerator {
     }
   }
 
-  /** 该格四周（同层）是否有实心方块——仙人掌不能贴着别的方块长。 */
-  private hasSolidNeighbor(chunk: Chunk, lx: number, y: number, lz: number): boolean {
+  /** 该格四周（同层）是否有满足条件的方块——仙人掌不能贴着别的方块，甘蔗要挨着水。 */
+  private hasNeighborBlock(
+    chunk: Chunk,
+    lx: number,
+    y: number,
+    lz: number,
+    matches: (id: number) => boolean,
+  ): boolean {
     for (const [dx, dz] of NEIGHBOR_OFFSETS) {
-      const id = chunk.getLocal(clampLocal(lx + dx), y, clampLocal(lz + dz));
-      if (id !== BlockId.AIR) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /** 该格四周（同层）是否有水——甘蔗要挨着水。 */
-  private hasWaterNeighbor(chunk: Chunk, lx: number, y: number, lz: number): boolean {
-    for (const [dx, dz] of NEIGHBOR_OFFSETS) {
-      if (chunk.getLocal(clampLocal(lx + dx), y, clampLocal(lz + dz)) === BlockId.WATER) {
+      if (matches(chunk.getLocal(clampLocal(lx + dx), y, clampLocal(lz + dz)))) {
         return true;
       }
     }

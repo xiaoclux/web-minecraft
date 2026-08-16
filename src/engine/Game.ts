@@ -49,7 +49,9 @@ import {
   XP_ORB_MAX_AMOUNT,
   SPRINT_FOOD_THRESHOLD,
   TICK_MS,
+  TICKS_PER_SECOND,
 } from './constants/game';
+import type { ParticleOptions } from './render/ParticleSystem';
 import { KEY_ESCAPE, KEY_HOTBAR_PREFIX, MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT } from './constants/keys';
 import { actionForCode, isTouchDevice, settingsStore, type BindingAction } from './settings/Settings';
 import { AUTOSAVE_INTERVAL_TICKS, SAVE_FORMAT_VERSION } from './constants/save';
@@ -69,7 +71,7 @@ import {
   SPAWNER_SPAWN_RANGE,
 } from './constants/mobs';
 import { CHEST_SLOT_COUNT } from './constants/ui';
-import { rollLoot, type LootTable } from './world/structures/LootTables';
+import { rollLoot } from './world/structures/LootTables';
 import { WATER_SOURCE_META, WATER_TICK_INTERVAL } from './constants/fluids';
 import {
   DAY_LENGTH_TICKS,
@@ -82,14 +84,14 @@ import {
 import { BlockEntityStore, BlockEntityType } from './world/BlockEntityStore';
 import { RandomTickSystem } from './systems/RandomTickSystem';
 import { WeatherSystem } from './systems/WeatherSystem';
-import { biomeLabel } from './world/biomes';
+import { biomeHasSnowfall, biomeLabel } from './world/biomes';
 import { ArrowEntity } from './entities/ArrowEntity';
 import { Entity, allocateEntityId, resetEntityIds, type EntitySaveData } from './entities/Entity';
 import type { EntityContext } from './entities/EntityContext';
 import { ItemDropEntity } from './entities/ItemDropEntity';
 import { XpOrbEntity } from './entities/XpOrbEntity';
 import { LivingEntity } from './entities/LivingEntity';
-import { EffectId } from './entities/effects';
+import { EffectId, type ActiveEffect } from './entities/effects';
 import { Mob } from './entities/Mob';
 import { MobType, isMobType } from './entities/MobDefs';
 import { MobSpawner } from './entities/MobSpawner';
@@ -144,12 +146,15 @@ const FACING_LABELS = ['南 (+Z)', '西 (-X)', '北 (-Z)', '东 (+X)'];
 const XP_PER_MOB_KILL_MULTIPLIER = 1;
 const SPAWN_PROTECTION_TICKS = 40;
 const REPLACEABLE_BLOCKS: ReadonlySet<number> = new Set<number>([BlockId.AIR, BlockId.WATER, BlockId.TALL_GRASS]);
-/** 下雨：每隔多少 tick 浇一次火、浇火的半径、每 tick 撒几滴雨、撒雨的半径与高度。 */
-const RAIN_EXTINGUISH_INTERVAL = 20;
-const RAIN_EXTINGUISH_RADIUS = 12;
+/** 下雨：每 tick 撒几滴雨、撒雨的半径与高度。 */
 const RAIN_PARTICLES_PER_TICK = 8;
 const RAIN_PARTICLE_RADIUS = 10;
 const RAIN_PARTICLE_HEIGHT = 6;
+const RAIN_PARTICLE_OPTIONS: ParticleOptions = { speed: 0, minLife: 0.5, maxLife: 0.9, size: 0.08, brightness: 1 };
+/** HUD 效果倒计时只显示到秒，所以效果列表每秒刷新一次即可。 */
+const EFFECT_HUD_REFRESH_TICKS = TICKS_PER_SECOND;
+const EMPTY_EFFECTS: ActiveEffect[] = [];
+const SPAWNER_ACTIVATE_RANGE_SQ = SPAWNER_ACTIVATE_RANGE * SPAWNER_ACTIVATE_RANGE;
 /** 战利品在箱子里的摆放间隔（散开一点，别都挤在开头）。 */
 const LOOT_SLOT_STRIDE = 4;
 /** 各种桶倒出来的流体方块（空桶为 AIR，表示"去装"）。 */
@@ -203,6 +208,9 @@ export class Game implements EntityContext, ContainerHost {
   private readonly saveManager: SaveManager;
   private readonly onExit: () => void;
   private readonly rng: () => number;
+  /** 上次交给 HUD 的效果列表及其对应的版本号（见 effectsForHud）。 */
+  private hudEffects: ActiveEffect[] = EMPTY_EFFECTS;
+  private hudEffectsVersion = -1;
   private rafId = 0;
   private lastFrame = 0;
   private accumulator = 0;
@@ -241,7 +249,7 @@ export class Game implements EntityContext, ContainerHost {
     this.difficulty = this.rules.forcedDifficulty ?? options.meta.difficulty;
     this.rng = createRng(hashString(`${options.meta.seed}:${Date.now()}`));
     this.generator = createChunkGenerator(options.meta);
-    this.weather = new WeatherSystem(() => this.rng());
+    this.weather = new WeatherSystem(this.rng);
     this.light = new LightEngine(this.world);
     this.chunkManager = new ChunkManager(this.world, this.generator, this.light);
     this.fluids = new FluidSimulator(this.world);
@@ -571,6 +579,25 @@ export class Game implements EntityContext, ContainerHost {
     return blockVariant(getBlock(this.world.getBlock(x, y, z)), this.world.getMeta(x, y, z)).label;
   }
 
+  /**
+   * 给 HUD 的效果列表：只在效果增删或到了刷新秒数时才产出新数组，
+   * 否则复用上一份引用，让 Store 的浅比较在"没变化"时不触发 React 重渲染。
+   */
+  private effectsForHud(): ActiveEffect[] {
+    const p = this.player;
+    if (p.effects.size === 0) {
+      this.hudEffectsVersion = p.effectsVersion;
+      this.hudEffects = EMPTY_EFFECTS;
+      return EMPTY_EFFECTS;
+    }
+    const stale = p.effectsVersion !== this.hudEffectsVersion || this.tick % EFFECT_HUD_REFRESH_TICKS === 0;
+    if (stale) {
+      this.hudEffectsVersion = p.effectsVersion;
+      this.hudEffects = p.serializeEffects();
+    }
+    return this.hudEffects;
+  }
+
   private syncStore(): void {
     const p = this.player;
     this.store.patch({
@@ -578,7 +605,7 @@ export class Game implements EntityContext, ContainerHost {
       food: p.food,
       air: p.air,
       armor: p.armorPoints,
-      effects: p.serializeEffects(),
+      effects: this.effectsForHud(),
       xpLevel: p.xpLevel,
       xpProgress: p.xpProgress,
       selectedSlot: p.selectedSlot,
@@ -1849,7 +1876,7 @@ export class Game implements EntityContext, ContainerHost {
       }
       if (pending.loot) {
         const items = new Array<ItemStack | null>(CHEST_SLOT_COUNT).fill(null);
-        const loot = rollLoot(pending.loot as LootTable, this.rng);
+        const loot = rollLoot(pending.loot, this.rng);
         loot.forEach((stack, i) => {
           items[Math.min(items.length - 1, i * LOOT_SLOT_STRIDE)] = stack;
         });
@@ -1857,6 +1884,9 @@ export class Game implements EntityContext, ContainerHost {
       } else if (pending.spawns) {
         this.blockEntities.set(x, y, z, {
           type: BlockEntityType.SPAWNER,
+          x,
+          y,
+          z,
           mob: pending.spawns,
           delay: SPAWNER_MIN_DELAY_TICKS,
         });
@@ -1864,37 +1894,14 @@ export class Game implements EntityContext, ContainerHost {
     }
   }
 
-  /** 下雨时浇灭露天的火，并在玩家周围下雨滴 / 雪花粒子。 */
+  /** 下雨时在玩家周围下雨滴 / 雪花粒子（浇火由 RandomTickSystem 在火自己的 tick 里做）。 */
   private tickWeatherEffects(): void {
     if (!this.weather.isRaining) {
       return;
     }
-    if (this.tick % RAIN_EXTINGUISH_INTERVAL === 0) {
-      this.extinguishFiresNearPlayer();
-    }
-    this.spawnRainParticles();
-  }
-
-  /** 浇灭玩家附近露天的火。 */
-  private extinguishFiresNearPlayer(): void {
-    const px = Math.floor(this.player.x);
-    const pz = Math.floor(this.player.z);
-    for (let dz = -RAIN_EXTINGUISH_RADIUS; dz <= RAIN_EXTINGUISH_RADIUS; dz++) {
-      for (let dx = -RAIN_EXTINGUISH_RADIUS; dx <= RAIN_EXTINGUISH_RADIUS; dx++) {
-        const x = px + dx;
-        const z = pz + dz;
-        const y = this.world.getHeight(x, z);
-        if (this.world.getBlock(x, y, z) === BlockId.FIRE) {
-          this.world.setBlock(x, y, z, BlockId.AIR);
-        }
-      }
-    }
-  }
-
-  /** 在玩家头顶一圈随机撒雨滴；冷群系下的是雪。 */
-  private spawnRainParticles(): void {
     const p = this.player;
-    const texture = this.isColdAtPlayer() ? 'particle_snow' : 'particle_rain';
+    const snowing = biomeHasSnowfall(this.generator.biomeAt(Math.floor(p.x), Math.floor(p.z)));
+    const texture = snowing ? 'particle_snow' : 'particle_rain';
     const count = Math.round(RAIN_PARTICLES_PER_TICK * this.weather.rainLevel);
     for (let i = 0; i < count; i++) {
       const x = p.x + (this.rng() - 0.5) * 2 * RAIN_PARTICLE_RADIUS;
@@ -1904,30 +1911,17 @@ export class Game implements EntityContext, ContainerHost {
       if (surface > p.eyeY + RAIN_PARTICLE_HEIGHT) {
         continue;
       }
-      this.renderer.particles.spawn(x, p.y + RAIN_PARTICLE_HEIGHT, z, texture, {
-        speed: 0,
-        minLife: 0.5,
-        maxLife: 0.9,
-        size: 0.08,
-        brightness: 1,
-      });
+      this.renderer.particles.spawn(x, p.y + RAIN_PARTICLE_HEIGHT, z, texture, RAIN_PARTICLE_OPTIONS);
     }
-  }
-
-  /** 玩家所在群系是否寒冷（下雪而不是下雨）。 */
-  private isColdAtPlayer(): boolean {
-    const biome = this.generator.biomeAt(Math.floor(this.player.x), Math.floor(this.player.z));
-    return biome === 'snowy' || biome === 'taiga';
   }
 
   /** 刷怪笼：玩家靠近时倒计时，到点在周围生成几只生物。 */
   private tickSpawners(): void {
-    for (const [key, entity] of this.blockEntities.entries()) {
+    for (const entity of this.blockEntities.values()) {
       if (entity.type !== BlockEntityType.SPAWNER) {
         continue;
       }
-      const [x, y, z] = key.split(',').map(Number);
-      if (Math.hypot(this.player.x - x, this.player.y - y, this.player.z - z) > SPAWNER_ACTIVATE_RANGE) {
+      if (this.player.distanceSqToPoint(entity.x, entity.y, entity.z) > SPAWNER_ACTIVATE_RANGE_SQ) {
         continue;
       }
       if (entity.delay > 0) {
@@ -1936,17 +1930,17 @@ export class Game implements EntityContext, ContainerHost {
       }
       entity.delay =
         SPAWNER_MIN_DELAY_TICKS + Math.floor(this.rng() * (SPAWNER_MAX_DELAY_TICKS - SPAWNER_MIN_DELAY_TICKS));
-      this.spawnFromSpawner(entity.mob, x, y, z);
+      this.spawnFromSpawner(entity.mob, entity.x, entity.y, entity.z);
     }
   }
 
-  private spawnFromSpawner(mobType: string, x: number, y: number, z: number): void {
-    if (!isMobType(mobType) || !this.rules.mobsHostile) {
+  private spawnFromSpawner(mobType: MobType, x: number, y: number, z: number): void {
+    if (!this.rules.mobsHostile) {
       return;
     }
     let nearby = 0;
     for (const e of this.entities.values()) {
-      if (e instanceof Mob && e.type === mobType && Math.hypot(e.x - x, e.y - y, e.z - z) <= SPAWNER_ACTIVATE_RANGE) {
+      if (e instanceof Mob && e.type === mobType && e.distanceSqToPoint(x, y, z) <= SPAWNER_ACTIVATE_RANGE_SQ) {
         nearby++;
       }
     }
@@ -1958,16 +1952,7 @@ export class Game implements EntityContext, ContainerHost {
       const sx = x + Math.floor((this.rng() - 0.5) * 2 * SPAWNER_SPAWN_RANGE);
       const sz = z + Math.floor((this.rng() - 0.5) * 2 * SPAWNER_SPAWN_RANGE);
       const sy = y + Math.floor((this.rng() - 0.5) * 2);
-      if (
-        this.world.getBlock(sx, sy, sz) !== BlockId.AIR ||
-        this.world.getBlock(sx, sy + 1, sz) !== BlockId.AIR ||
-        !this.world.isSolidAt(sx, sy - 1, sz)
-      ) {
-        continue;
-      }
-      const mob = new Mob(mobType);
-      mob.setPosition(sx + 0.5, sy, sz + 0.5);
-      this.entities.set(mob.id, mob);
+      this.spawner.spawnMobAt(this, mobType, sx, sy, sz);
     }
   }
 
@@ -1977,12 +1962,11 @@ export class Game implements EntityContext, ContainerHost {
     if (!entity) {
       return;
     }
+    if (entity.type === BlockEntityType.SPAWNER) {
+      return;
+    }
     const stacks: (ItemStack | null)[] =
-      entity.type === BlockEntityType.FURNACE
-        ? [entity.state.input, entity.state.fuel, entity.state.output]
-        : entity.type === BlockEntityType.CHEST
-          ? entity.items
-          : [];
+      entity.type === BlockEntityType.FURNACE ? [entity.state.input, entity.state.fuel, entity.state.output] : entity.items;
     for (const stack of stacks) {
       if (stack) {
         this.dropItem(x + 0.5, y + 0.5, z + 0.5, stack, 0.2);
@@ -2162,6 +2146,10 @@ export class Game implements EntityContext, ContainerHost {
 
   isDaytime(): boolean {
     return Sky.isDaytime(this.timeTick);
+  }
+
+  get isRaining(): boolean {
+    return this.weather.isRaining;
   }
 
   lightLevelAt(x: number, y: number, z: number): number {

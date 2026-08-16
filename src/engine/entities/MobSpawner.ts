@@ -166,18 +166,10 @@ export class MobSpawner {
       ctx.random() < SURFACE_SPAWN_RATIO
         ? surfaceY
         : 1 + Math.floor(ctx.random() * Math.max(1, surfaceY - 1));
-    if (
-      !world.isSolidAt(pos.x, y - 1, pos.z) ||
-      world.getBlock(pos.x, y, pos.z) !== BlockId.AIR ||
-      world.getBlock(pos.x, y + 1, pos.z) !== BlockId.AIR
-    ) {
-      return;
-    }
     if (ctx.lightLevelAt(pos.x, y, pos.z) > HOSTILE_SPAWN_LIGHT_MAX) {
       return;
     }
-    const type = this.pickWeighted(ctx);
-    this.spawnMob(ctx, type, pos.x + 0.5, y, pos.z + 0.5);
+    this.spawnMobAt(ctx, this.pickWeighted(ctx), pos.x, y, pos.z);
   }
 
   private trySpawnPassiveGroup(ctx: EntityContext, minDist: number, maxDist: number): void {
@@ -205,15 +197,27 @@ export class MobSpawner {
     }
   }
 
-  private spawnMob(ctx: EntityContext, type: MobType, x: number, y: number, z: number): void {
+  /**
+   * 在方块 (x, y, z) 上生成一只生物（刷怪笼等外部触发用）：
+   * 要求脚下实心、身位两格空气且包围盒不卡方块。返回是否生成成功。
+   */
+  spawnMobAt(ctx: EntityContext, type: MobType, x: number, y: number, z: number): boolean {
+    if (!ctx.world.canStandAt(x, y, z)) {
+      return false;
+    }
+    return this.spawnMob(ctx, type, x + 0.5, y, z + 0.5);
+  }
+
+  private spawnMob(ctx: EntityContext, type: MobType, x: number, y: number, z: number): boolean {
     const def = MOB_DEFS[type];
     const box = AABB.fromFeet(x, y, z, def.width, def.height);
     if (isBoxBlocked(ctx.world, box)) {
-      return;
+      return false;
     }
     const mob = new Mob(type);
     mob.setPosition(x, y, z);
     mob.yaw = ctx.random() * Math.PI * 2;
     ctx.spawnEntity(mob);
+    return true;
   }
 }

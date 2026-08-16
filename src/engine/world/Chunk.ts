@@ -1,4 +1,6 @@
 import { BlockId } from '../blocks/BlockRegistry';
+import type { MobType } from '../entities/MobDefs';
+import type { LootTable } from './structures/LootTables';
 import {
   CHUNK_AREA,
   CHUNK_KEY_LIMIT,
@@ -63,9 +65,9 @@ export interface PendingBlockEntity {
   y: number;
   z: number;
   /** 战利品箱用：战利品表 id。 */
-  loot?: string;
+  loot?: LootTable;
   /** 刷怪笼用：生物类型。 */
-  spawns?: string;
+  spawns?: MobType;
 }
 
 /** 一个 16×WORLD_SIZE_Y×16 的世界分块：按段存方块与光照，另有整块共用的高度图。 */

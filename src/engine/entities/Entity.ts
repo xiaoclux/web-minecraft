@@ -218,11 +218,16 @@ export abstract class Entity {
     // 子类按需实现
   }
 
-  /** 与另一实体的水平距离平方。 */
+  /** 与另一实体的距离平方。 */
   distanceSqTo(other: Entity): number {
-    const dx = other.x - this.x;
-    const dy = other.y - this.y;
-    const dz = other.z - this.z;
+    return this.distanceSqToPoint(other.x, other.y, other.z);
+  }
+
+  /** 与某个点的距离平方（比较范围时用平方，省掉开方）。 */
+  distanceSqToPoint(x: number, y: number, z: number): number {
+    const dx = x - this.x;
+    const dy = y - this.y;
+    const dz = z - this.z;
     return dx * dx + dy * dy + dz * dz;
   }
 
