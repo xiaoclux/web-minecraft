@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BlockId, getBlock } from '../src/engine/blocks/BlockRegistry';
-import { CAKE_BITES, shapeBoxes } from '../src/engine/blocks/blockShapes';
+import { CAKE_BITES, COCOA_MAX_STAGE, COCOA_STAGE_SHIFT, shapeBoxes } from '../src/engine/blocks/blockShapes';
 import { RandomTickSystem } from '../src/engine/systems/RandomTickSystem';
 import { matchRecipe } from '../src/engine/items/Recipes';
 import { World } from '../src/engine/world/World';
@@ -93,5 +93,44 @@ describe('蛋糕', () => {
     const sugar = { id: 'sugar', count: 1 };
     const cake = matchRecipe([milk, milk, milk, sugar, { id: 'egg', count: 1 }, sugar, wheat, wheat, wheat], 3);
     expect(cake?.id).toBe('cake');
+  });
+});
+
+describe('可可果', () => {
+  it('三个成熟阶段的豆荚一个比一个大，且都贴在朝向那一面', () => {
+    const cocoa = getBlock(BlockId.COCOA);
+    // FACINGS[0] = +x：豆荚贴在 +x 那一侧
+    const small = shapeBoxes(cocoa, 0)[0];
+    const large = shapeBoxes(cocoa, COCOA_MAX_STAGE << COCOA_STAGE_SHIFT)[0];
+    expect(large.x1 - large.x0).toBeGreaterThan(small.x1 - small.x0);
+    expect(small.x1).toBe(1);
+    expect(large.x1).toBe(1);
+  });
+
+  it('随机 tick 会慢慢长熟，熟了就不再长', () => {
+    const world = emptyWorld(1);
+    world.setBlock(0, 10, 0, BlockId.COCOA, 0);
+    const system = new RandomTickSystem({
+      world,
+      random: () => 0.1,
+      lightLevelAt: () => 15,
+      get isRaining(): boolean {
+        return false;
+      },
+    });
+    for (let i = 0; i < 50; i++) {
+      system.tickBlock(0, 10, 0);
+    }
+    expect(world.getMeta(0, 10, 0) >> COCOA_STAGE_SHIFT).toBe(COCOA_MAX_STAGE);
+  });
+
+  it('可可豆能做曲奇，也能当棕色染料用', () => {
+    const cookie = matchRecipe(
+      [{ id: 'wheat', count: 1 }, { id: 'cocoa_beans', count: 1 }, { id: 'wheat', count: 1 }, null, null, null, null, null, null],
+      3,
+    );
+    expect(cookie?.id).toBe('cookie');
+    expect(cookie?.count).toBe(8);
+    expect(matchRecipe([{ id: 'cocoa_beans', count: 1 }, null, null, null], 2)?.id).toBe('brown_dye');
   });
 });

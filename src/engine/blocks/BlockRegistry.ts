@@ -41,7 +41,14 @@ export type RenderType = (typeof RenderType)[keyof typeof RenderType];
 import { SoundGroup } from './blockSounds';
 import { LIQUID_LIGHT_ATTENUATION } from '../constants/world';
 import { RAIL_SHAPE_MASK, REDSTONE_MAX_POWER, REDSTONE_POWERED_BIT, RailShape } from '../constants/redstone';
-import { BED_HEAD_BIT, BlockShape, CROP_MAX_STAGE, DOOR_UPPER_BIT } from './blockShapes';
+import {
+  BED_HEAD_BIT,
+  BlockShape,
+  COCOA_MAX_STAGE,
+  COCOA_STAGE_SHIFT,
+  CROP_MAX_STAGE,
+  DOOR_UPPER_BIT,
+} from './blockShapes';
 
 /** 六个面各自的贴图 key。 */
 export interface BlockFaceTextures {
@@ -293,6 +300,7 @@ export const BlockId = {
   IRON_BARS: 166,
   TRAPDOOR: 167,
   CAKE: 170,
+  COCOA: 171,
   BROWN_MUSHROOM: 168,
   RED_MUSHROOM: 169,
   LEVER: 69,
@@ -891,6 +899,18 @@ export const BLOCK_DEFS: BlockDef[] = [
       redstone: { repeater: true, source: REDSTONE_MAX_POWER, unlitBlockId: BlockId.REPEATER },
     }),
     shape: BlockShape.PRESSURE_PLATE,
+  },
+  {
+    ...cube(BlockId.COCOA, 'cocoa', '可可果', same('cocoa_stage_2'), 0.2, ToolType.AXE, {
+      render: RenderType.CUTOUT,
+      opaque: false,
+      solid: false,
+      noItem: true,
+      hasFacing: true,
+      drops: [{ item: 'cocoa_beans', min: 1, max: 3 }],
+      texturesForMeta: (meta: number) => same(`cocoa_stage_${Math.min(meta >> COCOA_STAGE_SHIFT, COCOA_MAX_STAGE)}`),
+    }),
+    shape: BlockShape.COCOA,
   },
   {
     ...cube(

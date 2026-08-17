@@ -1,4 +1,5 @@
 import { BlockId, getBlock } from '../blocks/BlockRegistry';
+import { COCOA_MAX_STAGE, COCOA_STAGE_SHIFT } from '../blocks/blockShapes';
 import { CHUNK_SIZE, SECTION_COUNT, SECTION_HEIGHT, WORLD_SIZE_Y } from '../constants/world';
 import { toChunkCoord } from '../world/Chunk';
 import { unpackPos } from '../world/posKey';
@@ -25,6 +26,10 @@ const GRASS_DIE_MAX_LIGHT = 4;
 const SAPLING_MIN_LIGHT = 9;
 /** 蘑菇：光照高于这个值就枯死，蔓延也只在暗处发生（1.8.9 是 12）。 */
 const MUSHROOM_MAX_LIGHT = 12;
+/** 可可果每次随机 tick 长一级的概率（1.8.9 为 1/5）。 */
+const COCOA_GROW_CHANCE = 0.2;
+/** 可可果 meta 的朝向位。 */
+const COCOA_FACING_MASK = 3;
 /** 每次随机 tick 命中蘑菇时向外蔓延的概率。 */
 const MUSHROOM_SPREAD_CHANCE = 0.25;
 /** 蘑菇蔓延的水平半径。 */
@@ -135,6 +140,9 @@ export class RandomTickSystem {
       case BlockId.SAPLING:
         this.tickSapling(x, y, z);
         break;
+      case BlockId.COCOA:
+        this.tickCocoa(x, y, z);
+        break;
       case BlockId.BROWN_MUSHROOM:
       case BlockId.RED_MUSHROOM:
         this.tickMushroom(x, y, z, id);
@@ -161,6 +169,17 @@ export class RandomTickSystem {
     if (above.opaque || this.host.lightLevelAt(x, y + 1, z) < GRASS_DIE_MAX_LIGHT) {
       world.setBlock(x, y, z, BlockId.DIRT);
     }
+  }
+
+  /** 可可果：随机 tick 慢慢长熟（1.8.9 每次 1/5 的机会长一级）。 */
+  private tickCocoa(x: number, y: number, z: number): void {
+    const world = this.host.world;
+    const meta = world.getMeta(x, y, z);
+    const stage = meta >> COCOA_STAGE_SHIFT;
+    if (stage >= COCOA_MAX_STAGE || this.host.random() > COCOA_GROW_CHANCE) {
+      return;
+    }
+    world.setBlock(x, y, z, BlockId.COCOA, (meta & COCOA_FACING_MASK) | ((stage + 1) << COCOA_STAGE_SHIFT));
   }
 
   /** 蘑菇：太亮就枯掉，否则有概率往附近的暗处蔓延一株。 */

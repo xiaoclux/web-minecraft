@@ -213,6 +213,9 @@ export const RECIPES: Recipe[] = [
   shaped(['P P', ' P '], { P: '#planks' }, 'bowl', 4),
   shapeless(['brown_mushroom', 'red_mushroom', 'bowl'], 'mushroom_stew'),
   shapeless(['pumpkin', 'sugar', 'egg'], 'pumpkin_pie'),
+  shaped(['WCW'], { W: 'wheat', C: 'cocoa_beans' }, 'cookie', 8),
+  // 1.8.9 里可可豆就是棕色染料，这里分成两个物品，用一条 1:1 的配方接上
+  shapeless(['cocoa_beans'], 'brown_dye'),
   shaped(['MMM', 'SES', 'WWW'], { M: 'milk_bucket', S: 'sugar', E: 'egg', W: 'wheat' }, 'cake'),
   shaped(['PPP', 'CIC', 'CRC'], { P: '#planks', C: 'cobblestone', I: 'iron_ingot', R: 'redstone' }, 'piston'),
   shapeless(['piston', 'slimeball'], 'sticky_piston'),

@@ -767,6 +767,20 @@ function repeater(lit: boolean): Painter {
   };
 }
 
+/** 可可果：越熟越大越橙。 */
+function cocoa(stage: number): Painter {
+  return (c) => {
+    c.fill(TRANSPARENT);
+    const size = 4 + stage * 2;
+    const x0 = Math.floor((16 - size) / 2);
+    const color = [hex('#5c7f36'), hex('#96652a'), hex('#b0561e')][stage];
+    c.rect(x0, 4, size, size, color);
+    // 高光一条 + 挂在原木上的小柄
+    c.rect(x0 + 1, 5, size - 2, 1, shade(color, 1.2));
+    c.rect(7, 1, 2, 3, hex('#6b4f2c'));
+  };
+}
+
 /** 蛋糕：白色奶油底 + 顶上一层红色果酱。 */
 const cakeTop: Painter = (c, rng) => {
   c.noise(hex('#f0f0f0'), 0.04, rng);
@@ -1236,6 +1250,9 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   daylight_sensor_top: daylightSensorTop,
   daylight_sensor_side: daylightSensorSide,
   comparator,
+  cocoa_stage_0: cocoa(0),
+  cocoa_stage_1: cocoa(1),
+  cocoa_stage_2: cocoa(2),
   cake_top: cakeTop,
   cake_side: cakeSide,
   cake_bottom: cakeBottom,

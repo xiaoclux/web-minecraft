@@ -61,6 +61,8 @@ export const BlockShape = {
   TRAPDOOR: 'trapdoor',
   /** 蛋糕：半格高，每吃一口就从一边缺一块。 */
   CAKE: 'cake',
+  /** 可可果：贴在丛林原木侧面的小豆荚，随成熟度变大。 */
+  COCOA: 'cocoa',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -195,6 +197,38 @@ const DOOR_BOXES: readonly BlockBox[][][] = FACINGS.map(([fx, fz]) => [
   [panelBox(-fx, -fz, DOOR_THICKNESS)],
   [panelBox(-fz, fx, DOOR_THICKNESS)],
 ]);
+
+/** 可可果的成熟阶段数（1.8.9 为 3 段）。 */
+export const COCOA_MAX_STAGE = 2;
+/** 可可果 meta：低 2 位朝向（豆荚贴着的那面墙的方向），高位是成熟度。 */
+export const COCOA_STAGE_SHIFT = 2;
+/** 各成熟阶段豆荚的宽 / 高（格）。 */
+const COCOA_SIZES: readonly (readonly [number, number])[] = [
+  [4 / 16, 5 / 16],
+  [6 / 16, 7 / 16],
+  [8 / 16, 9 / 16],
+];
+
+/** 某个朝向、某个成熟度的可可果子盒：贴在 facing 指的那一面上。 */
+function buildCocoaBoxes(): readonly BlockBox[][][] {
+  return FACINGS.map(([fx, fz]) =>
+    COCOA_SIZES.map(([width, height]) => {
+      const half = width / 2;
+      const top = 12 / 16;
+      const y0 = top - height;
+      // 贴墙那一侧顶到格子边，另一侧留出深度
+      const depth = width;
+      if (fx !== 0) {
+        const x0 = fx > 0 ? 1 - depth : 0;
+        return [box(x0, y0, 0.5 - half, x0 + depth, top, 0.5 + half)];
+      }
+      const z0 = fz > 0 ? 1 - depth : 0;
+      return [box(0.5 - half, y0, z0, 0.5 + half, top, z0 + depth)];
+    }),
+  );
+}
+
+const COCOA_BOXES = buildCocoaBoxes();
 
 /** 蛋糕总共能吃几口（1.8.9 为 7 口，meta 0~6）。 */
 export const CAKE_BITES = 7;
@@ -372,6 +406,8 @@ export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readon
       return PANE_BOXES[connections & (CONNECTION_COUNT - 1)];
     case BlockShape.CAKE:
       return CAKE_BOXES[Math.min(meta, CAKE_BITES - 1)];
+    case BlockShape.COCOA:
+      return COCOA_BOXES[meta & FACING_MASK][Math.min(meta >> COCOA_STAGE_SHIFT, COCOA_MAX_STAGE)];
     case BlockShape.TRAPDOOR:
       return TRAPDOOR_BOXES[meta & FACING_MASK][trapdoorVariant(meta)];
     case BlockShape.CROSS:

@@ -1,5 +1,7 @@
 import { BlockId } from '../blocks/BlockRegistry';
+import { COCOA_MAX_STAGE, COCOA_STAGE_SHIFT, FACINGS } from '../blocks/blockShapes';
 import { createRng } from '../textures/PixelCanvas';
+import { Wood } from './biomes';
 
 /** 一棵树的确定性描述（位置 + 高度 + 树冠缺角的随机种子）。 */
 export interface TreePlacement {
@@ -23,6 +25,10 @@ export const TREE_HEIGHT_VARIANCE = 3;
  * 依次回调这棵树的每个方块：先树叶后树干。
  * 树叶只应写在空气上、树干无条件覆盖，两个调用方（世界生成与树苗长大）行为一致。
  */
+/** 每棵丛林树尝试挂几次可可果，以及每次的概率。 */
+const COCOA_ATTEMPTS_PER_TREE = 2;
+const COCOA_CHANCE_PER_ATTEMPT = 0.25;
+
 export function forEachTreeBlock(
   tree: TreePlacement,
   emit: (x: number, y: number, z: number, id: number, meta: number) => void,
@@ -44,5 +50,29 @@ export function forEachTreeBlock(
   }
   for (let i = 0; i < tree.height; i++) {
     emit(tree.x, tree.y + i, tree.z, BlockId.LOG, tree.wood);
+  }
+  emitCocoa(tree, cornerRng, emit);
+}
+
+/** 丛林树干上偶尔挂一两个可可果（1.8.9 只有丛林木有）。 */
+function emitCocoa(
+  tree: TreePlacement,
+  rng: () => number,
+  emit: (x: number, y: number, z: number, id: number, meta: number) => void,
+): void {
+  if (tree.wood !== Wood.JUNGLE) {
+    return;
+  }
+  for (let i = 0; i < COCOA_ATTEMPTS_PER_TREE; i++) {
+    // 随机数无条件消耗，保证相邻 chunk 复现同一棵树
+    const roll = rng();
+    const facing = Math.floor(rng() * FACINGS.length);
+    const level = Math.floor(rng() * Math.max(1, tree.height - 3)) + 1;
+    const stage = Math.floor(rng() * (COCOA_MAX_STAGE + 1));
+    if (roll >= COCOA_CHANCE_PER_ATTEMPT) {
+      continue;
+    }
+    const [dx, dz] = FACINGS[facing];
+    emit(tree.x + dx, tree.y + level, tree.z + dz, BlockId.COCOA, facing | (stage << COCOA_STAGE_SHIFT));
   }
 }
