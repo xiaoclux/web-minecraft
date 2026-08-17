@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
 import { RandomTickSystem } from '../src/engine/systems/RandomTickSystem';
-import { matchRecipe } from '../src/engine/items/recipes';
+import { matchRecipe } from '../src/engine/items/Recipes';
 import { World } from '../src/engine/world/World';
 import { emptyWorld } from './helpers';
 
