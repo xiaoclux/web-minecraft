@@ -8,6 +8,7 @@
 
 import { CHUNK_SIZE } from '../engine/constants/world';
 import { serializeChunk } from '../engine/save/chunkSerializer';
+import { chunkKey } from '../engine/world/Chunk';
 import type { ChunkManager } from '../engine/world/ChunkManager';
 import type { World } from '../engine/world/World';
 import { MessageType, decodeMessage, encodeMessage, type NetMessage, type SnapshotEntity } from './protocol';
@@ -230,7 +231,7 @@ export class ServerCore {
 
   /** 下发一个 chunk（必要时先生成）。同一个 chunk 对同一玩家只发一次。 */
   private sendChunk(player: ServerPlayer, cx: number, cz: number): void {
-    const key = chunkKeyOf(cx, cz);
+    const key = chunkKey(cx, cz);
     if (player.sentChunks.has(key)) {
       return;
     }
@@ -281,6 +282,10 @@ export class ServerCore {
   /** 给所有人发一条消息。 */
   broadcast(message: NetMessage): void {
     this.source.onBroadcast?.(message);
+    if (this.players.size === 0) {
+      // 主机独自玩时不用为每次方块变化编码一遍
+      return;
+    }
     const bytes = encodeMessage(message);
     for (const player of this.players.values()) {
       player.connection.send(bytes);
@@ -310,9 +315,4 @@ export class ServerCore {
     this.unsubscribeBlocks?.();
     this.unsubscribeBlocks = null;
   }
-}
-
-/** chunk 坐标 → 数字键。 */
-function chunkKeyOf(cx: number, cz: number): number {
-  return (cx & 0xffff) * 0x10000 + (cz & 0xffff);
 }

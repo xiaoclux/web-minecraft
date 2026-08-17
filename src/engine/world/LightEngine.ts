@@ -1,4 +1,4 @@
-import { BlockId, getBlock } from '../blocks/BlockRegistry';
+import { LIGHT_ATTENUATION_BY_ID, LIGHT_BLOCKED, LIGHT_EMISSION_BY_ID, getBlock } from '../blocks/BlockRegistry';
 import {
   CHUNK_SIZE,
   MAX_LIGHT,
@@ -12,8 +12,6 @@ import type { Chunk, ChunkSection } from './Chunk';
 import { DEFAULT_SKY_LIGHT, sectionIndex, toChunkCoord } from './Chunk';
 import type { World } from './World';
 
-/** 水对光照的额外衰减。 */
-const WATER_ATTENUATION = 2;
 /** 队列条目宽度：x, y, z, level。 */
 const QUEUE_STRIDE = 4;
 const INITIAL_QUEUE_ENTRIES = SECTION_VOLUME * 4;
@@ -183,8 +181,9 @@ export class LightEngine {
         continue;
       }
       const baseY = sy * SECTION_HEIGHT;
+      const blocks = section.blocks;
       for (let idx = 0; idx < SECTION_VOLUME; idx++) {
-        const light = getBlock(section.blocks[idx]).light;
+        const light = LIGHT_EMISSION_BY_ID[blocks[idx]];
         if (light > 0) {
           section.blockLight[idx] = light;
           const lx = idx % CHUNK_SIZE;
@@ -398,11 +397,12 @@ export class LightEngine {
           continue;
         }
         const section = this.cacheSection;
-        const def = getBlock(section ? section.blocks[this.cacheIndex] : BlockId.AIR);
-        if (def.opaque) {
+        // 未分配段全是空气：不挡光也不额外衰减
+        const attenuation = section ? LIGHT_ATTENUATION_BY_ID[section.blocks[this.cacheIndex]] : 0;
+        if (attenuation === LIGHT_BLOCKED) {
           continue;
         }
-        const next = level - 1 - (def.isLiquid ? WATER_ATTENUATION : 0);
+        const next = level - 1 - attenuation;
         if (next > this.readLevel(channel)) {
           this.writeLevel(channel, next);
           this.touch(nx, nz);

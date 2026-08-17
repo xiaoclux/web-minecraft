@@ -197,6 +197,11 @@ class Writer {
   private view = new DataView(this.buffer);
   private offset = 0;
 
+  /** 从头开始写（缓冲保留，供下一条消息复用）。 */
+  reset(): void {
+    this.offset = 0;
+  }
+
   private ensure(bytes: number): void {
     if (this.offset + bytes <= this.buffer.byteLength) {
       return;
@@ -328,13 +333,18 @@ class Reader {
   }
 }
 
-const INITIAL_BUFFER_BYTES = 256;
+/** 初始缓冲大小：够放一次实体快照，chunk 数据会按需翻倍。 */
+const INITIAL_BUFFER_BYTES = 8192;
 const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
 
+/** 编码用的共享 Writer：toUint8Array 会拷贝一份出去，所以复用是安全的。 */
+const SHARED_WRITER = new Writer();
+
 /** 把一条消息编码成字节。 */
 export function encodeMessage(message: NetMessage): Uint8Array {
-  const w = new Writer();
+  const w = SHARED_WRITER;
+  w.reset();
   w.u8(message.type);
   switch (message.type) {
     case MessageType.HELLO:

@@ -73,6 +73,8 @@ export class FluidSimulator {
   private tickCount = 0;
   /** unpackPos 的输出槽（避免每格分配数组）。 */
   private readonly posOut = [0, 0, 0];
+  /** 四个水平方向的扩散代价（复用）。 */
+  private readonly sideCosts = [0, 0, 0, 0];
   private readonly washedListeners = new Set<WashedListener>();
 
   constructor(private readonly world: World) {
@@ -203,7 +205,12 @@ export class FluidSimulator {
     if (!canSpread || spreadLevel + 1 > spec.maxLevel) {
       return;
     }
-    for (const [dx, dz] of this.optimalFlowDirections(x, y, z, spec)) {
+    const directions = this.optimalFlowDirections(x, y, z, spec);
+    for (let i = 0; i < SIDES.length; i++) {
+      if ((directions & (1 << i)) === 0) {
+        continue;
+      }
+      const [dx, dz] = SIDES[i];
       if (this.canFlowInto(x + dx, y, z + dz)) {
         this.flowInto(x + dx, y, z + dz, spreadLevel + 1, spec);
       }
@@ -331,21 +338,28 @@ export class FluidSimulator {
     return !getBlock(id).solid;
   }
 
-  /** 选出离“落差”最近的扩散方向（可能多个）。 */
-  private optimalFlowDirections(x: number, y: number, z: number, spec: FluidSpec): (readonly [number, number])[] {
-    const costs: number[] = [];
+  /** 选出离“落差”最近的扩散方向（可能多个），以 SIDES 下标的位掩码返回，避免每格分配数组。 */
+  private optimalFlowDirections(x: number, y: number, z: number, spec: FluidSpec): number {
+    const costs = this.sideCosts;
     let min = WATER_FLOW_BLOCKED_COST;
-    for (const [dx, dz] of SIDES) {
+    for (let i = 0; i < SIDES.length; i++) {
+      const [dx, dz] = SIDES[i];
       const nx = x + dx;
       const nz = z + dz;
       let cost = WATER_FLOW_BLOCKED_COST;
       if (this.isPassable(nx, y, nz, spec)) {
         cost = this.canFlowInto(nx, y - 1, nz) ? 0 : this.flowCost(nx, y, nz, 1, dx, dz, spec);
       }
-      costs.push(cost);
+      costs[i] = cost;
       min = Math.min(min, cost);
     }
-    return SIDES.filter((_, i) => costs[i] === min);
+    let mask = 0;
+    for (let i = 0; i < SIDES.length; i++) {
+      if (costs[i] === min) {
+        mask |= 1 << i;
+      }
+    }
+    return mask;
   }
 
   /**

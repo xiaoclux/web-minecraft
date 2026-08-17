@@ -2,7 +2,7 @@ import { createNoise2D, createNoise3D } from 'simplex-noise';
 import { BlockId } from '../blocks/BlockRegistry';
 import { CHUNK_SIZE, SEA_LEVEL, WORLD_SIZE_Y } from '../constants/world';
 import { createRng, hashCoords, hashString } from '../textures/PixelCanvas';
-import type { Chunk } from './Chunk';
+import { chunkKey, type Chunk } from './Chunk';
 import type { ChunkGenerator, SpawnPoint } from './ChunkGenerator';
 import { DesertTempleGenerator } from './structures/DesertTempleGenerator';
 import { DungeonGenerator } from './structures/DungeonGenerator';
@@ -114,6 +114,8 @@ interface ColumnInfo {
 const COLUMN_KEY_OFFSET = 1 << 25;
 const COLUMN_KEY_SPAN = 1 << 26;
 const COLUMN_CACHE_LIMIT = 16384;
+/** 每 chunk 树表缓存上限（相邻 9 个 chunk 生成时会反复问同一个 chunk 的树）。 */
+const TREE_CACHE_LIMIT = 1024;
 
 /**
  * 无限世界生成器：噪声地形 + 群系 + 洞穴 + 矿石 + 植被。
@@ -134,6 +136,7 @@ export class TerrainGenerator implements ChunkGenerator {
   readonly strongholds: StrongholdGenerator | null;
   private readonly temples: DesertTempleGenerator | null;
   private readonly columnCache = new Map<number, ColumnInfo>();
+  private readonly treeCache = new Map<number, TreePlacement[]>();
 
   constructor(
     readonly seed: string,
@@ -366,6 +369,20 @@ export class TerrainGenerator implements ChunkGenerator {
    * 因此任何相邻 chunk 都能复现同一棵树并只写入自己范围内的部分。
    */
   listTrees(cx: number, cz: number): TreePlacement[] {
+    const key = chunkKey(cx, cz);
+    const cached = this.treeCache.get(key);
+    if (cached) {
+      return cached;
+    }
+    const trees = this.computeTrees(cx, cz);
+    if (this.treeCache.size >= TREE_CACHE_LIMIT) {
+      this.treeCache.clear();
+    }
+    this.treeCache.set(key, trees);
+    return trees;
+  }
+
+  private computeTrees(cx: number, cz: number): TreePlacement[] {
     const rng = this.rngAt(cx, cz, Salt.TREES);
     const out: TreePlacement[] = [];
     const x0 = cx * CHUNK_SIZE;

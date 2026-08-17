@@ -39,6 +39,7 @@ export const RenderType = {
 export type RenderType = (typeof RenderType)[keyof typeof RenderType];
 
 import { SoundGroup } from './blockSounds';
+import { LIQUID_LIGHT_ATTENUATION } from '../constants/world';
 import { RAIL_SHAPE_MASK, REDSTONE_MAX_POWER, REDSTONE_POWERED_BIT, RailShape } from '../constants/redstone';
 import { BED_HEAD_BIT, BlockShape, CROP_MAX_STAGE, DOOR_UPPER_BIT } from './blockShapes';
 
@@ -1225,6 +1226,19 @@ const AIR_DEF = BLOCKS_BY_ID[BlockId.AIR] as BlockDef;
 /** 按数值 id 获取方块定义；未知 id 返回空气。 */
 export function getBlock(id: number): BlockDef {
   return BLOCKS_BY_ID[id] ?? AIR_DEF;
+}
+
+/** 方块 id 上限（id 存在 Uint8Array 里）。 */
+const BLOCK_ID_LIMIT = 256;
+/** 光穿过某方块时额外衰减多少级；LIGHT_BLOCKED 表示完全不透光。供光照 BFS 查表用，省掉逐格读 def 属性。 */
+export const LIGHT_BLOCKED = 255;
+export const LIGHT_ATTENUATION_BY_ID: Uint8Array = new Uint8Array(BLOCK_ID_LIMIT);
+/** 各方块自身发光强度表。 */
+export const LIGHT_EMISSION_BY_ID: Uint8Array = new Uint8Array(BLOCK_ID_LIMIT);
+for (let id = 0; id < BLOCK_ID_LIMIT; id++) {
+  const def = getBlock(id);
+  LIGHT_ATTENUATION_BY_ID[id] = def.opaque ? LIGHT_BLOCKED : def.isLiquid ? LIQUID_LIGHT_ATTENUATION : 0;
+  LIGHT_EMISSION_BY_ID[id] = def.light;
 }
 
 /** 按名称获取方块定义。 */

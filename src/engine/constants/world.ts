@@ -24,6 +24,8 @@ export const CHUNK_LOAD_TIME_BUDGET_MS = 6;
 export const SPAWN_PRELOAD_RADIUS = 2;
 /** 光照最大等级（0~15）。 */
 export const MAX_LIGHT = 15;
+/** 光穿过液体时的额外衰减（1.8 水每格多减 2）。 */
+export const LIQUID_LIGHT_ATTENUATION = 2;
 /** 一昼夜的 tick 数（1.8.9 为 24000 tick = 20 分钟）。 */
 export const DAY_LENGTH_TICKS = 24000;
 /** 夜晚开始 / 结束 tick。 */
