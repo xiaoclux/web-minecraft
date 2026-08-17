@@ -59,14 +59,55 @@ function waitForIce(pc: RTCPeerConnection): Promise<void> {
   });
 }
 
+/**
+ * DataChannel 发送侧的水位线（字节）：缓冲超过它就先攒在自己的队列里，等浏览器发出去一些再继续。
+ * 一口气把几百个 chunk 塞进 channel.send 会让 SCTP 的发送缓冲卡死（bufferedAmount 涨到几 MB 后再也不下降，
+ * 之后所有消息都到不了对面），所以必须自己限流。
+ */
+const CHANNEL_HIGH_WATER_BYTES = 256 * 1024;
+/** 缓冲降到这个值以下时浏览器发 bufferedamountlow 事件，我们接着灌。 */
+const CHANNEL_LOW_WATER_BYTES = 64 * 1024;
+
+/**
+ * 带限流的 DataChannel 发送器：按顺序排队，缓冲有空位再发，保证消息顺序且不会把通道撑死。
+ */
+class PacedChannelSender {
+  private readonly queue: ArrayBuffer[] = [];
+
+  constructor(private readonly channel: RTCDataChannel) {
+    channel.bufferedAmountLowThreshold = CHANNEL_LOW_WATER_BYTES;
+    channel.addEventListener('bufferedamountlow', () => this.flush());
+    channel.addEventListener('close', () => {
+      this.queue.length = 0;
+    });
+  }
+
+  /** 排队发送一帧（通道没开或已关就丢弃）。 */
+  send(bytes: Uint8Array): void {
+    if (this.channel.readyState !== 'open') {
+      return;
+    }
+    // 拷一份：调用方可能复用底层缓冲
+    this.queue.push(bytes.slice().buffer);
+    this.flush();
+  }
+
+  private flush(): void {
+    const channel = this.channel;
+    while (this.queue.length > 0 && channel.readyState === 'open') {
+      if (channel.bufferedAmount + this.queue[0].byteLength > CHANNEL_HIGH_WATER_BYTES && channel.bufferedAmount > 0) {
+        return;
+      }
+      channel.send(this.queue.shift() as ArrayBuffer);
+    }
+  }
+}
+
 /** 把 DataChannel 包成服务端用的 Connection。 */
 function channelAsConnection(channel: RTCDataChannel): Connection {
+  const sender = new PacedChannelSender(channel);
   return {
-    send: (bytes) => {
-      if (channel.readyState === 'open') {
-        channel.send(bytes.slice().buffer);
-      }
-    },
+    send: (bytes) => sender.send(bytes),
     close: () => channel.close(),
   };
 }
@@ -74,12 +115,9 @@ function channelAsConnection(channel: RTCDataChannel): Connection {
 /** 把 DataChannel 包成客户端用的 Transport。 */
 export function channelAsTransport(channel: RTCDataChannel): ClientTransport {
   channel.binaryType = 'arraybuffer';
+  const sender = new PacedChannelSender(channel);
   return {
-    send: (bytes) => {
-      if (channel.readyState === 'open') {
-        channel.send(bytes.slice().buffer);
-      }
-    },
+    send: (bytes) => sender.send(bytes),
     close: () => channel.close(),
     onMessage: (handler) => {
       channel.addEventListener('message', (event: MessageEvent<ArrayBuffer>) => {

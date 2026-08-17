@@ -16,6 +16,14 @@ type BlockListener = (x: number, y: number, z: number, oldId: number, newId: num
 /** 批量变更结束时收到本批全部变更（按发生顺序）。 */
 type BatchListener = (changes: readonly BlockChange[]) => void;
 type ChunkListener = (chunk: Chunk) => void;
+/** 只改附加数据（方块 id 不变）时的通知：门开关、作物长一格、水位变化都走这里。 */
+type MetaListener = (x: number, y: number, z: number, id: number, meta: number) => void;
+/**
+ * 方块写入拦截器：返回 true 表示"已经接管、本地不要真的改"。
+ * 联机客户端用它把所有改方块的意图（放置 / 破坏 / 开门 / 耕地……）统一交给服务端，
+ * 等服务端广播回来再落到本地世界，这样各处业务代码不必知道自己在联机。
+ */
+export type BlockWriteInterceptor = (x: number, y: number, z: number, id: number, meta: number) => boolean;
 
 /**
  * 无限世界的方块与光照存储：按 chunk 分块保存，水平方向无边界。
@@ -32,7 +40,10 @@ export class World {
   /** 需要重建网格的 chunk 键集合。 */
   readonly dirtyChunks = new Set<number>();
   private readonly listeners = new Set<BlockListener>();
+  private readonly metaListeners = new Set<MetaListener>();
   private readonly batchListeners = new Set<BatchListener>();
+  /** 写入拦截器（联机客户端用），null 表示直接写本地。 */
+  writeInterceptor: BlockWriteInterceptor | null = null;
   private readonly chunkLoadListeners = new Set<ChunkListener>();
   private readonly chunkUnloadListeners = new Set<ChunkListener>();
   private batchDepth = 0;
@@ -221,6 +232,9 @@ export class World {
     if (old === id && oldMeta === meta) {
       return false;
     }
+    if (this.writeInterceptor?.(x, y, z, id, meta)) {
+      return false;
+    }
     section ??= chunk.ensureSectionAt(y);
     section.blocks[idx] = id;
     section.meta[idx] = meta;
@@ -245,10 +259,23 @@ export class World {
     if (current === meta) {
       return false;
     }
+    const id = this.hitSection ? this.hitSection.blocks[this.hitIndex] : BlockId.AIR;
+    if (this.writeInterceptor?.(x, y, z, id, meta)) {
+      return false;
+    }
     (this.hitSection ?? this.hitChunk!.ensureSectionAt(y)).meta[this.hitIndex] = meta;
     this.hitChunk!.markModified();
     this.markDirtyAround(x, y, z);
+    for (const listener of this.metaListeners) {
+      listener(x, y, z, id, meta);
+    }
     return true;
+  }
+
+  /** 订阅"只改附加数据"的变化（setMeta）；setBlock 引起的变化不会重复通知到这里。 */
+  onMetaChange(listener: MetaListener): () => void {
+    this.metaListeners.add(listener);
+    return () => this.metaListeners.delete(listener);
   }
 
   /**

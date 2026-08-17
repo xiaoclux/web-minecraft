@@ -61,6 +61,11 @@ export interface ServerWorldSource {
    * 所以要单独告诉客人，否则客人看不到房主。
    */
   hostPlayer?(): { name: string; x: number; y: number; z: number; yaw: number; pitch: number };
+  /**
+   * 把客人要求的方块改动落到世界里，并连带做该做的方块更新（沙子下落、上面的火把掉下来、
+   * 按钮过一会儿弹起……）。不提供时只是原样写入方块。
+   */
+  applyBlockChange?(x: number, y: number, z: number, blockId: number, meta: number): void;
 }
 
 /** 服务端每隔多少毫秒同步一次时间。 */
@@ -77,20 +82,25 @@ const MAX_SNAPSHOT_ENTITIES = 200;
 export class ServerCore {
   private readonly players = new Map<number, ServerPlayer>();
   private nextPlayerId = 1;
-  private unsubscribeBlocks: (() => void) | null = null;
+  private readonly unsubscribers: (() => void)[] = [];
 
   constructor(private readonly source: ServerWorldSource) {
-    // 世界里任何方块变化都广播出去（玩家自己改的、活塞推的、火烧的都算）
-    this.unsubscribeBlocks = source.world.onBlockChange((x, y, z, _oldId, newId) => {
-      this.broadcast({
-        type: MessageType.BLOCK_CHANGE,
-        x,
-        y,
-        z,
-        blockId: newId,
-        meta: source.world.getMeta(x, y, z),
-      });
-    });
+    // 世界里任何方块变化都广播出去（玩家自己改的、活塞推的、火烧的都算）：
+    // 逐块改动、只改附加数据（开门 / 作物 / 水位）、批量改动（爆炸）三条路都要接上
+    const { world } = source;
+    this.unsubscribers.push(
+      world.onBlockChange((x, y, z, _oldId, newId) => this.broadcastBlock(x, y, z, newId, world.getMeta(x, y, z))),
+      world.onMetaChange((x, y, z, id, meta) => this.broadcastBlock(x, y, z, id, meta)),
+      world.onBatchChange((changes) => {
+        for (const change of changes) {
+          this.broadcastBlock(change.x, change.y, change.z, change.newId, world.getMeta(change.x, change.y, change.z));
+        }
+      }),
+    );
+  }
+
+  private broadcastBlock(x: number, y: number, z: number, blockId: number, meta: number): void {
+    this.broadcast({ type: MessageType.BLOCK_CHANGE, x, y, z, blockId, meta });
   }
 
   /** 在线玩家数。 */
@@ -175,6 +185,10 @@ export class ServerCore {
   private setBlockAuthoritative(x: number, y: number, z: number, blockId: number, meta: number): void {
     if (!this.source.world.hasChunkAt(x, z)) {
       this.source.chunkManager.ensureLoaded(x, z, 0);
+    }
+    if (this.source.applyBlockChange) {
+      this.source.applyBlockChange(x, y, z, blockId, meta);
+      return;
     }
     this.source.world.setBlock(x, y, z, blockId, meta);
   }
@@ -321,7 +335,9 @@ export class ServerCore {
       player.connection.close();
     }
     this.players.clear();
-    this.unsubscribeBlocks?.();
-    this.unsubscribeBlocks = null;
+    for (const unsubscribe of this.unsubscribers) {
+      unsubscribe();
+    }
+    this.unsubscribers.length = 0;
   }
 }

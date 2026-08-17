@@ -237,3 +237,51 @@ describe('房主作为玩家', () => {
     expect(() => server.syncHostPlayer()).not.toThrow();
   });
 });
+
+describe('方块改动的广播覆盖面', () => {
+  it('只改附加数据（开门 / 水位）也会广播', () => {
+    const { server, source } = setup();
+    const { conn } = join(server, '小明');
+    source.chunkManager.ensureLoaded(0, 0, 0);
+    source.world.setBlock(1, 5, 1, BlockId.WOODEN_DOOR, 0);
+    conn.received.length = 0;
+    source.world.setMeta(1, 5, 1, 4);
+    const change = conn.ofType(MessageType.BLOCK_CHANGE)[0];
+    expect(change).toMatchObject({ x: 1, y: 5, z: 1, blockId: BlockId.WOODEN_DOOR, meta: 4 });
+  });
+
+  it('批量改动（爆炸）逐块广播', () => {
+    const { server, source } = setup();
+    const { conn } = join(server, '小明');
+    source.chunkManager.ensureLoaded(0, 0, 0);
+    conn.received.length = 0;
+    source.world.batch(() => {
+      source.world.setBlock(2, 5, 2, BlockId.STONE);
+      source.world.setBlock(3, 5, 2, BlockId.STONE);
+    });
+    expect(conn.ofType(MessageType.BLOCK_CHANGE)).toHaveLength(2);
+  });
+
+  it('提供 applyBlockChange 时客人的改动交给它落实', () => {
+    const world = new World(true);
+    const generator = new FlatGenerator('test-seed', false);
+    const chunkManager = new ChunkManager(world, generator, new LightEngine(world));
+    const applied: number[][] = [];
+    const server = new ServerCore({
+      world,
+      chunkManager,
+      seed: 'test-seed',
+      worldType: 'flat',
+      currentTime: () => 0,
+      spawnPoint: () => ({ x: 0, y: 5, z: 0 }),
+      applyBlockChange: (x, y, z, blockId, meta) => applied.push([x, y, z, blockId, meta]),
+    });
+    const { id } = join(server, '客人');
+    server.handleMessage(id, encodeMessage({ type: MessageType.PLACE_BLOCK, x: 1, y: 6, z: 1, blockId: BlockId.SAND, meta: 0 }));
+    server.handleMessage(id, encodeMessage({ type: MessageType.BREAK_BLOCK, x: 1, y: 6, z: 1 }));
+    expect(applied).toEqual([
+      [1, 6, 1, BlockId.SAND, 0],
+      [1, 6, 1, BlockId.AIR, 0],
+    ]);
+  });
+});

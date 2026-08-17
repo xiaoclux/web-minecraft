@@ -14,6 +14,7 @@ import { LightEngine } from '../src/engine/world/LightEngine';
 import { World } from '../src/engine/world/World';
 import { ServerCore, TIME_SYNC_INTERVAL_MS, type Connection } from '../src/net/ServerCore';
 import { ServerEntityWorld } from '../src/net/ServerEntityWorld';
+import { ServerWorldSimulation } from '../src/net/ServerWorldSimulation';
 import { loadWorld, saveWorld } from './worldStorage';
 
 /** 默认端口。 */
@@ -113,10 +114,19 @@ wss.on('connection', (socket: WebSocket) => {
   socket.on('error', () => server.removeConnection(playerId));
 });
 
+// 流体 / 作物 / 沙子这些世界演化也在服务端跑，客户端只收广播
+const simulation = new ServerWorldSimulation({
+  world,
+  currentTime: () => timeTick,
+  playerPositions: () => server.playerPositions(),
+  isRaining: () => false,
+});
+
 // 世界时间照常推进；chunk 由客户端按需索取，服务端不必自己 update
 setInterval(() => {
   timeTick++;
   mobs?.tickWorld();
+  simulation.tick();
 }, 1000 / TICKS_PER_SECOND);
 setInterval(() => server.syncEntities(), ENTITY_SYNC_INTERVAL_MS);
 setInterval(() => server.syncTime(), TIME_SYNC_INTERVAL_MS);

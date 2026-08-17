@@ -97,6 +97,7 @@ import {
 } from './constants/world';
 import { BlockEntityStore, BlockEntityType, type HopperBlockEntity } from './world/BlockEntityStore';
 import { POWERED_RAIL_LIT_BIT } from './blocks/BlockRegistry';
+import { REPLACEABLE_BLOCKS } from './systems/GravitySystem';
 import { RandomTickSystem } from './systems/RandomTickSystem';
 import { setPoweredBit } from './systems/TriggerSystem';
 import { WeatherSystem } from './systems/WeatherSystem';
@@ -143,13 +144,7 @@ import { getBlockByName } from './blocks/BlockRegistry';
 import { ENCHANTMENT_DEFS, canEnchant, isEnchantmentId } from './items/enchantments';
 import { EFFECT_DEFS } from './entities/effects';
 import type { Weather } from './systems/WeatherSystem';
-import {
-  isPoweredRailOn,
-  notePitch,
-  powerAt,
-  repeaterInputPower,
-  updateWires,
-} from './systems/RedstoneSystem';
+import { isPoweredRailOn, notePitch, powerAt, repeaterInputPower, updateWires } from './systems/RedstoneSystem';
 import { containerSlots, extractOne, insertOne, isEmpty } from './systems/HopperSystem';
 import { extendPiston, pistonDirection, retractPiston } from './systems/PistonSystem';
 import {
@@ -279,7 +274,6 @@ const CRAFT_GRID_SIZE = 9;
 const FACING_LABELS = ['南 (+Z)', '西 (-X)', '北 (-Z)', '东 (+X)'];
 const XP_PER_MOB_KILL_MULTIPLIER = 1;
 const SPAWN_PROTECTION_TICKS = 40;
-const REPLACEABLE_BLOCKS: ReadonlySet<number> = new Set<number>([BlockId.AIR, BlockId.WATER, BlockId.TALL_GRASS]);
 /** 下雨：每 tick 撒几滴雨、撒雨的半径与高度。 */
 const RAIN_PARTICLES_PER_TICK = 8;
 const RAIN_PARTICLE_RADIUS = 10;
@@ -614,8 +608,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   private readonly receivedChunks = new Set<number>();
   /** 连接建立前攒下的 chunk 请求。 */
   private readonly pendingChunkRequests: [number, number][] = [];
-  /** 正在应用服务端下发的方块变更（避免又把它当成本地意图发回去）。 */
-  private applyingRemoteChange = false;
   /** 启动时传入的联机参数（有值表示这局是联机客户端）。 */
   private readonly serverOptions: { url: string; playerName: string } | undefined;
   /** 是否以"联机客户端"的方式开局（地形来自服务端）。 */
@@ -686,6 +678,9 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.rng = createRng(hashString(`${options.meta.seed}:${Date.now()}`));
     this.weather = new WeatherSystem(this.rng);
     this.current = this.dimensionOf(DimensionId.OVERWORLD);
+    if (this.isNetworkClient) {
+      this.installRemoteWorldInterceptor();
+    }
     this.atlas = new TextureAtlas();
     this.renderer = new Renderer(options.canvas, this.world, this.atlas, this.blockEntities);
     this.controls = new Controls(options.canvas, settingsStore.get());
@@ -1083,20 +1078,11 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     }
     this.resolveThrownImpacts();
     this.mergeItemDrops();
-    this.spawner.tick(this, this.entities.values());
-    this.tickTnt();
     this.tickFurnaces();
     this.achievements.tickPlayTime();
-    this.tickSpawners();
-    this.tickGravityBlocks();
-    this.randomTicks.tick(this.player.x, this.player.z);
-    this.current.daylightSensors.tick();
-    this.current.comparators.tick();
     this.weather.tick();
-    this.tickWeatherEffects();
-    this.tickBreeding();
-    if (this.tick % WATER_TICK_INTERVAL === 0) {
-      this.fluids.tick();
+    if (!this.isNetworkClient) {
+      this.tickWorldSimulation();
     }
     if (this.player.health <= 0 && this.store.get().screen !== Screen.DEATH) {
       this.onPlayerDeath();
@@ -1107,8 +1093,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
         /* toast 已提示 */
       });
     }
-    this.tickRedstone();
-    this.tickHoppers();
     this.tickRiding();
     this.tickNetwork();
     this.tickHosting();
@@ -1119,6 +1103,28 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.music.underground = this.isPlayerUnderground();
     this.sound.update();
     this.syncStore();
+  }
+
+  /**
+   * 世界自身的演化：刷怪、流体、随机 tick、重力、红石、TNT、漏斗……
+   * 只有"世界的主人"（单机 / 联机主机 / 专用服务端）跑这些；联机客户端的世界完全由服务端广播驱动，
+   * 自己再算一遍只会和服务端打架。
+   */
+  private tickWorldSimulation(): void {
+    this.spawner.tick(this, this.entities.values());
+    this.tickTnt();
+    this.tickSpawners();
+    this.current.gravity.tick();
+    this.randomTicks.tick(this.player.x, this.player.z);
+    this.current.daylightSensors.tick();
+    this.current.comparators.tick();
+    this.tickWeatherEffects();
+    this.tickBreeding();
+    if (this.tick % WATER_TICK_INTERVAL === 0) {
+      this.fluids.tick();
+    }
+    this.tickRedstone();
+    this.tickHoppers();
   }
 
   /** 玩家是否在昏暗的地下（洞穴环境音的触发条件）。 */
@@ -1507,11 +1513,14 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
 
   /** 服务端确认的方块变更（包括自己刚才那一下）。 */
   private onNetBlockChange(x: number, y: number, z: number, blockId: number, meta: number): void {
-    this.applyingRemoteChange = true;
+    // 服务端说了算：这一下要真的写进本地世界，暂时摘掉拦截器
+    const world = this.world;
+    const interceptor = world.writeInterceptor;
+    world.writeInterceptor = null;
     try {
-      this.world.setBlock(x, y, z, blockId, meta);
+      world.setBlock(x, y, z, blockId, meta);
     } finally {
-      this.applyingRemoteChange = false;
+      world.writeInterceptor = interceptor;
     }
   }
 
@@ -1540,19 +1549,36 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   }
 
   /**
-   * 联机时把改方块的意图发给服务端，本地先不动手。
-   * @returns 是否已交给服务端（true 表示调用方不要再改本地世界）
+   * 联机客户端：本地任何改方块的动作（放置 / 破坏 / 开门 / 耕地 / 倒水……）都只发意图给服务端，
+   * 不直接写本地世界，等服务端广播回来再落地（见 onNetBlockChange）。
+   * 断线期间发不出去的改动直接丢弃 —— 服务端不知道的改动留在本地只会让两边越来越不一样。
    */
-  private sendBlockIntent(x: number, y: number, z: number, blockId: number, meta: number): boolean {
-    if (!this.net || this.applyingRemoteChange) {
-      return false;
-    }
+  private installRemoteWorldInterceptor(): void {
+    this.world.writeInterceptor = (x, y, z, blockId, meta) => {
+      if (blockId === BlockId.AIR) {
+        this.net?.requestBreak(x, y, z);
+      } else {
+        this.net?.requestPlace(x, y, z, blockId, meta);
+      }
+      return true;
+    };
+  }
+
+  /**
+   * 作为主机落实客人要求的方块改动：除了写方块，还要做本地玩家自己动手时会做的方块更新
+   * （上面需要支撑的方块掉落、按钮到时弹起；沙子下落由 GravitySystem 自己盯着）。掉落物由客人自己那边结算，这里不再掉一次。
+   */
+  private applyGuestBlockChange(x: number, y: number, z: number, blockId: number, meta: number): void {
     if (blockId === BlockId.AIR) {
-      this.net.requestBreak(x, y, z);
-    } else {
-      this.net.requestPlace(x, y, z, blockId, meta);
+      this.world.setBlock(x, y, z, BlockId.AIR);
+      this.onBlockRemoved(x, y, z);
+      this.removeBlockEntity(x, y, z);
+      return;
     }
-    return true;
+    this.world.setBlock(x, y, z, blockId, meta);
+    if (blockId === BlockId.STONE_BUTTON && (meta & REDSTONE_POWERED_BIT) !== 0) {
+      this.pressedButtons.push({ x, y, z, ticks: BUTTON_PRESS_TICKS });
+    }
   }
 
   // ---------------------------------------------------------------- 作为主机开放局域网
@@ -1579,6 +1605,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       worldType: this.meta.worldType ?? WorldType.DEFAULT,
       currentTime: () => this.timeTick,
       spawnPoint: () => ({ x: this.player.x, y: this.player.y, z: this.player.z }),
+      applyBlockChange: (x, y, z, blockId, meta) => this.applyGuestBlockChange(x, y, z, blockId, meta),
       hostPlayer: () => ({
         name: '房主',
         x: this.player.x,
@@ -3196,10 +3223,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (id === BlockId.AIR) {
       return;
     }
-    // 联机时由服务端说了算：只发意图，等广播回来再改世界
-    if (this.sendBlockIntent(x, y, z, BlockId.AIR, 0)) {
-      return;
-    }
     const def = getBlock(id);
     this.achievements.addStat(StatId.BLOCKS_MINED);
     this.spawnBreakParticles(x, y, z, def);
@@ -3227,7 +3250,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.removeBlockEntity(x, y, z);
   }
 
-  /** 方块移除后：上方需要支撑的方块掉落 / 重力方块下落。 */
+  /** 方块移除后：上方需要支撑的方块掉落（重力方块的下落由 GravitySystem 自己盯着世界变更）。 */
   private onBlockRemoved(x: number, y: number, z: number): void {
     const aboveId = this.world.getBlock(x, y + 1, z);
     const above = getBlock(aboveId);
@@ -3235,9 +3258,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       const aboveMeta = this.world.getMeta(x, y + 1, z);
       this.world.setBlock(x, y + 1, z, BlockId.AIR);
       this.dropBlockLoot(x, y + 1, z, above, aboveMeta);
-    }
-    if (above.hasGravity) {
-      this.pendingGravity.push({ x, y: y + 1, z });
     }
   }
 
@@ -3253,35 +3273,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     }
     for (const drop of rollDrops(def, meta, null, this.rng)) {
       this.dropItem(x + 0.5, y + 0.5, z + 0.5, drop, 0.2);
-    }
-  }
-
-  private pendingGravity: { x: number; y: number; z: number }[] = [];
-
-  private tickGravityBlocks(): void {
-    if (this.pendingGravity.length === 0) {
-      return;
-    }
-    const batch = this.pendingGravity;
-    this.pendingGravity = [];
-    for (const pos of batch) {
-      const id = this.world.getBlock(pos.x, pos.y, pos.z);
-      if (!getBlock(id).hasGravity) {
-        continue;
-      }
-      let ty = pos.y;
-      while (ty - 1 >= 0 && REPLACEABLE_BLOCKS.has(this.world.getBlock(pos.x, ty - 1, pos.z))) {
-        ty--;
-      }
-      if (ty === pos.y) {
-        continue;
-      }
-      this.world.setBlock(pos.x, pos.y, pos.z, BlockId.AIR);
-      this.world.setBlock(pos.x, ty, pos.z, id);
-      // 链式：再上方的重力方块继续
-      if (getBlock(this.world.getBlock(pos.x, pos.y + 1, pos.z)).hasGravity) {
-        this.pendingGravity.push({ x: pos.x, y: pos.y + 1, z: pos.z });
-      }
     }
   }
 
@@ -3484,7 +3475,14 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   private resolveSplashImpact(e: ThrownPotionEntity): void {
     const { x, y, z } = e.impact!;
     const potion = POTION_DEFS[getItem(e.stack.id)?.potion ?? ''];
-    this.renderer.particles.spawnBlockBreak(x - 0.5, y - 0.5, z - 0.5, SPLASH_PARTICLE_TEXTURE, SPLASH_PARTICLE_COUNT, 1);
+    this.renderer.particles.spawnBlockBreak(
+      x - 0.5,
+      y - 0.5,
+      z - 0.5,
+      SPLASH_PARTICLE_TEXTURE,
+      SPLASH_PARTICLE_COUNT,
+      1,
+    );
     this.sound.play('break', Math.hypot(x - this.player.x, y - this.player.y, z - this.player.z));
     if (!potion) {
       return;
@@ -4180,13 +4178,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
         }
       }
     }
-    if (this.sendBlockIntent(px, py, pz, blockId, meta)) {
-      this.playBlockSound(placeSound(soundGroupOf(def)), px, py, pz, 'place');
-      if (!this.rules.infiniteItems) {
-        this.player.inventory.consume(this.player.selectedSlot, 1);
-      }
-      return;
-    }
     this.world.setBlock(px, py, pz, blockId, meta);
     this.playBlockSound(placeSound(soundGroupOf(def)), px, py, pz, 'place');
     if (blockId === BlockId.WITHER_SKULL) {
@@ -4207,9 +4198,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.renderer.hand.swing();
     if (!this.rules.infiniteItems) {
       this.player.inventory.consume(this.player.selectedSlot, 1);
-    }
-    if (def.hasGravity) {
-      this.pendingGravity.push({ x: px, y: py, z: pz });
     }
   }
 

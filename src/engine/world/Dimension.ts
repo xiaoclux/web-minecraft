@@ -8,6 +8,7 @@ import { RandomTickSystem } from '../systems/RandomTickSystem';
 import { ComparatorSystem } from '../systems/ComparatorSystem';
 import { TriggerSystem } from '../systems/TriggerSystem';
 import { DaylightSensorSystem } from '../systems/DaylightSensorSystem';
+import { GravitySystem } from '../systems/GravitySystem';
 import { BlockEntityStore } from './BlockEntityStore';
 import type { ChunkGenerator } from './ChunkGenerator';
 import { ChunkManager } from './ChunkManager';
@@ -102,6 +103,7 @@ export class Dimension {
   readonly light: LightEngine;
   readonly chunkManager: ChunkManager;
   readonly fluids: FluidSimulator;
+  readonly gravity: GravitySystem;
   readonly randomTicks: RandomTickSystem;
   readonly daylightSensors: DaylightSensorSystem;
   readonly comparators: ComparatorSystem;
@@ -118,6 +120,7 @@ export class Dimension {
     this.light = new LightEngine(this.world);
     this.chunkManager = new ChunkManager(this.world, this.generator, this.light);
     this.fluids = new FluidSimulator(this.world);
+    this.gravity = new GravitySystem(this.world);
     this.randomTicks = new RandomTickSystem({
       world: this.world,
       random: () => this.host.random(),
