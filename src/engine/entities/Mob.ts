@@ -69,6 +69,11 @@ const PATH_TARGET_MOVE_THRESHOLD = 2;
 const WAYPOINT_REACHED_DISTANCE = 0.6;
 /** 超过这个距离就别费劲算路了，直线追（A\* 的节点上限也撑不住）。 */
 const PATH_MAX_DISTANCE = 24;
+/** 鸡下蛋的间隔（1.8.9 为 6000~12000 tick，即 5~10 分钟）。 */
+const CHICKEN_EGG_MIN_TICKS = 6000;
+const CHICKEN_EGG_MAX_TICKS = 12000;
+/** 蛋掉在脚下时的散开幅度。 */
+const EGG_DROP_SPREAD = 0.1;
 const STUCK_TICKS_BEFORE_DETOUR = 15;
 const DETOUR_TICKS = 25;
 
@@ -96,6 +101,8 @@ export class Mob extends LivingEntity {
   private panicTicks = 0;
   private burnTicks = 0;
   /** 追击时被卡住的 tick 数与绕行剩余 tick。 */
+  /** 距离下一次下蛋还有多少 tick（只有鸡用）；-1 表示还没随机过。 */
+  private eggTicks = -1;
   private stuckTicks = 0;
   private detourTicks = 0;
   /** 当前寻路路径（方块坐标的落脚点序列）与进度。 */
@@ -168,10 +175,33 @@ export class Mob extends LivingEntity {
     }
     if (this.health > 0) {
       this.tickBreeding();
+      this.tickEggLaying(ctx);
       this.think(ctx);
       this.handleSunlight(ctx);
     }
     super.tick(ctx);
+  }
+
+  /** 成年鸡每隔 5~10 分钟下一个蛋（1.8.9 同）。 */
+  private tickEggLaying(ctx: EntityContext): void {
+    if (this.type !== MobType.CHICKEN || this.isBaby) {
+      return;
+    }
+    if (this.eggTicks < 0) {
+      // 第一次先随机一个倒计时，免得同一批孵出来的鸡整齐划一地下蛋
+      this.eggTicks = this.rollEggDelay(ctx);
+      return;
+    }
+    if (this.eggTicks > 0) {
+      this.eggTicks--;
+      return;
+    }
+    this.eggTicks = this.rollEggDelay(ctx);
+    ctx.dropItem(this.x, this.y + this.height * 0.5, this.z, { id: 'egg', count: 1 }, EGG_DROP_SPREAD);
+  }
+
+  private rollEggDelay(ctx: EntityContext): number {
+    return CHICKEN_EGG_MIN_TICKS + Math.floor(ctx.random() * (CHICKEN_EGG_MAX_TICKS - CHICKEN_EGG_MIN_TICKS));
   }
 
   /** 被剪羊毛：返回掉落的羊毛数量，本来就没毛时返回 0。 */

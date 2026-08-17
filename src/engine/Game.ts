@@ -104,6 +104,7 @@ import { AchievementSystem, StatId } from './systems/Achievements';
 import { potionOfItem } from './items/potions';
 import { biomeHasSnowfall, biomeLabel } from './world/biomes';
 import { ArrowEntity } from './entities/ArrowEntity';
+import { ThrownItemEntity } from './entities/ThrownItemEntity';
 import { ThrownPotionEntity } from './entities/ThrownPotionEntity';
 import { FireballEntity } from './entities/FireballEntity';
 import { EnderCrystalEntity } from './entities/EnderCrystalEntity';
@@ -394,6 +395,14 @@ const FOOTSTEP_INTERVAL_BLOCKS = 2.2;
 const DIG_SOUND_INTERVAL_TICKS = 5;
 /** 夜视把世界亮度托到的下限（1 = 满亮，略低一点保留一点氛围）。 */
 const NIGHT_VISION_MIN_LIGHT = 0.9;
+/** 可以直接扔出去的物品。 */
+const THROWN_ITEM_IDS: ReadonlySet<string> = new Set(['snowball', 'egg']);
+/** 扔一次的冷却（tick）。 */
+const THROW_COOLDOWN_TICKS = 4;
+/** 雪球只对烈焰人有伤害（1.8.9 为 3 点）。 */
+const SNOWBALL_BLAZE_DAMAGE = 3;
+/** 鸡蛋砸地后孵出小鸡的概率（1.8.9 为 1/8）。 */
+const EGG_HATCH_CHANCE = 1 / 8;
 /** 喷溅药水碎掉时的玻璃碎屑。 */
 const SPLASH_PARTICLE_TEXTURE = 'glass';
 const SPLASH_PARTICLE_COUNT = 10;
@@ -1030,6 +1039,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       }
     }
     this.resolveSplashImpacts();
+    this.resolveThrownItems();
     this.mergeItemDrops();
     this.spawner.tick(this, this.entities.values());
     this.tickTnt();
@@ -3192,6 +3202,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       }
       return;
     }
+    if (THROWN_ITEM_IDS.has(def.id)) {
+      this.throwItem(def.id);
+      return;
+    }
     if (def.potion) {
       if (def.splash) {
         this.throwPotion(held);
@@ -3259,6 +3273,54 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.sound.play('drink');
     this.useCooldown = EAT_COOLDOWN_TICKS;
     this.renderer.hand.swing();
+  }
+
+  /** 扔雪球 / 鸡蛋：和喷溅药水同一条飞行轨迹，砸中之后的效果不同。 */
+  private throwItem(itemId: string): void {
+    const p = this.player;
+    const dir = this.lookDirection();
+    const thrown = new ThrownItemEntity(itemId, p.id);
+    thrown.setPosition(p.x, p.eyeY, p.z);
+    thrown.vx = dir.x * SPLASH_POTION_SPEED;
+    thrown.vy = dir.y * SPLASH_POTION_SPEED;
+    thrown.vz = dir.z * SPLASH_POTION_SPEED;
+    this.spawnEntity(thrown);
+    if (!this.rules.infiniteItems) {
+      p.inventory.consume(p.selectedSlot, 1);
+    }
+    this.sound.play('bow');
+    this.useCooldown = THROW_COOLDOWN_TICKS;
+    this.renderer.hand.swing();
+  }
+
+  /** 落地的雪球 / 鸡蛋：雪球把生物打退，鸡蛋有小概率孵出一只小鸡。 */
+  private resolveThrownItems(): void {
+    for (const e of this.entities.values()) {
+      if (!(e instanceof ThrownItemEntity) || !e.impact || e.isDead) {
+        continue;
+      }
+      e.isDead = true;
+      const { x, y, z } = e.impact;
+      this.sound.play('pop', Math.hypot(x - this.player.x, y - this.player.y, z - this.player.z));
+      if (e.itemId === 'snowball') {
+        // 1.8.9：雪球只对烈焰人有伤害，对别的生物只有击退
+        const target = e.hitEntity;
+        if (target instanceof Mob && !target.isDead) {
+          if (target.type === MobType.BLAZE) {
+            target.hurt(this, SNOWBALL_BLAZE_DAMAGE, this.player);
+          }
+          // 击退方向按"从落点推开"算
+          target.applyKnockback(x, z);
+        }
+        continue;
+      }
+      if (this.rng() < EGG_HATCH_CHANCE) {
+        const chick = new Mob(MobType.CHICKEN);
+        chick.setPosition(x, y, z);
+        chick.setBaby(true);
+        this.spawnEntity(chick);
+      }
+    }
   }
 
   /** 扔出喷溅药水：从眼睛位置沿视线飞出。 */

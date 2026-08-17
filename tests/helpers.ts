@@ -3,6 +3,8 @@ import type { ChunkGenerator } from '../src/engine/world/ChunkGenerator';
 import { ChunkManager } from '../src/engine/world/ChunkManager';
 import { LightEngine } from '../src/engine/world/LightEngine';
 import { World } from '../src/engine/world/World';
+import type { EntityContext } from '../src/engine/entities/EntityContext';
+import { Player } from '../src/engine/player/Player';
 
 /** 比较两个类型化数组是否逐元素相等。 */
 export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -56,4 +58,27 @@ export function collectBlockIds(world: World): Set<number> {
     }
   }
   return ids;
+}
+
+/**
+ * 造一个够生物 tick 用的最小 EntityContext。
+ * 只填了各测试都要的字段，缺什么用 overrides 补。
+ */
+export function mobContext(overrides: Partial<EntityContext> = {}): EntityContext {
+  const player = new Player();
+  player.setPosition(0, 64, 0);
+  return {
+    world: emptyWorld(0),
+    player,
+    random: () => 0.5,
+    playSound: () => {},
+    playMobSound: () => {},
+    livingEntitiesNear: () => [],
+    crystalsNear: () => [],
+    spawnEntity: () => {},
+    dropItem: () => {},
+    hurtPlayer: () => {},
+    onEntityKilled: () => {},
+    ...overrides,
+  } as unknown as EntityContext;
 }

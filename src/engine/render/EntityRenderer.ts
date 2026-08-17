@@ -5,6 +5,7 @@ import { ArrowEntity } from '../entities/ArrowEntity';
 import { XpOrbEntity } from '../entities/XpOrbEntity';
 import type { Entity } from '../entities/Entity';
 import { ItemDropEntity } from '../entities/ItemDropEntity';
+import { ThrownItemEntity } from '../entities/ThrownItemEntity';
 import { ThrownPotionEntity } from '../entities/ThrownPotionEntity';
 import { FireballEntity } from '../entities/FireballEntity';
 import { EnderCrystalEntity } from '../entities/EnderCrystalEntity';
@@ -256,6 +257,9 @@ export class EntityRenderer {
     if (entity instanceof ItemDropEntity || entity instanceof ThrownPotionEntity) {
       // 飞行中的药水就用掉落物的旋转图标表现，像瓶子在空中翻滚
       return this.createItem(entity.stack);
+    }
+    if (entity instanceof ThrownItemEntity) {
+      return this.createItem({ id: entity.itemId, count: 1 });
     }
     if (entity instanceof ArrowEntity) {
       return this.createArrow();

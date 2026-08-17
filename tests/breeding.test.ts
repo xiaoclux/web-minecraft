@@ -10,7 +10,8 @@ import {
 import { SHEARS_DURABILITY, getItem } from '../src/engine/items/ItemRegistry';
 import { RECIPES } from '../src/engine/items/Recipes';
 import { Mob } from '../src/engine/entities/Mob';
-import { MOB_DEFS } from '../src/engine/entities/MobDefs';
+import { MOB_DEFS, MobType } from '../src/engine/entities/MobDefs';
+import { mobContext } from './helpers';
 
 describe('动物繁殖', () => {
   it('喂对了食物才会进入求爱状态', () => {
@@ -86,5 +87,30 @@ describe('剪羊毛', () => {
   it('剪刀有耐久且能合成', () => {
     expect(getItem('shears')?.durability).toBe(SHEARS_DURABILITY);
     expect(RECIPES.some((r) => r.result.id === 'shears')).toBe(true);
+  });
+});
+
+describe('鸡下蛋与投掷物', () => {
+  it('成年鸡隔一段时间下一个蛋，小鸡不下', () => {
+    const dropped: { id: string; count: number }[] = [];
+    const context = mobContext({
+      random: () => 0.5,
+      dropItem: (_x: number, _y: number, _z: number, stack: { id: string; count: number }) => dropped.push(stack),
+    });
+    const hen = new Mob(MobType.CHICKEN);
+    // 第一次 tick 只是摇一个倒计时，之后要等够 6000~12000 tick 才下蛋
+    for (let i = 0; i < 12001; i++) {
+      hen.tick(context);
+    }
+    expect(dropped.length).toBeGreaterThan(0);
+    expect(dropped[0].id).toBe('egg');
+
+    const chick = new Mob(MobType.CHICKEN);
+    chick.setBaby(true);
+    dropped.length = 0;
+    for (let i = 0; i < 12001; i++) {
+      chick.tick(context);
+    }
+    expect(dropped).toEqual([]);
   });
 });

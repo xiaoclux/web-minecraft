@@ -305,6 +305,7 @@ export const ITEM_DEFS: ItemDef[] = [
   material('gunpowder', '火药'),
   material('arrow', '箭'),
   material('snowball', '雪球', { maxStack: 16 }),
+  material('egg', '鸡蛋', { maxStack: 16 }),
   material('bow', '弓', { maxStack: 1 }),
   material('shears', '剪刀', { maxStack: 1, durability: SHEARS_DURABILITY }),
   material('flint', '燧石'),

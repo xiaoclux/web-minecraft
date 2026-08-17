@@ -2,37 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
 import { EnderCrystalEntity } from '../src/engine/entities/EnderCrystalEntity';
 import { DragonPhase, EnderDragonEntity } from '../src/engine/entities/EnderDragonEntity';
-import type { EntityContext } from '../src/engine/entities/EntityContext';
 import { DRAGON_HEAL_INTERVAL_TICKS, DRAGON_MAX_HEALTH } from '../src/engine/constants/mobs';
-import { Player } from '../src/engine/player/Player';
 import { StrongholdGenerator, STRONGHOLD_COUNT } from '../src/engine/world/structures/StrongholdGenerator';
 import { Chunk } from '../src/engine/world/Chunk';
-import { emptyWorld } from './helpers';
+import { mobContext } from './helpers';
 
-function ctx(overrides: Partial<EntityContext> = {}): EntityContext {
-  const player = new Player();
-  player.setPosition(0, 64, 0);
-  return {
-    world: emptyWorld(0),
-    player,
-    random: () => 0.5,
-    playSound: () => {},
-    playMobSound: () => {},
-    crystalsNear: () => [],
-    livingEntitiesNear: () => [],
-    hurtPlayer: () => {},
-    onEntityKilled: () => {},
-    explode: () => {},
-    ...overrides,
-  } as unknown as EntityContext;
-}
 
 describe('末影龙', () => {
   it('每颗存活的水晶都会给龙回血，水晶没了就不回', () => {
     const dragon = new EnderDragonEntity(0, 0);
     dragon.health = 100;
     const crystals = [new EnderCrystalEntity(), new EnderCrystalEntity()];
-    const withCrystals = ctx({ crystalsNear: () => crystals });
+    const withCrystals = mobContext({ crystalsNear: () => crystals });
     for (let i = 0; i < DRAGON_HEAL_INTERVAL_TICKS; i++) {
       dragon.tick(withCrystals);
     }
@@ -48,7 +29,7 @@ describe('末影龙', () => {
   it('冷却结束后从盘旋转入俯冲', () => {
     const dragon = new EnderDragonEntity(0, 0);
     expect(dragon.phase).toBe(DragonPhase.CIRCLE);
-    const c = ctx();
+    const c = mobContext();
     for (let i = 0; i < 200; i++) {
       dragon.tick(c);
     }
@@ -60,7 +41,7 @@ describe('末影龙', () => {
     expect(dragon.maxHealth).toBe(DRAGON_MAX_HEALTH);
     expect(dragon.healthRatio).toBe(1);
     let killed = false;
-    const c = ctx({ onEntityKilled: () => { killed = true; } });
+    const c = mobContext({ onEntityKilled: () => { killed = true; } });
     dragon.hurt(c, DRAGON_MAX_HEALTH, null);
     expect(killed).toBe(true);
     expect(dragon.healthRatio).toBe(0);
@@ -69,7 +50,7 @@ describe('末影龙', () => {
   it('水晶被打碎会爆炸并消失', () => {
     const crystal = new EnderCrystalEntity();
     let exploded = false;
-    const c = ctx({ explode: () => { exploded = true; } });
+    const c = mobContext({ explode: () => { exploded = true; } });
     crystal.destroyByAttack(c, 1);
     expect(crystal.isDead).toBe(true);
     expect(exploded).toBe(true);

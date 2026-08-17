@@ -3,8 +3,7 @@ import { MOB_DEFS, MobType } from '../src/engine/entities/MobDefs';
 import { MOB_MODELS } from '../src/engine/render/MobModels';
 import { FireballEntity, FireballKind } from '../src/engine/entities/FireballEntity';
 import { Mob } from '../src/engine/entities/Mob';
-import type { EntityContext } from '../src/engine/entities/EntityContext';
-import { emptyWorld } from './helpers';
+import { mobContext } from './helpers';
 
 const NETHER_MOBS: MobType[] = [
   MobType.ZOMBIE_PIGMAN,
@@ -14,24 +13,13 @@ const NETHER_MOBS: MobType[] = [
   MobType.WITHER_SKELETON,
 ];
 
-function ctx(overrides: Partial<EntityContext> = {}): EntityContext {
-  return {
-    world: emptyWorld(0),
-    random: () => 0.5,
-    playSound: () => {},
-    playMobSound: () => {},
-    livingEntitiesNear: () => [],
-    spawnEntity: () => {},
-    ...overrides,
-  } as unknown as EntityContext;
-}
 
 /** 用固定的随机值杀掉一只猪人，返回掉了哪些物品 id。 */
 function killDrops(random: number): string[] {
   const dropped: string[] = [];
   const pigman = new Mob(MobType.ZOMBIE_PIGMAN);
   pigman.hurt(
-    ctx({
+    mobContext({
       random: () => random,
       dropItem: (_x: number, _y: number, _z: number, stack: { id: string }) => dropped.push(stack.id),
       onEntityKilled: () => {},
@@ -70,7 +58,7 @@ describe('下界生物', () => {
     b.setPosition(2, 0, 0);
     other.setPosition(2, 0, 0);
     expect(a.angerTicks).toBe(0);
-    a.hurt(ctx({ livingEntitiesNear: () => [b, other] }), 1, b, true);
+    a.hurt(mobContext({ livingEntitiesNear: () => [b, other] }), 1, b, true);
     expect(a.angerTicks).toBeGreaterThan(0);
     expect(b.angerTicks).toBeGreaterThan(0);
     // 不同种族不会被波及
