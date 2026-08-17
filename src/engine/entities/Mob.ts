@@ -64,15 +64,14 @@ const SLIME_SPLIT_COUNT = 2;
 const SLIME_SPLIT_SCALE = 0.6;
 /** 多久重新算一次路（20 tick = 1 秒；玩家跑远了会提前重算）。 */
 const PATH_REFRESH_TICKS = 20;
+/** 上次没找到路时隔多久再试：目标够不着（站柱子上 / 隔着墙）时别每秒都把节点预算烧光。 */
+const PATH_FAIL_RETRY_TICKS = 60;
 /** 目标离上次算路时的位置差超过这么多格就立刻重算。 */
 const PATH_TARGET_MOVE_THRESHOLD = 2;
 /** 走到离路点这么近就算到达，切下一个路点。 */
 const WAYPOINT_REACHED_DISTANCE = 0.6;
 /** 超过这个距离就别费劲算路了，直线追（A\* 的节点上限也撑不住）。 */
 const PATH_MAX_DISTANCE = 24;
-/** 鸡下蛋的间隔（1.8.9 为 6000~12000 tick，即 5~10 分钟）。 */
-const CHICKEN_EGG_MIN_TICKS = 6000;
-const CHICKEN_EGG_MAX_TICKS = 12000;
 /** 蛋掉在脚下时的散开幅度。 */
 const EGG_DROP_SPREAD = 0.1;
 /** 宠物跟人：离这么近就停下、离这么远就小跑、目标跑出这个距离就放弃。 */
@@ -92,6 +91,16 @@ export const MobState = {
 export type MobState = (typeof MobState)[keyof typeof MobState];
 
 /** 生物（含友善与敌对），行为由 MobDef 参数化。 */
+/** 右键宠物 / 可驯服生物的结果。 */
+export const PetInteraction = {
+  TAMED: 'tamed',
+  FAILED: 'failed',
+  SIT: 'sit',
+  STAND: 'stand',
+  NONE: 'none',
+} as const;
+export type PetInteraction = (typeof PetInteraction)[keyof typeof PetInteraction];
+
 /** 闲置叫声的平均间隔（tick）：约 15 秒一次。 */
 const IDLE_SOUND_INTERVAL_TICKS = 300;
 
@@ -106,19 +115,19 @@ export class Mob extends LivingEntity {
   private panicTicks = 0;
   private burnTicks = 0;
   /** 追击时被卡住的 tick 数与绕行剩余 tick。 */
-  /** 距离下一次下蛋还有多少 tick（只有鸡用）；-1 表示还没随机过。 */
+  private stuckTicks = 0;
+  private detourTicks = 0;
+  /** 距离下一次下蛋还有多少 tick（def.eggIntervalTicks 的生物用）；-1 表示还没随机过。 */
   private eggTicks = -1;
   /** 宠物当前要咬的目标。 */
   private petTarget: Mob | null = null;
-  /** 已经被驯服（狼）。 */
+  /** 已经被驯服（狼 / 豹猫）。 */
   isTamed = false;
   /** 主人让它坐下了：坐着就不动，也不跟人。 */
   isSitting = false;
   /** 村民的职业与交易表（只有村民有）。 */
   profession: VillagerProfession | null = null;
   trades: TradeOffer[] = [];
-  private stuckTicks = 0;
-  private detourTicks = 0;
   /** 当前寻路路径（方块坐标的落脚点序列）与进度。 */
   private path: PathNode[] = [];
   private pathIndex = 0;
@@ -198,23 +207,23 @@ export class Mob extends LivingEntity {
 
   /**
    * 拿着某样东西右键它：驯服（狼吃骨头）或者让它坐下 / 起来。
-   * @returns 这次交互做了什么，'none' 表示这东西对它没用
+   * @returns 这次交互做了什么，NONE 表示这东西对它没用
    */
-  interactWithItem(itemId: string | null, random: () => number): 'tamed' | 'failed' | 'sit' | 'stand' | 'none' {
+  interactWithItem(itemId: string | null, random: () => number): PetInteraction {
     if (this.isTamed) {
       // 已经驯服了：空手右键切换坐下 / 起立
       this.isSitting = !this.isSitting;
-      return this.isSitting ? 'sit' : 'stand';
+      return this.isSitting ? PetInteraction.SIT : PetInteraction.STAND;
     }
     if (!itemId || !this.def.tameItems?.includes(itemId)) {
-      return 'none';
+      return PetInteraction.NONE;
     }
     if (random() < (this.def.tameChance ?? 1)) {
       this.isTamed = true;
       this.isSitting = false;
-      return 'tamed';
+      return PetInteraction.TAMED;
     }
-    return 'failed';
+    return PetInteraction.FAILED;
   }
 
   /** 给村民安排职业与交易表。 */
@@ -223,9 +232,9 @@ export class Mob extends LivingEntity {
     this.trades = rollTrades(profession);
   }
 
-  /** 成年鸡每隔 5~10 分钟下一个蛋（1.8.9 同）。 */
+  /** 会下蛋的生物（鸡）成年后按 def 里的间隔下蛋。 */
   private tickEggLaying(ctx: EntityContext): void {
-    if (this.type !== MobType.CHICKEN || this.isBaby) {
+    if (!this.def.eggIntervalTicks || this.isBaby) {
       return;
     }
     if (this.eggTicks < 0) {
@@ -242,7 +251,8 @@ export class Mob extends LivingEntity {
   }
 
   private rollEggDelay(ctx: EntityContext): number {
-    return CHICKEN_EGG_MIN_TICKS + Math.floor(ctx.random() * (CHICKEN_EGG_MAX_TICKS - CHICKEN_EGG_MIN_TICKS));
+    const { min, max } = this.def.eggIntervalTicks!;
+    return min + Math.floor(ctx.random() * (max - min));
   }
 
   /** 被剪羊毛：返回掉落的羊毛数量，本来就没毛时返回 0。 */
@@ -343,19 +353,22 @@ export class Mob extends LivingEntity {
       this.state = MobState.IDLE;
       return;
     }
-    if (this.petTarget && (this.petTarget.isDead || this.distanceSqTo(this.petTarget) > PET_GIVE_UP_RANGE ** 2)) {
-      this.petTarget = null;
-    }
-    if (this.petTarget) {
-      this.state = MobState.CHASE;
-      this.targetYaw = Math.atan2(-(this.petTarget.x - this.x), -(this.petTarget.z - this.z));
-      this.moveForward = 1;
-      const reach = MOB_ATTACK_RANGE + this.width;
-      if (this.distanceSqTo(this.petTarget) < reach * reach && this.attackCooldown === 0) {
-        this.attackCooldown = MOB_ATTACK_COOLDOWN_TICKS;
-        this.petTarget.hurt(ctx, this.def.attackDamage, this, true);
+    const target = this.petTarget;
+    if (target) {
+      const targetDistSq = this.distanceSqTo(target);
+      if (target.isDead || targetDistSq > PET_GIVE_UP_RANGE ** 2) {
+        this.petTarget = null;
+      } else {
+        this.state = MobState.CHASE;
+        this.targetYaw = this.yawToward(target.x, target.z);
+        this.moveForward = 1;
+        const reach = MOB_ATTACK_RANGE + this.width;
+        if (targetDistSq < reach * reach && this.attackCooldown === 0) {
+          this.attackCooldown = MOB_ATTACK_COOLDOWN_TICKS;
+          target.hurt(ctx, this.def.attackDamage, this, true);
+        }
+        return;
       }
-      return;
     }
     // 没有目标就跟着主人走，够近了就停下
     const player = ctx.player;
@@ -365,8 +378,13 @@ export class Mob extends LivingEntity {
       this.moveForward = 0;
       return;
     }
-    this.targetYaw = Math.atan2(-(player.x - this.x), -(player.z - this.z));
+    this.targetYaw = this.yawToward(player.x, player.z);
     this.moveForward = distSq > PET_FOLLOW_RUN_RANGE ** 2 ? 1.3 : 1;
+  }
+
+  /** 面朝 (x, z) 的 yaw（本项目 yaw = 0 朝 -z）。 */
+  private yawToward(x: number, z: number): number {
+    return Math.atan2(-(x - this.x), -(z - this.z));
   }
 
   /** 主人打了谁，宠物就去咬谁。 */
@@ -439,7 +457,7 @@ export class Mob extends LivingEntity {
       return false;
     }
     this.state = MobState.WANDER;
-    this.targetYaw = Math.atan2(-(mate.x - this.x), -(mate.z - this.z));
+    this.targetYaw = this.yawToward(mate.x, mate.z);
     this.moveForward = 1;
     return true;
   }
@@ -448,9 +466,9 @@ export class Mob extends LivingEntity {
     const player = ctx.player;
     const dist = Math.sqrt(distSq);
     // 陆行近战生物走 A* 找的路绕开障碍；远程 / 飞行的仍然直接朝玩家转向
-    const usesPath = !this.def.flying && this.type !== MobType.SKELETON;
+    const usesPath = !this.def.flying && !this.def.ranged;
     const waypointYaw = usesPath ? this.followPath(ctx, dist) : null;
-    this.targetYaw = waypointYaw ?? Math.atan2(-(player.x - this.x), -(player.z - this.z));
+    this.targetYaw = waypointYaw ?? this.yawToward(player.x, player.z);
     switch (this.type) {
       case MobType.CREEPER:
         this.chaseCreeper(ctx, dist);
@@ -489,7 +507,8 @@ export class Mob extends LivingEntity {
       this.path = [];
       return null;
     }
-    if (this.pathCooldown === 0 || targetMoved) {
+    // 上次找到过路才因为目标挪动而立刻重算；没找到的按退避间隔来
+    if (this.pathCooldown === 0 || (targetMoved && this.path.length > 0)) {
       this.recomputePath(ctx);
     }
     // 走到跟前的路点就换下一个
@@ -497,7 +516,7 @@ export class Mob extends LivingEntity {
       const node = this.path[this.pathIndex];
       const dx = node.x + 0.5 - this.x;
       const dz = node.z + 0.5 - this.z;
-      if (Math.hypot(dx, dz) > WAYPOINT_REACHED_DISTANCE) {
+      if (dx * dx + dz * dz > WAYPOINT_REACHED_DISTANCE * WAYPOINT_REACHED_DISTANCE) {
         return Math.atan2(-dx, -dz);
       }
       this.pathIndex++;
@@ -507,7 +526,6 @@ export class Mob extends LivingEntity {
 
   private recomputePath(ctx: EntityContext): void {
     const player = ctx.player;
-    this.pathCooldown = PATH_REFRESH_TICKS;
     this.pathTargetX = player.x;
     this.pathTargetZ = player.z;
     this.pathIndex = 0;
@@ -516,6 +534,7 @@ export class Mob extends LivingEntity {
       { x: Math.floor(this.x), y: Math.floor(this.y + 0.01), z: Math.floor(this.z) },
       { x: Math.floor(player.x), y: Math.floor(player.y + 0.01), z: Math.floor(player.z) },
     );
+    this.pathCooldown = this.path.length > 0 ? PATH_REFRESH_TICKS : PATH_FAIL_RETRY_TICKS;
   }
 
   private chaseCreeper(ctx: EntityContext, dist: number): void {
@@ -788,10 +807,9 @@ export class Mob extends LivingEntity {
       woolRegrowTicks: this.woolRegrowTicks,
       isBaby: this.isBaby,
       growTicks: this.growTicks,
-      isTamed: this.isTamed,
-      isSitting: this.isSitting,
-      profession: this.profession,
-      trades: this.trades,
+      // 宠物 / 村民独有的状态只在用得上时才写，免得每只僵尸的存档都背着这几项
+      ...(this.isTamed && { isTamed: true, isSitting: this.isSitting }),
+      ...(this.profession && { profession: this.profession, trades: this.trades }),
     };
   }
 

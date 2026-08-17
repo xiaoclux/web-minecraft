@@ -1,11 +1,10 @@
 import { SPLASH_POTION_GRAVITY, SPLASH_POTION_LIFETIME_TICKS } from '../constants/mobs';
 import { Entity, type EntitySaveData } from './Entity';
 import type { EntityContext } from './EntityContext';
-import { LivingEntity } from './LivingEntity';
+import type { LivingEntity } from './LivingEntity';
+import { findLivingEntityAt } from './projectileHit';
 
 const THROWN_SIZE = 0.25;
-/** 找"被砸中的生物"时的搜索半径：只要能覆盖最大生物的半宽就够。 */
-const HIT_SEARCH_RADIUS = 2;
 
 /**
  * 扔出去的东西（喷溅药水、雪球、鸡蛋）的共同部分：抛物线飞行，撞到方块或生物就落地。
@@ -50,31 +49,11 @@ export abstract class ThrownEntity extends Entity {
     this.x = nx;
     this.y = ny;
     this.z = nz;
-    const hit = this.findHitEntity(ctx);
+    const hit = findLivingEntityAt(ctx, this.x, this.y, this.z, this.throwerId);
     if (hit) {
       this.hitEntity = hit;
       this.impact = { x: this.x, y: this.y, z: this.z };
     }
-  }
-
-  private findHitEntity(ctx: EntityContext): LivingEntity | null {
-    for (const e of ctx.livingEntitiesNear(this.x, this.y, this.z, HIT_SEARCH_RADIUS)) {
-      if (e.id === this.throwerId || e.isDying) {
-        continue;
-      }
-      const box = e.box();
-      if (
-        this.x >= box.minX &&
-        this.x <= box.maxX &&
-        this.y >= box.minY &&
-        this.y <= box.maxY &&
-        this.z >= box.minZ &&
-        this.z <= box.maxZ
-      ) {
-        return e;
-      }
-    }
-    return null;
   }
 
   /** 飞行中的投掷物不存档。 */

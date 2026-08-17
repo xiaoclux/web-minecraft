@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
+import { CHUNK_SIZE } from '../src/engine/constants/world';
 import { MobType } from '../src/engine/entities/MobDefs';
 import { Chunk } from '../src/engine/world/Chunk';
 import { MineshaftGenerator } from '../src/engine/world/structures/MineshaftGenerator';
@@ -12,16 +13,16 @@ function scan(generator: MineshaftGenerator, span: number) {
     for (let cz = 0; cz < span; cz++) {
       // 先铺满石头，这样"被掏空的巷道"才数得出来
       const chunk = new Chunk(cx, cz, true);
-      for (let lx = 0; lx < 16; lx++) {
-        for (let lz = 0; lz < 16; lz++) {
+      for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
           for (let y = 10; y < 50; y++) {
             chunk.setLocal(lx, y, lz, BlockId.STONE);
           }
         }
       }
       generator.placeInChunk(chunk);
-      for (let lx = 0; lx < 16; lx++) {
-        for (let lz = 0; lz < 16; lz++) {
+      for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
           for (let y = 10; y < 50; y++) {
             const id = chunk.getLocal(lx, y, lz);
             if (id === BlockId.RAIL) counts.rail++;

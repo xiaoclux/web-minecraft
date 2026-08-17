@@ -10,11 +10,10 @@
  */
 
 import { BlockId, getBlock } from '../blocks/BlockRegistry';
-import { FACINGS } from '../blocks/blockShapes';
+import { FACINGS, FACING_MASK } from '../blocks/blockShapes';
 import {
   POWERED_RAIL_CHAIN,
   RAIL_SHAPE_MASK,
-  COMPARATOR_FACING_MASK,
   COMPARATOR_MODE_BIT,
   COMPARATOR_OUTPUT_MASK,
   COMPARATOR_OUTPUT_SHIFT,
@@ -219,7 +218,7 @@ export function comparatorOutput(
   containerLevelAt: (x: number, y: number, z: number) => number,
 ): number {
   const meta = world.getMeta(x, y, z);
-  const [fx, fz] = FACINGS[meta & COMPARATOR_FACING_MASK];
+  const [fx, fz] = FACINGS[meta & FACING_MASK];
   // 背面：先看容器充盈度，没有容器再看普通红石信号
   const bx = x - fx;
   const bz = z - fz;

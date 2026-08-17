@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyWorld } from './helpers';
+import { emptyWorld, fillLayer } from './helpers';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
 import { LAVA_MAX_LEVEL, WATER_SOURCE_META } from '../src/engine/constants/fluids';
 import { FluidSimulator, fluidSpecOf } from '../src/engine/world/FluidSimulator';
@@ -15,11 +15,7 @@ function run(sim: FluidSimulator, n: number): void {
 /** 在 y=10 铺一层石头地板。 */
 function floorWorld(): World {
   const world = emptyWorld(1);
-  for (let x = -8; x <= 8; x++) {
-    for (let z = -8; z <= 8; z++) {
-      world.setBlockRaw(x, 10, z, BlockId.STONE);
-    }
-  }
+  fillLayer(world, 10, 8, BlockId.STONE);
   return world;
 }
 

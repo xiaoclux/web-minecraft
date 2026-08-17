@@ -1,28 +1,30 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Game } from '../engine/Game';
 import { SIGN_LINE_COUNT, SIGN_LINE_MAX_CHARS } from '../engine/constants/game';
-import type { GameUiState } from '../engine/events/GameState';
 
 interface SignScreenProps {
   game: Game;
-  state: GameUiState;
 }
 
 const LINE_INDICES = Array.from({ length: SIGN_LINE_COUNT }, (_, i) => i);
 
 /**
- * 告示牌编辑界面：刚放下牌子时弹出，写完点"完成"。
+ * 告示牌编辑界面：刚放下牌子时弹出，写完点"完成"一次性交给引擎。
  * 与 1.8.9 一致——放下之后就不能再改了，所以这里只在放置时出现一次。
  */
-export function SignScreen({ game, state }: SignScreenProps) {
+export function SignScreen({ game }: SignScreenProps) {
   const firstRef = useRef<HTMLInputElement>(null);
-  const lines = game.signLines;
-  // signVersion 变化时说明文字更新了，让 React 跟着重渲染
-  void state.signVersion;
+  // 编辑中的文字只在这里保管，引擎只在"完成"时收一次
+  const [lines, setLines] = useState<string[]>(() => new Array<string>(SIGN_LINE_COUNT).fill(''));
 
   useEffect(() => {
     firstRef.current?.focus();
   }, []);
+
+  const finish = () => game.finishEditingSign(lines);
+  const setLine = (index: number, text: string) => {
+    setLines((prev) => prev.map((line, i) => (i === index ? text : line)));
+  };
 
   return (
     <div className="overlay center">
@@ -35,16 +37,16 @@ export function SignScreen({ game, state }: SignScreenProps) {
             type="text"
             className="sign-line"
             maxLength={SIGN_LINE_MAX_CHARS}
-            value={lines[i] ?? ''}
-            onChange={(e) => game.setSignLine(i, e.target.value)}
+            value={lines[i]}
+            onChange={(e) => setLine(i, e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                game.finishEditingSign();
+                finish();
               }
             }}
           />
         ))}
-        <button className="menu-button primary" onClick={() => game.finishEditingSign()}>
+        <button className="menu-button primary" onClick={finish}>
           完成
         </button>
       </div>

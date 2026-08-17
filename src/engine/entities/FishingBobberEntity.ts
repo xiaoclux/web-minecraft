@@ -22,10 +22,7 @@ export class FishingBobberEntity extends Entity {
   private waitTicks = 0;
   private surfaceY = 0;
 
-  constructor(
-    readonly ownerId: number,
-    id?: number,
-  ) {
+  constructor(id?: number) {
     super(id);
     this.width = BOBBER_SIZE;
     this.height = BOBBER_SIZE;

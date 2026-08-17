@@ -279,7 +279,6 @@ export class ServerCore {
     });
   }
 
-  /** 给所有人发一条消息。 */
   /** 在线玩家的位置（服务端跑生物 AI 时要知道追谁）。 */
   playerPositions(): { id: number; x: number; y: number; z: number }[] {
     const out: { id: number; x: number; y: number; z: number }[] = [];
@@ -289,6 +288,7 @@ export class ServerCore {
     return out;
   }
 
+  /** 给所有人发一条消息。 */
   broadcast(message: NetMessage): void {
     this.source.onBroadcast?.(message);
     if (this.players.size === 0) {

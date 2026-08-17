@@ -4,27 +4,11 @@ import { CAKE_BITES, COCOA_MAX_STAGE, COCOA_STAGE_SHIFT, shapeBoxes } from '../s
 import { RandomTickSystem } from '../src/engine/systems/RandomTickSystem';
 import { matchRecipe } from '../src/engine/items/Recipes';
 import { World } from '../src/engine/world/World';
-import { emptyWorld } from './helpers';
-
-/** 固定序列的伪随机，保证测试可复现又能取到不同的方向。 */
-function seededRandom(): () => number {
-  let state = 1;
-  return () => {
-    state = (state * 1103515245 + 12345) % 2147483648;
-    return state / 2147483648;
-  };
-}
+import { createRng } from '../src/engine/textures/PixelCanvas';
+import { emptyWorld, randomTickHost } from './helpers';
 
 function tickSystem(world: World, light: number): RandomTickSystem {
-  const random = seededRandom();
-  return new RandomTickSystem({
-    world,
-    random,
-    lightLevelAt: () => light,
-    get isRaining(): boolean {
-      return false;
-    },
-  });
+  return new RandomTickSystem(randomTickHost(world, light, createRng(1)));
 }
 
 describe('蘑菇', () => {
@@ -110,14 +94,7 @@ describe('可可果', () => {
   it('随机 tick 会慢慢长熟，熟了就不再长', () => {
     const world = emptyWorld(1);
     world.setBlock(0, 10, 0, BlockId.COCOA, 0);
-    const system = new RandomTickSystem({
-      world,
-      random: () => 0.1,
-      lightLevelAt: () => 15,
-      get isRaining(): boolean {
-        return false;
-      },
-    });
+    const system = new RandomTickSystem(randomTickHost(world, 15, () => 0.1));
     for (let i = 0; i < 50; i++) {
       system.tickBlock(0, 10, 0);
     }

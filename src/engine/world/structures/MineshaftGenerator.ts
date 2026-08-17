@@ -2,9 +2,16 @@ import { BlockId } from '../../blocks/BlockRegistry';
 import { CHUNK_SIZE } from '../../constants/world';
 import { MobType } from '../../entities/MobDefs';
 import { createRng, hashCoords, hashString } from '../../textures/PixelCanvas';
-import type { Chunk } from '../Chunk';
+import { chunkKey, type Chunk } from '../Chunk';
 import { LootTable } from './LootTables';
-import { placeBlocksInChunk, StructureBuilder } from './StructureBuilder';
+import {
+  boundsIntersectXZ,
+  chunkBounds,
+  placeBlocksInChunk,
+  StructureBuilder,
+  type Bounds,
+  type StructureBlock,
+} from './StructureBuilder';
 
 /** 矿井按格子分布：每 GRID 个 chunk 的方格里最多一座。 */
 const MINESHAFT_GRID_CHUNKS = 12;
@@ -30,26 +37,38 @@ const SPAWNER_CHANCE = 0.012;
 /** 分支相对主巷道的最大高度差。 */
 const BRANCH_Y_JITTER = 3;
 const SALT_MINESHAFT = 733;
+/** 木支撑立在巷道的两侧壁上；模块级冻结数组避免每个支撑点都新建临时数组。 */
+const SUPPORT_SIDES: readonly number[] = Object.freeze([-CORRIDOR_HALF_WIDTH, CORRIDOR_HALF_WIDTH]);
 
 /** 一段巷道：从 (x, y, z) 起沿某个水平方向铺 length 格。 */
 interface Corridor {
   x: number;
   y: number;
   z: number;
-  /** 0 = 沿 +x，1 = 沿 +z。 */
+  /** false = 沿 +x 延伸，true = 沿 +z 延伸。 */
   alongZ: boolean;
   length: number;
   seed: number;
+  /** 掷种时一次性生成的全部方块，各 chunk 只做裁剪写入，不再重复搭建。 */
+  blocks: StructureBlock[];
+  /** 战利品箱 / 刷怪笼，同样在掷种时定下位置。 */
+  props: CorridorProp[];
+  bounds: Bounds;
+}
+
+/** 巷道里的一个道具（箱子或洞穴蜘蛛刷怪笼）。 */
+interface CorridorProp {
+  x: number;
+  y: number;
+  z: number;
+  kind: 'chest' | 'spawner';
 }
 
 /** 一座废弃矿井。 */
 interface Mineshaft {
   corridors: Corridor[];
   /** 全部巷道的 XZ 包围盒，用来快速跳过不相干的 chunk。 */
-  minX: number;
-  maxX: number;
-  minZ: number;
-  maxZ: number;
+  bounds: Bounds;
 }
 
 /**
@@ -68,7 +87,8 @@ export class MineshaftGenerator {
 
   /** 某个格子里的矿井（没有则为 null）。 */
   private mineshaftAt(cellX: number, cellZ: number): Mineshaft | null {
-    const key = cellX * 0x10000 + (cellZ & 0xffff);
+    // 与其它结构生成器保持一致，格子坐标复用 chunkKey 编码
+    const key = chunkKey(cellX, cellZ);
     const cached = this.cache.get(key);
     if (cached !== undefined) {
       return cached;
@@ -89,7 +109,7 @@ export class MineshaftGenerator {
     const y = MIN_Y + Math.floor(rng() * (MAX_Y - MIN_Y));
     const mainAlongZ = rng() < 0.5;
     const corridors: Corridor[] = [
-      { x: originX, y, z: originZ, alongZ: mainAlongZ, length: MAIN_LENGTH, seed: Math.floor(rng() * 0xffffffff) },
+      buildCorridor(originX, y, originZ, mainAlongZ, MAIN_LENGTH, Math.floor(rng() * 0xffffffff)),
     ];
     for (let i = 0; i < BRANCH_COUNT; i++) {
       // 分支从主巷道上的某一点垂直岔出去，高度略有起伏
@@ -97,123 +117,144 @@ export class MineshaftGenerator {
       const length = BRANCH_MIN_LENGTH + Math.floor(rng() * (BRANCH_MAX_LENGTH - BRANCH_MIN_LENGTH));
       const back = rng() < 0.5;
       const branchY = y + Math.floor(rng() * (BRANCH_Y_JITTER * 2 + 1)) - BRANCH_Y_JITTER;
-      const startX = mainAlongZ ? originX : originX + offset;
-      const startZ = mainAlongZ ? originZ + offset : originZ;
-      corridors.push({
-        x: back && !mainAlongZ ? startX : startX - (mainAlongZ && back ? length : 0),
-        y: branchY,
-        z: back && mainAlongZ ? startZ : startZ - (!mainAlongZ && back ? length : 0),
-        alongZ: !mainAlongZ,
-        length,
-        seed: Math.floor(rng() * 0xffffffff),
-      });
+      // 分支与主巷道垂直：主巷道沿 z 则分支沿 x，反之亦然；
+      // 巷道只朝正方向铺，所以"往负方向岔"就是把起点整体挪回 length 格
+      const shift = back ? -length : 0;
+      const startX = mainAlongZ ? originX + shift : originX + offset;
+      const startZ = mainAlongZ ? originZ + offset : originZ + shift;
+      corridors.push(buildCorridor(startX, branchY, startZ, !mainAlongZ, length, Math.floor(rng() * 0xffffffff)));
     }
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minZ = Infinity;
-    let maxZ = -Infinity;
+    const bounds: Bounds = { ...corridors[0].bounds };
     for (const c of corridors) {
-      const endX = c.x + (c.alongZ ? 0 : c.length);
-      const endZ = c.z + (c.alongZ ? c.length : 0);
-      minX = Math.min(minX, c.x - CORRIDOR_HALF_WIDTH - 1, endX - CORRIDOR_HALF_WIDTH - 1);
-      maxX = Math.max(maxX, c.x + CORRIDOR_HALF_WIDTH + 1, endX + CORRIDOR_HALF_WIDTH + 1);
-      minZ = Math.min(minZ, c.z - CORRIDOR_HALF_WIDTH - 1, endZ - CORRIDOR_HALF_WIDTH - 1);
-      maxZ = Math.max(maxZ, c.z + CORRIDOR_HALF_WIDTH + 1, endZ + CORRIDOR_HALF_WIDTH + 1);
+      bounds.minX = Math.min(bounds.minX, c.bounds.minX);
+      bounds.maxX = Math.max(bounds.maxX, c.bounds.maxX);
+      bounds.minZ = Math.min(bounds.minZ, c.bounds.minZ);
+      bounds.maxZ = Math.max(bounds.maxZ, c.bounds.maxZ);
     }
-    return { corridors, minX, maxX, minZ, maxZ };
+    return { corridors, bounds };
   }
 
   /** 把可能影响该 chunk 的矿井写进去。 */
   placeInChunk(chunk: Chunk): void {
     const cellX = Math.floor(chunk.cx / MINESHAFT_GRID_CHUNKS);
     const cellZ = Math.floor(chunk.cz / MINESHAFT_GRID_CHUNKS);
-    const x0 = chunk.originX;
-    const z0 = chunk.originZ;
+    const bounds = chunkBounds(chunk);
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
         const shaft = this.mineshaftAt(cellX + dx, cellZ + dz);
-        if (!shaft || shaft.maxX < x0 || shaft.minX >= x0 + CHUNK_SIZE || shaft.maxZ < z0 || shaft.minZ >= z0 + CHUNK_SIZE) {
+        if (!shaft || !boundsIntersectXZ(shaft.bounds, bounds)) {
           continue;
         }
         for (const corridor of shaft.corridors) {
-          this.buildCorridor(chunk, corridor);
+          // 巷道方块早已缓存，这里只按包围盒裁剪，不与本 chunk 相交的整段跳过
+          if (!boundsIntersectXZ(corridor.bounds, bounds)) {
+            continue;
+          }
+          placeBlocksInChunk(chunk, corridor.blocks);
+          placeProps(chunk, corridor.props);
         }
       }
     }
   }
+}
 
-  private buildCorridor(chunk: Chunk, corridor: Corridor): void {
-    const rng = createRng(corridor.seed);
-    const b = new StructureBuilder();
-    const { x, y, z, alongZ, length } = corridor;
-    for (let i = 0; i <= length; i++) {
-      const cx = alongZ ? x : x + i;
-      const cz = alongZ ? z + i : z;
-      // 掏空巷道
-      for (let dy = 0; dy < CORRIDOR_HEIGHT; dy++) {
-        for (let w = -CORRIDOR_HALF_WIDTH; w <= CORRIDOR_HALF_WIDTH; w++) {
-          const bx = alongZ ? cx + w : cx;
-          const bz = alongZ ? cz : cz + w;
-          b.set(bx, y + dy, bz, BlockId.AIR);
-        }
-      }
-      // 地板：悬空处补木板，中间铺铁轨
+/** 搭一段巷道：掏空、铺地板与铁轨、架木支撑、挂蜘蛛网，再定下箱子与刷怪笼的位置。 */
+function buildCorridor(x: number, y: number, z: number, alongZ: boolean, length: number, seed: number): Corridor {
+  const rng = createRng(seed);
+  const b = new StructureBuilder();
+  for (let i = 0; i <= length; i++) {
+    const cx = alongZ ? x : x + i;
+    const cz = alongZ ? z + i : z;
+    // 掏空巷道
+    for (let dy = 0; dy < CORRIDOR_HEIGHT; dy++) {
       for (let w = -CORRIDOR_HALF_WIDTH; w <= CORRIDOR_HALF_WIDTH; w++) {
         const bx = alongZ ? cx + w : cx;
         const bz = alongZ ? cz : cz + w;
-        b.set(bx, y - 1, bz, BlockId.PLANKS);
+        b.set(bx, y + dy, bz, BlockId.AIR);
       }
-      b.set(cx, y, cz, BlockId.RAIL, alongZ ? 1 : 0);
-      // 每隔几格架一组木支撑
-      if (i % SUPPORT_SPACING === 0) {
-        for (const w of [-CORRIDOR_HALF_WIDTH, CORRIDOR_HALF_WIDTH]) {
-          const bx = alongZ ? cx + w : cx;
-          const bz = alongZ ? cz : cz + w;
-          b.set(bx, y, bz, BlockId.FENCE);
-          b.set(bx, y + 1, bz, BlockId.FENCE);
-          b.set(bx, y + CORRIDOR_HEIGHT - 1, bz, BlockId.PLANKS);
-        }
-        const beamX = alongZ ? cx : cx;
-        const beamZ = alongZ ? cz : cz;
-        b.set(beamX, y + CORRIDOR_HEIGHT - 1, beamZ, BlockId.PLANKS);
-      }
-      // 零零散散的蜘蛛网
-      if (rng() < COBWEB_CHANCE) {
-        const w = Math.floor(rng() * 3) - 1;
+    }
+    // 地板：悬空处补木板，中间铺铁轨
+    for (let w = -CORRIDOR_HALF_WIDTH; w <= CORRIDOR_HALF_WIDTH; w++) {
+      const bx = alongZ ? cx + w : cx;
+      const bz = alongZ ? cz : cz + w;
+      b.set(bx, y - 1, bz, BlockId.PLANKS);
+    }
+    b.set(cx, y, cz, BlockId.RAIL, alongZ ? 1 : 0);
+    // 每隔几格架一组木支撑：两侧立栅栏，顶上横一根木板梁
+    if (i % SUPPORT_SPACING === 0) {
+      for (const w of SUPPORT_SIDES) {
         const bx = alongZ ? cx + w : cx;
         const bz = alongZ ? cz : cz + w;
-        b.set(bx, y + 1, bz, BlockId.COBWEB);
+        b.set(bx, y, bz, BlockId.FENCE);
+        b.set(bx, y + 1, bz, BlockId.FENCE);
+        b.set(bx, y + CORRIDOR_HEIGHT - 1, bz, BlockId.PLANKS);
       }
+      b.set(cx, y + CORRIDOR_HEIGHT - 1, cz, BlockId.PLANKS);
     }
-    placeBlocksInChunk(chunk, b.list());
-    this.placeProps(chunk, corridor, rng);
+    // 零零散散的蜘蛛网
+    if (rng() < COBWEB_CHANCE) {
+      const w = Math.floor(rng() * 3) - 1;
+      const bx = alongZ ? cx + w : cx;
+      const bz = alongZ ? cz : cz + w;
+      b.set(bx, y + 1, bz, BlockId.COBWEB);
+    }
   }
+  const props = rollProps(x, y, z, alongZ, length, rng);
+  // 包围盒按巷道走向撑开并外扩 1 格（两侧壁的支撑柱与蜘蛛网都在这一圈里）
+  const endX = x + (alongZ ? 0 : length);
+  const endZ = z + (alongZ ? length : 0);
+  const bounds: Bounds = {
+    minX: Math.min(x, endX) - CORRIDOR_HALF_WIDTH - 1,
+    maxX: Math.max(x, endX) + CORRIDOR_HALF_WIDTH + 1,
+    minZ: Math.min(z, endZ) - CORRIDOR_HALF_WIDTH - 1,
+    maxZ: Math.max(z, endZ) + CORRIDOR_HALF_WIDTH + 1,
+    minY: y - 1,
+    maxY: y + CORRIDOR_HEIGHT - 1,
+  };
+  return { x, y, z, alongZ, length, seed, blocks: b.list(), props, bounds };
+}
 
-  /** 战利品箱与洞穴蜘蛛刷怪笼：只在本 chunk 内的那些格子上放。 */
-  private placeProps(chunk: Chunk, corridor: Corridor, rng: () => number): void {
-    const { x, y, z, alongZ, length } = corridor;
-    for (let i = 0; i <= length; i++) {
-      const cx = alongZ ? x : x + i;
-      const cz = alongZ ? z + i : z;
-      const chestRoll = rng();
-      const spawnerRoll = rng();
-      if (!chunk.containsColumn(cx, cz)) {
-        continue;
-      }
-      if (chestRoll < CHEST_CHANCE) {
-        const side = rng() < 0.5 ? -CORRIDOR_HALF_WIDTH : CORRIDOR_HALF_WIDTH;
-        const bx = alongZ ? cx + side : cx;
-        const bz = alongZ ? cz : cz + side;
-        if (chunk.containsColumn(bx, bz)) {
-          chunk.setWorld(bx, y, bz, BlockId.CHEST);
-          chunk.pendingBlockEntities.push({ x: bx, y, z: bz, loot: LootTable.MINESHAFT });
-        }
-        continue;
-      }
-      if (spawnerRoll < SPAWNER_CHANCE) {
-        chunk.setWorld(cx, y, cz, BlockId.MOB_SPAWNER);
-        chunk.pendingBlockEntities.push({ x: cx, y, z: cz, spawns: MobType.CAVE_SPIDER });
-      }
+/** 沿巷道逐格掷骰决定箱子与刷怪笼；一次掷骰分段取值，箱子与刷怪笼互斥。 */
+function rollProps(
+  x: number,
+  y: number,
+  z: number,
+  alongZ: boolean,
+  length: number,
+  rng: () => number,
+): CorridorProp[] {
+  const props: CorridorProp[] = [];
+  for (let i = 0; i <= length; i++) {
+    const cx = alongZ ? x : x + i;
+    const cz = alongZ ? z + i : z;
+    const r = rng();
+    if (r < CHEST_CHANCE) {
+      // 箱子靠在巷道一侧壁边
+      const side = rng() < 0.5 ? -CORRIDOR_HALF_WIDTH : CORRIDOR_HALF_WIDTH;
+      const bx = alongZ ? cx + side : cx;
+      const bz = alongZ ? cz : cz + side;
+      props.push({ x: bx, y, z: bz, kind: 'chest' });
+      continue;
     }
+    if (r < CHEST_CHANCE + SPAWNER_CHANCE) {
+      props.push({ x: cx, y, z: cz, kind: 'spawner' });
+    }
+  }
+  return props;
+}
+
+/** 把落在本 chunk 内的道具写入，并登记对应的方块实体。 */
+function placeProps(chunk: Chunk, props: readonly CorridorProp[]): void {
+  for (const p of props) {
+    if (!chunk.containsColumn(p.x, p.z)) {
+      continue;
+    }
+    if (p.kind === 'chest') {
+      chunk.setWorld(p.x, p.y, p.z, BlockId.CHEST);
+      chunk.pendingBlockEntities.push({ x: p.x, y: p.y, z: p.z, loot: LootTable.MINESHAFT });
+      continue;
+    }
+    chunk.setWorld(p.x, p.y, p.z, BlockId.MOB_SPAWNER);
+    chunk.pendingBlockEntities.push({ x: p.x, y: p.y, z: p.z, spawns: MobType.CAVE_SPIDER });
   }
 }

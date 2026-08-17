@@ -97,6 +97,7 @@ import {
 import { BlockEntityStore, BlockEntityType, type HopperBlockEntity } from './world/BlockEntityStore';
 import { POWERED_RAIL_LIT_BIT } from './blocks/BlockRegistry';
 import { RandomTickSystem } from './systems/RandomTickSystem';
+import { setPoweredBit } from './systems/TriggerSystem';
 import { WeatherSystem } from './systems/WeatherSystem';
 import { DIMENSION_DEFS, Dimension, DimensionId, isDimensionId } from './world/Dimension';
 import {
@@ -114,6 +115,7 @@ import { potionOfItem } from './items/potions';
 import { biomeHasSnowfall, biomeLabel } from './world/biomes';
 import { ArrowEntity } from './entities/ArrowEntity';
 import { FishingBobberEntity } from './entities/FishingBobberEntity';
+import { ThrownEntity } from './entities/ThrownEntity';
 import { ThrownItemEntity } from './entities/ThrownItemEntity';
 import { ThrownPotionEntity } from './entities/ThrownPotionEntity';
 import { FireballEntity } from './entities/FireballEntity';
@@ -189,7 +191,7 @@ import { ItemDropEntity } from './entities/ItemDropEntity';
 import { XpOrbEntity } from './entities/XpOrbEntity';
 import { LivingEntity } from './entities/LivingEntity';
 import { EffectId, isEffectId, type ActiveEffect } from './entities/effects';
-import { Mob } from './entities/Mob';
+import { Mob, PetInteraction } from './entities/Mob';
 import { MobType, isMobType } from './entities/MobDefs';
 import { MobSpawner } from './entities/MobSpawner';
 import { daylightAt } from './world/daylight';
@@ -359,7 +361,6 @@ const CHAT_HISTORY_LIMIT = 30;
 const MINECART_ITEM = 'minecart';
 const MINECART_HIT_TOLERANCE = 1;
 const RIDE_EYE_OFFSET = 0.3;
-/** 压力板多久检查一次。 */
 /** 方块变更后重算用电器的半径。 */
 const REDSTONE_CONSUMER_RADIUS = 2;
 /** 凋灵召唤阵的两个可能轴向（沿 X 或沿 Z 摆）。 */
@@ -414,17 +415,17 @@ const FISHING_CAST_LIFT = 4;
 /** 弓与箭的物品 id。 */
 const BOW_ITEM_ID = 'bow';
 const ARROW_ITEM_ID = 'arrow';
-/** 放完一箭的冷却（tick）。 */
-const BOW_RELEASE_COOLDOWN_TICKS = 4;
-/** 没有告示牌在编辑时返回的空行（避免每次都新建数组）。 */
-const EMPTY_SIGN_LINES: readonly string[] = [];
+/** 放完一箭 / 扔出一样东西之后的冷却（tick）。 */
+const PROJECTILE_COOLDOWN_TICKS = 4;
+/** 告示牌文字里不允许的换行符。 */
+const SIGN_LINE_BREAK_PATTERN = /[\r\n]/g;
 /** 蛋糕每一口回多少饥饿与饱和度（1.8.9 为 2 点饥饿）。 */
 const CAKE_SLICE_HUNGER = 2;
 const CAKE_SLICE_SATURATION = 0.4;
 /** 可以直接扔出去的物品。 */
-const THROWN_ITEM_IDS: ReadonlySet<string> = new Set(['snowball', 'egg']);
-/** 扔一次的冷却（tick）。 */
-const THROW_COOLDOWN_TICKS = 4;
+const SNOWBALL_ITEM_ID = 'snowball';
+const EGG_ITEM_ID = 'egg';
+const THROWN_ITEM_IDS: ReadonlySet<string> = new Set([SNOWBALL_ITEM_ID, EGG_ITEM_ID]);
 /** 雪球只对烈焰人有伤害（1.8.9 为 3 点）。 */
 const SNOWBALL_BLAZE_DAMAGE = 3;
 /** 鸡蛋砸地后孵出小鸡的概率（1.8.9 为 1/8）。 */
@@ -705,8 +706,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       xpProgress: 0,
       selectedSlot: 0,
       inventoryVersion: 0,
-      signVersion: 0,
-      tradeVersion: 0,
       screen: Screen.NONE,
       isPointerLocked: false,
       isFlying: false,
@@ -1079,8 +1078,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
         this.entities.delete(id);
       }
     }
-    this.resolveSplashImpacts();
-    this.resolveThrownItems();
+    this.resolveThrownImpacts();
     this.mergeItemDrops();
     this.spawner.tick(this, this.entities.values());
     this.tickTnt();
@@ -2745,18 +2743,27 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       this.reelIn(existing);
       return;
     }
+    const bobber = new FishingBobberEntity();
+    this.launchFromEyes(bobber, FISHING_CAST_SPEED, PLACE_COOLDOWN_TICKS, FISHING_CAST_LIFT);
+    this.bobber = bobber;
+  }
+
+  /**
+   * 把一个投射物从玩家眼睛沿视线射出去：箭 / 雪球 / 药水 / 鱼漂共用同一条出手流程
+   * （定位、给速度、生成、弓弦音、挥手、冷却）。
+   * @param lift 额外向上的初速度（鱼漂抛出去要抬一点）
+   */
+  private launchFromEyes(projectile: Entity, speed: number, cooldownTicks: number, lift = 0): void {
     const p = this.player;
     const dir = this.lookDirection();
-    const bobber = new FishingBobberEntity(p.id);
-    bobber.setPosition(p.x, p.eyeY, p.z);
-    bobber.vx = dir.x * FISHING_CAST_SPEED;
-    bobber.vy = dir.y * FISHING_CAST_SPEED + FISHING_CAST_LIFT;
-    bobber.vz = dir.z * FISHING_CAST_SPEED;
-    this.spawnEntity(bobber);
-    this.bobber = bobber;
+    projectile.setPosition(p.x, p.eyeY, p.z);
+    projectile.vx = dir.x * speed;
+    projectile.vy = dir.y * speed + lift;
+    projectile.vz = dir.z * speed;
+    this.spawnEntity(projectile);
     this.sound.play('bow');
     this.renderer.hand.swing();
-    this.useCooldown = PLACE_COOLDOWN_TICKS;
+    this.useCooldown = cooldownTicks;
   }
 
   /** 收竿：咬钩了就把东西钓上来，没咬钩就白收一次。 */
@@ -2773,11 +2780,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     // 一竿必有收获：按权重抽一样（多半是鱼，偶尔是垃圾或绿宝石）
     const stack = rollOne(LootTable.FISHING, this.rng);
     this.achievements.onItemObtained(stack.id);
-    const leftover = this.player.inventory.add(stack);
-    if (leftover > 0) {
-      this.dropItem(this.player.x, this.player.eyeY, this.player.z, { ...stack, count: leftover }, 0.2);
-    }
-    this.bumpInventory();
+    this.giveItem(stack);
   }
 
   /** 开始拉弓（手里有箭或创造模式才拉得开）。 */
@@ -2802,19 +2805,9 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (!this.rules.infiniteItems && !this.player.inventory.removeItems(ARROW_ITEM_ID, 1)) {
       return;
     }
-    const p = this.player;
-    const dir = this.lookDirection();
-    const arrow = new ArrowEntity(p.id, true, BOW_MAX_ARROW_DAMAGE * ratio);
-    arrow.setPosition(p.x, p.eyeY, p.z);
-    const speed = BOW_MAX_ARROW_SPEED * ratio;
-    arrow.vx = dir.x * speed;
-    arrow.vy = dir.y * speed;
-    arrow.vz = dir.z * speed;
-    this.spawnEntity(arrow);
-    this.sound.play('bow');
+    const arrow = new ArrowEntity(this.player.id, true, BOW_MAX_ARROW_DAMAGE * ratio);
+    this.launchFromEyes(arrow, BOW_MAX_ARROW_SPEED * ratio, PROJECTILE_COOLDOWN_TICKS);
     this.damageHeldTool(1);
-    this.renderer.hand.swing();
-    this.useCooldown = BOW_RELEASE_COOLDOWN_TICKS;
   }
 
   /** 选择快捷栏。 */
@@ -2865,47 +2858,27 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     }
   }
 
-  /** 正在编辑的告示牌坐标；没在编辑时为 null。 */
-  private editingSign: { x: number; y: number; z: number } | null = null;
-
-  /** 当前正在编辑的告示牌文字（UI 读）。 */
-  get signLines(): readonly string[] {
-    const at = this.editingSign;
-    const entity = at ? this.blockEntities.get(at.x, at.y, at.z) : null;
-    return entity?.type === BlockEntityType.SIGN ? entity.lines : EMPTY_SIGN_LINES;
-  }
-
-  /**
-   * 改告示牌的某一行（UI 调）。
-   * @param index 行号 0 ~ SIGN_LINE_COUNT-1
-   */
-  setSignLine(index: number, text: string): void {
-    const at = this.editingSign;
-    if (!at || index < 0 || index >= SIGN_LINE_COUNT) {
-      return;
-    }
-    const entity = this.blockEntities.get(at.x, at.y, at.z);
-    if (entity?.type !== BlockEntityType.SIGN) {
-      return;
-    }
-    // 字数上限与换行符都在这里挡掉，免得渲染时排不下
-    entity.lines[index] = text.replace(/[\r\n]/g, '').slice(0, SIGN_LINE_MAX_CHARS);
-    this.store.patch({ signVersion: this.store.get().signVersion + 1 });
-  }
-
-  /** 刚放下告示牌：建好方块实体并打开编辑界面。 */
+  /** 刚放下告示牌：建好（空的）方块实体并打开编辑界面，正在编辑的牌子就是 openBlock。 */
   private beginEditingSign(x: number, y: number, z: number): void {
     this.blockEntities.getOrCreate(x, y, z, () => ({
       type: BlockEntityType.SIGN,
       lines: new Array<string>(SIGN_LINE_COUNT).fill(''),
     }));
-    this.editingSign = { x, y, z };
     this.openScreen(Screen.SIGN, { x, y, z });
   }
 
-  /** 关掉告示牌编辑界面（写完了）。 */
-  finishEditingSign(): void {
-    this.editingSign = null;
+  /**
+   * 写完告示牌：把文字一次性写进方块实体并关掉界面（编辑过程中的文字由 UI 自己保管）。
+   * 字数上限与换行符都在这里挡掉，免得渲染时排不下。
+   */
+  finishEditingSign(lines: readonly string[]): void {
+    const at = this.store.get().openBlock;
+    const entity = at ? this.blockEntities.get(at.x, at.y, at.z) : null;
+    if (entity?.type === BlockEntityType.SIGN) {
+      for (let i = 0; i < SIGN_LINE_COUNT; i++) {
+        entity.lines[i] = (lines[i] ?? '').replace(SIGN_LINE_BREAK_PATTERN, '').slice(0, SIGN_LINE_MAX_CHARS);
+      }
+    }
     this.closeScreen();
   }
 
@@ -2914,24 +2887,9 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (!at || this.world.getBlock(at.x, at.y, at.z) !== BlockId.TRAPPED_CHEST) {
       return;
     }
-    const meta = this.world.getMeta(at.x, at.y, at.z);
-    if (((meta & REDSTONE_POWERED_BIT) !== 0) === powered) {
-      return;
-    }
-    this.world.setBlock(
-      at.x,
-      at.y,
-      at.z,
-      BlockId.TRAPPED_CHEST,
-      powered ? meta | REDSTONE_POWERED_BIT : meta & ~REDSTONE_POWERED_BIT,
-    );
+    setPoweredBit(this.world, at.x, at.y, at.z, BlockId.TRAPPED_CHEST, powered);
   }
 
-  /**
-   * 关闭界面并回到游戏。
-   * 合成格与光标上的物品必须先收回背包；背包放不下时保持界面打开并提示，
-   * 避免玩家正在挪动的物品被丢进世界。
-   */
   /** 字幕放完 / 被跳过：回到游戏。 */
   closeCredits(): void {
     if (this.store.get().screen === Screen.CREDITS) {
@@ -2940,6 +2898,11 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     }
   }
 
+  /**
+   * 关闭界面并回到游戏。
+   * 合成格与光标上的物品必须先收回背包；背包放不下时保持界面打开并提示，
+   * 避免玩家正在挪动的物品被丢进世界。
+   */
   closeScreen(): void {
     const leftover = this.containers.returnCraftingItems() + this.containers.returnCursor();
     if (leftover > 0) {
@@ -3345,10 +3308,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (this.tryToggleRide()) {
       return;
     }
-    if (this.tryTradeWithVillager()) {
-      return;
-    }
-    if (this.tryTamePet()) {
+    // 准星里的生物只找一次：交易 / 驯服 / 挤奶 / 剪毛 / 喂食都用它
+    const crosshairEntity = this.findEntityInCrosshair();
+    const crosshairMob = crosshairEntity instanceof Mob && !crosshairEntity.isDead ? crosshairEntity : null;
+    if (this.tryTradeWith(crosshairMob) || this.tryTamePet(crosshairMob)) {
       return;
     }
     const hit = this.currentHit;
@@ -3392,12 +3355,12 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       return;
     }
     if (THROWN_ITEM_IDS.has(def.id)) {
-      this.throwItem(def.id);
+      this.throwHeldItem(held, false);
       return;
     }
     if (def.potion) {
       if (def.splash) {
-        this.throwPotion(held);
+        this.throwHeldItem(held, true);
       } else {
         this.drinkPotion(def.potion);
       }
@@ -3412,10 +3375,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (def.id === MINECART_ITEM && hit && this.tryPlaceMinecart(hit)) {
       return;
     }
-    if (def.id === 'shears' && this.tryShearMob()) {
+    if (def.id === 'shears' && this.tryShearMob(crosshairMob)) {
       return;
     }
-    if (def.id === 'bucket' && this.tryMilkCow()) {
+    if (def.id === 'bucket' && this.tryMilkCow(crosshairMob)) {
       return;
     }
     if (def.id === 'flint_and_steel' && hit && this.tryIgnite(hit)) {
@@ -3432,7 +3395,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (BUCKET_FLUIDS[def.id] !== undefined && this.tryUseBucket(def.id, hit)) {
       return;
     }
-    if (this.tryFeedMob(def.id)) {
+    if (this.tryFeedMob(crosshairMob, def.id)) {
       return;
     }
     if (def.tool?.type === ToolType.HOE && hit && this.tryTill(hit)) {
@@ -3464,102 +3427,74 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.renderer.hand.swing();
   }
 
-  /** 扔雪球 / 鸡蛋：和喷溅药水同一条飞行轨迹，砸中之后的效果不同。 */
-  private throwItem(itemId: string): void {
+  /** 扔雪球 / 鸡蛋 / 喷溅药水：都从眼睛沿视线飞出，砸中之后的效果不同。 */
+  private throwHeldItem(held: ItemStack, isPotion: boolean): void {
     const p = this.player;
-    const dir = this.lookDirection();
-    const thrown = new ThrownItemEntity(itemId, p.id);
-    thrown.setPosition(p.x, p.eyeY, p.z);
-    thrown.vx = dir.x * SPLASH_POTION_SPEED;
-    thrown.vy = dir.y * SPLASH_POTION_SPEED;
-    thrown.vz = dir.z * SPLASH_POTION_SPEED;
-    this.spawnEntity(thrown);
+    const thrown = isPotion
+      ? new ThrownPotionEntity({ id: held.id, count: 1 }, p.id)
+      : new ThrownItemEntity(held.id, p.id);
+    this.launchFromEyes(thrown, SPLASH_POTION_SPEED, PROJECTILE_COOLDOWN_TICKS);
     if (!this.rules.infiniteItems) {
       p.inventory.consume(p.selectedSlot, 1);
     }
-    this.sound.play('bow');
-    this.useCooldown = THROW_COOLDOWN_TICKS;
-    this.renderer.hand.swing();
   }
 
-  /** 落地的雪球 / 鸡蛋：雪球把生物打退，鸡蛋有小概率孵出一只小鸡。 */
-  private resolveThrownItems(): void {
+  /** 已经落地的投掷物：一趟遍历里按种类结算（药水泼效果，雪球击退，鸡蛋孵小鸡）。 */
+  private resolveThrownImpacts(): void {
     for (const e of this.entities.values()) {
-      if (!(e instanceof ThrownItemEntity) || !e.impact || e.isDead) {
+      if (!(e instanceof ThrownEntity) || !e.impact || e.isDead) {
         continue;
       }
       e.isDead = true;
-      const { x, y, z } = e.impact;
-      this.sound.play('pop', Math.hypot(x - this.player.x, y - this.player.y, z - this.player.z));
-      if (e.itemId === 'snowball') {
-        // 1.8.9：雪球只对烈焰人有伤害，对别的生物只有击退
-        const target = e.hitEntity;
-        if (target instanceof Mob && !target.isDead) {
-          if (target.type === MobType.BLAZE) {
-            target.hurt(this, SNOWBALL_BLAZE_DAMAGE, this.player);
-          }
-          // 击退方向按"从落点推开"算
-          target.applyKnockback(x, z);
-        }
-        continue;
-      }
-      if (this.rng() < EGG_HATCH_CHANCE) {
-        const chick = new Mob(MobType.CHICKEN);
-        chick.setPosition(x, y, z);
-        chick.setBaby(true);
-        this.spawnEntity(chick);
+      if (e instanceof ThrownPotionEntity) {
+        this.resolveSplashImpact(e);
+      } else if (e instanceof ThrownItemEntity) {
+        this.resolveThrownItemImpact(e);
       }
     }
   }
 
-  /** 扔出喷溅药水：从眼睛位置沿视线飞出。 */
-  private throwPotion(held: ItemStack): void {
-    const p = this.player;
-    const dir = this.lookDirection();
-    const potion = new ThrownPotionEntity({ id: held.id, count: 1 }, p.id);
-    potion.setPosition(p.x, p.eyeY, p.z);
-    potion.vx = dir.x * SPLASH_POTION_SPEED;
-    potion.vy = dir.y * SPLASH_POTION_SPEED;
-    potion.vz = dir.z * SPLASH_POTION_SPEED;
-    this.spawnEntity(potion);
-    if (!this.rules.infiniteItems) {
-      p.inventory.consume(p.selectedSlot, 1);
+  /** 雪球把生物打退（只对烈焰人有伤害），鸡蛋有小概率孵出一只小鸡。 */
+  private resolveThrownItemImpact(e: ThrownItemEntity): void {
+    const { x, y, z } = e.impact!;
+    this.sound.play('pop', Math.hypot(x - this.player.x, y - this.player.y, z - this.player.z));
+    if (e.itemId === SNOWBALL_ITEM_ID) {
+      const target = e.hitEntity;
+      if (target instanceof Mob && !target.isDead) {
+        if (target.type === MobType.BLAZE) {
+          target.hurt(this, SNOWBALL_BLAZE_DAMAGE, this.player);
+        }
+        // 击退方向按"从落点推开"算
+        target.applyKnockback(x, z);
+      }
+      return;
     }
-    this.sound.play('bow');
-    this.renderer.hand.swing();
+    if (e.itemId === EGG_ITEM_ID && this.rng() < EGG_HATCH_CHANCE) {
+      const chick = new Mob(MobType.CHICKEN);
+      chick.setPosition(x, y, z);
+      chick.setBaby(true);
+      this.spawnEntity(chick);
+    }
   }
 
-  /** 已经碎掉的喷溅药水：给范围内的活体上效果，离得越远效果越短。 */
-  private resolveSplashImpacts(): void {
-    for (const e of this.entities.values()) {
-      if (!(e instanceof ThrownPotionEntity) || !e.impact || e.isDead) {
+  /** 碎掉的喷溅药水：给范围内的活体上效果，离得越远效果越短。 */
+  private resolveSplashImpact(e: ThrownPotionEntity): void {
+    const { x, y, z } = e.impact!;
+    const potion = POTION_DEFS[getItem(e.stack.id)?.potion ?? ''];
+    this.renderer.particles.spawnBlockBreak(x - 0.5, y - 0.5, z - 0.5, SPLASH_PARTICLE_TEXTURE, SPLASH_PARTICLE_COUNT, 1);
+    this.sound.play('break', Math.hypot(x - this.player.x, y - this.player.y, z - this.player.z));
+    if (!potion) {
+      return;
+    }
+    for (const target of this.livingEntitiesNear(x, y, z, SPLASH_POTION_RADIUS)) {
+      const factor = 1 - Math.sqrt(target.distanceSqToPoint(x, y, z)) / SPLASH_POTION_RADIUS;
+      if (potion.effect === undefined) {
+        // 水瓶：只灭火
+        target.fireTicks = 0;
         continue;
       }
-      e.isDead = true;
-      const { x, y, z } = e.impact;
-      const potion = POTION_DEFS[getItem(e.stack.id)?.potion ?? ''];
-      this.renderer.particles.spawnBlockBreak(
-        x - 0.5,
-        y - 0.5,
-        z - 0.5,
-        SPLASH_PARTICLE_TEXTURE,
-        SPLASH_PARTICLE_COUNT,
-        1,
-      );
-      this.sound.play('break', Math.hypot(x - this.player.x, y - this.player.y, z - this.player.z));
-      if (!potion) {
-        continue;
-      }
-      for (const target of this.livingEntitiesNear(x, y, z, SPLASH_POTION_RADIUS)) {
-        const factor = 1 - Math.sqrt(target.distanceSqToPoint(x, y, z)) / SPLASH_POTION_RADIUS;
-        if (potion.effect === undefined) {
-          // 水瓶：只灭火
-          target.fireTicks = 0;
-          continue;
-        }
-        const ticks = Math.floor(potion.ticks * Math.max(SPLASH_POTION_MIN_FACTOR, factor));
-        target.addEffect(potion.effect, ticks, potion.amplifier, this);
-      }
+      const ticks = Math.floor(potion.ticks * Math.max(SPLASH_POTION_MIN_FACTOR, factor));
+      target.addEffect(potion.effect, ticks, potion.amplifier, this);
     }
   }
 
@@ -3695,9 +3630,8 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   }
 
   /** 空桶对着牛右键挤奶。 */
-  private tryMilkCow(): boolean {
-    const target = this.findEntityInCrosshair();
-    if (!(target instanceof Mob) || target.type !== MobType.COW || target.isBaby) {
+  private tryMilkCow(target: Mob | null): boolean {
+    if (!target || target.type !== MobType.COW || target.isBaby) {
       return false;
     }
     this.replaceHeldItem('milk_bucket');
@@ -3780,9 +3714,8 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   }
 
   /** 用剪刀剪准星里的羊。 */
-  private tryShearMob(): boolean {
-    const target = this.findEntityInCrosshair();
-    if (!(target instanceof Mob)) {
+  private tryShearMob(target: Mob | null): boolean {
+    if (!target) {
       return false;
     }
     const wool = target.shear(this.rng);
@@ -3796,45 +3729,48 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     return true;
   }
 
-  /** 用手里的食物喂准星里的动物，让它进入求爱状态。 */
   /**
    * 右键狼这类可驯服 / 已驯服的生物：喂骨头驯服，或者让它坐下 / 起来。
    * @returns 是否处理掉了这次右键
    */
-  private tryTamePet(): boolean {
-    const target = this.findEntityInCrosshair();
-    if (!(target instanceof Mob) || target.isDead) {
+  private tryTamePet(target: Mob | null): boolean {
+    if (!target) {
       return false;
     }
-    if (!target.isTamed && !target.def.tameItems) {
-      return false;
-    }
-    const held = this.player.heldItem;
-    const result = target.interactWithItem(held?.id ?? null, this.rng);
-    if (result === 'none') {
-      return false;
-    }
-    if (result === 'tamed' || result === 'failed') {
-      if (!this.rules.infiniteItems) {
-        this.player.inventory.consume(this.player.selectedSlot, 1);
-      }
-      if (result === 'tamed') {
+    const result = target.interactWithItem(this.player.heldItem?.id ?? null, this.rng);
+    switch (result) {
+      case PetInteraction.TAMED:
+        this.consumeHeldItem();
         this.spawnHeartParticles(target);
         this.showToast(`${target.def.label}被驯服了`);
-      }
-    }
-    if (result === 'sit' || result === 'stand') {
-      this.showToast(result === 'sit' ? `${target.def.label}坐下了` : `${target.def.label}站起来了`);
+        break;
+      case PetInteraction.FAILED:
+        this.consumeHeldItem();
+        break;
+      case PetInteraction.SIT:
+        this.showToast(`${target.def.label}坐下了`);
+        break;
+      case PetInteraction.STAND:
+        this.showToast(`${target.def.label}站起来了`);
+        break;
+      default:
+        return false;
     }
     this.sound.play('pop');
     this.renderer.hand.swing();
     return true;
   }
 
-  /** 右键村民：打开交易界面。 */
-  private tryTradeWithVillager(): boolean {
-    const target = this.findEntityInCrosshair();
-    if (!(target instanceof Mob) || target.type !== MobType.VILLAGER || target.isDead) {
+  /** 生存模式下用掉手里的一个物品（创造模式不消耗）。 */
+  private consumeHeldItem(): void {
+    if (!this.rules.infiniteItems) {
+      this.player.inventory.consume(this.player.selectedSlot, 1);
+    }
+  }
+
+  /** 右键有交易表的生物（村民）：打开交易界面。 */
+  private tryTradeWith(target: Mob | null): boolean {
+    if (!target || target.trades.length === 0) {
       return false;
     }
     this.tradingVillager = target;
@@ -3864,28 +3800,22 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     for (const need of offer.give) {
       inventory.removeItems(need.id, need.count);
     }
-    const leftover = inventory.add({ id: offer.receive.id, count: offer.receive.count });
-    if (leftover > 0) {
-      this.dropItem(this.player.x, this.player.eyeY, this.player.z, { id: offer.receive.id, count: leftover }, 0.2);
-    }
     offer.uses--;
+    // giveItem 会 bumpInventory，交易界面靠 inventoryVersion 重算"付不付得起"
+    this.giveItem({ ...offer.receive });
     this.sound.play('pop');
-    this.bumpInventory();
-    this.store.patch({ tradeVersion: this.store.get().tradeVersion + 1 });
     return true;
   }
 
-  private tryFeedMob(itemId: string): boolean {
-    const target = this.findEntityInCrosshair();
-    if (!(target instanceof Mob) || !target.canBreedWith(itemId)) {
+  /** 用手里的食物喂准星里的动物，让它进入求爱状态。 */
+  private tryFeedMob(target: Mob | null, itemId: string): boolean {
+    if (!target?.canBreedWith(itemId)) {
       return false;
     }
     target.enterLove();
     this.spawnHeartParticles(target);
     this.renderer.hand.swing();
-    if (!this.rules.infiniteItems) {
-      this.player.inventory.consume(this.player.selectedSlot, 1);
-    }
+    this.consumeHeldItem();
     return true;
   }
 
@@ -4681,19 +4611,9 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     }
   }
 
-  /**
-   * chunk 加入世界后补上世界生成留下的方块实体（战利品箱、刷怪笼）。
-   * 已经存在实体的位置不覆盖——否则 chunk 卸载再加载时箱子会重新装满。
-   */
-  /** chunk 加载时把世界生成留下的生物放出来（村民）。 */
+  /** chunk 加载时把世界生成留下的生物放出来（村民、狼群）。 */
   private spawnPendingMobs(chunk: Chunk): void {
-    if (chunk.pendingMobs.length === 0) {
-      return;
-    }
     for (const pending of chunk.pendingMobs) {
-      if (!isMobType(pending.type)) {
-        continue;
-      }
       const mob = new Mob(pending.type);
       mob.setPosition(pending.x + 0.5, pending.y, pending.z + 0.5);
       if (pending.type === MobType.VILLAGER) {
@@ -4705,6 +4625,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     chunk.pendingMobs.length = 0;
   }
 
+  /**
+   * chunk 加入世界后补上世界生成留下的方块实体（战利品箱、刷怪笼）。
+   * 已经存在实体的位置不覆盖——否则 chunk 卸载再加载时箱子会重新装满。
+   */
   private applyPendingBlockEntities(chunk: Chunk): void {
     for (const pending of chunk.pendingBlockEntities) {
       const { x, y, z } = pending;

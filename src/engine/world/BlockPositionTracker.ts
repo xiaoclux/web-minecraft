@@ -12,16 +12,23 @@ export class BlockPositionTracker {
   /** 位置集合（packPos 打包的数字键）。 */
   readonly positions = new Set<number>();
   private readonly posOut = [0, 0, 0];
+  /** 各订阅的退订函数，dispose 时一并调用，免得 tracker 丢弃后仍挂在世界上白白干活。 */
+  private readonly unsubscribes: Array<() => void>;
 
-  constructor(world: World, private readonly blockId: number) {
-    world.onBlockChange((x, y, z, oldId, newId) => this.track(x, y, z, oldId, newId));
-    world.onBatchChange((changes) => {
-      for (const c of changes) {
-        this.track(c.x, c.y, c.z, c.oldId, c.newId);
-      }
-    });
-    world.onChunkLoad((chunk) => this.scanChunk(chunk));
-    world.onChunkUnload((chunk) => this.forgetChunk(chunk));
+  constructor(
+    world: World,
+    private readonly blockId: number,
+  ) {
+    this.unsubscribes = [
+      world.onBlockChange((x, y, z, oldId, newId) => this.track(x, y, z, oldId, newId)),
+      world.onBatchChange((changes) => {
+        for (const c of changes) {
+          this.track(c.x, c.y, c.z, c.oldId, c.newId);
+        }
+      }),
+      world.onChunkLoad((chunk) => this.scanChunk(chunk)),
+      world.onChunkUnload((chunk) => this.forgetChunk(chunk)),
+    ];
     // 构造时世界里可能已经有 chunk（读档、或系统在世界之后创建）
     for (const chunk of world.chunks.values()) {
       this.scanChunk(chunk);
@@ -30,6 +37,15 @@ export class BlockPositionTracker {
 
   get size(): number {
     return this.positions.size;
+  }
+
+  /** 从世界上退订并清空集合；之后不再随世界更新。 */
+  dispose(): void {
+    for (const unsubscribe of this.unsubscribes) {
+      unsubscribe();
+    }
+    this.unsubscribes.length = 0;
+    this.positions.clear();
   }
 
   private track(x: number, y: number, z: number, oldId: number, newId: number): void {

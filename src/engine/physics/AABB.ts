@@ -27,6 +27,11 @@ export class AABB {
     );
   }
 
+  /** 点是否落在盒内（含边界）。 */
+  containsPoint(x: number, y: number, z: number): boolean {
+    return x >= this.minX && x <= this.maxX && y >= this.minY && y <= this.maxY && z >= this.minZ && z <= this.maxZ;
+  }
+
   /** 平移后的新盒。 */
   offset(dx: number, dy: number, dz: number): AABB {
     return new AABB(this.minX + dx, this.minY + dy, this.minZ + dz, this.maxX + dx, this.maxY + dy, this.maxZ + dz);

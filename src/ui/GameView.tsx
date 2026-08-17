@@ -108,7 +108,7 @@ function GameOverlays({ game }: { game: Game }) {
       {state.screen === Screen.STATS && <StatsScreen game={game} state={state} />}
       {state.screen === Screen.DEATH && <DeathScreen game={game} state={state} />}
       {state.screen === Screen.CREDITS && <CreditsScreen game={game} />}
-      {state.screen === Screen.SIGN && <SignScreen game={game} state={state} />}
+      {state.screen === Screen.SIGN && <SignScreen game={game} />}
       {state.screen === Screen.TRADE && <TradeScreen game={game} state={state} />}
       {!game.isTouch && !state.isPointerLocked && state.screen === Screen.NONE && (
         <div className="overlay center click-hint" onClick={() => game.requestPointerLock()}>

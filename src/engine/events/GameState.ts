@@ -73,10 +73,6 @@ export interface GameUiState {
   selectedSlot: number;
   /** 背包版本号：每次背包变化 +1，驱动 UI 刷新。 */
   inventoryVersion: number;
-  /** 告示牌文字的版本号（改一行就 +1，驱动编辑界面重渲染）。 */
-  signVersion: number;
-  /** 交易的版本号（成交一笔就 +1）。 */
-  tradeVersion: number;
   screen: Screen;
   isPointerLocked: boolean;
   isFlying: boolean;

@@ -1,37 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { emptyWorld } from './helpers';
+import { emptyWorld, randomTickHost as host, runUntil } from './helpers';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
 import { CROP_MAX_STAGE, FARMLAND_MAX_MOISTURE } from '../src/engine/blocks/blockShapes';
-import { MAX_LIGHT } from '../src/engine/constants/world';
 import { RandomTickSystem } from '../src/engine/systems/RandomTickSystem';
-import type { World } from '../src/engine/world/World';
-
-/** 固定光照、可控随机数的宿主。 */
-function host(world: World, light = MAX_LIGHT, values: number[] = []) {
-  let i = 0;
-  return {
-    world,
-    isRaining: false,
-    lightLevelAt: () => light,
-    random: () => (values.length > 0 ? values[i++ % values.length] : Math.random()),
-  };
-}
-
-/** 反复对某个方块跑随机 tick 直到条件成立或超时。 */
-function runUntil(
-  system: RandomTickSystem,
-  pos: readonly [number, number, number],
-  check: () => boolean,
-  maxTicks = 2000,
-): boolean {
-  for (let i = 0; i < maxTicks; i++) {
-    system.tickBlock(pos[0], pos[1], pos[2]);
-    if (check()) {
-      return true;
-    }
-  }
-  return false;
-}
 
 describe('随机 tick', () => {
   it('露天的泥土挨着草方块时会长出草', () => {

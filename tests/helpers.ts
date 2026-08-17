@@ -5,6 +5,8 @@ import { LightEngine } from '../src/engine/world/LightEngine';
 import { World } from '../src/engine/world/World';
 import type { EntityContext } from '../src/engine/entities/EntityContext';
 import { Player } from '../src/engine/player/Player';
+import { MAX_LIGHT } from '../src/engine/constants/world';
+import type { RandomTickSystem } from '../src/engine/systems/RandomTickSystem';
 
 /** 比较两个类型化数组是否逐元素相等。 */
 export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -81,4 +83,41 @@ export function mobContext(overrides: Partial<EntityContext> = {}): EntityContex
     onEntityKilled: () => {},
     ...overrides,
   } as unknown as EntityContext;
+}
+
+/** 在 y 层以原点为中心、±radius 范围内铺满 blockId（未加载的位置自动跳过）。 */
+export function fillLayer(world: World, y: number, radius: number, blockId: number): void {
+  for (let z = -radius; z <= radius; z++) {
+    for (let x = -radius; x <= radius; x++) {
+      world.setBlock(x, y, z, blockId);
+    }
+  }
+}
+
+/** 固定光照、可控随机数的 RandomTickSystem 宿主；random 可给数列（循环取）或随机函数。 */
+export function randomTickHost(world: World, light = MAX_LIGHT, random: number[] | (() => number) = []) {
+  let i = 0;
+  const next = typeof random === 'function' ? random : () => (random.length > 0 ? random[i++ % random.length] : Math.random());
+  return {
+    world,
+    isRaining: false,
+    lightLevelAt: () => light,
+    random: next,
+  };
+}
+
+/** 反复对某个方块跑随机 tick 直到条件成立或超时。 */
+export function runUntil(
+  system: RandomTickSystem,
+  pos: readonly [number, number, number],
+  check: () => boolean,
+  maxTicks = 2000,
+): boolean {
+  for (let i = 0; i < maxTicks; i++) {
+    system.tickBlock(pos[0], pos[1], pos[2]);
+    if (check()) {
+      return true;
+    }
+  }
+  return false;
 }

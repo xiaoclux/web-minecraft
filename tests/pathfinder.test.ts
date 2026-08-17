@@ -2,16 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
 import { findPath } from '../src/engine/entities/ai/Pathfinder';
 import { World } from '../src/engine/world/World';
-import { emptyWorld } from './helpers';
+import { emptyWorld, fillLayer } from './helpers';
 
 /** 在 y=9 铺一层石头地板，站立面就是 y=10。 */
 function floorWorld(): World {
   const world = emptyWorld(2);
-  for (let z = -20; z <= 20; z++) {
-    for (let x = -20; x <= 20; x++) {
-      world.setBlock(x, 9, z, BlockId.STONE);
-    }
-  }
+  fillLayer(world, 9, 20, BlockId.STONE);
   return world;
 }
 

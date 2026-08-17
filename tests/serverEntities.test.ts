@@ -4,16 +4,12 @@ import { Mob } from '../src/engine/entities/Mob';
 import { MobType } from '../src/engine/entities/MobDefs';
 import { ServerEntityWorld } from '../src/net/ServerEntityWorld';
 import type { World } from '../src/engine/world/World';
-import { emptyWorld } from './helpers';
+import { emptyWorld, fillLayer } from './helpers';
 
 /** 一片有草地面的世界，够刷怪器落脚。 */
 function grassWorld(): World {
   const world = emptyWorld(4);
-  for (let x = -60; x <= 60; x++) {
-    for (let z = -60; z <= 60; z++) {
-      world.setBlock(x, 9, z, BlockId.GRASS);
-    }
-  }
+  fillLayer(world, 9, 60, BlockId.GRASS);
   return world;
 }
 
@@ -75,5 +71,35 @@ describe('服务端生物世界', () => {
       server.tickWorld();
     }
     expect(server.entities.size).toBe(0);
+  });
+
+  it('快照里的 id 就是实体自己的 id', () => {
+    const world = grassWorld();
+    const server = new ServerEntityWorld({
+      world,
+      currentTime: () => 0,
+      playerPositions: () => [{ id: 1, x: 0.5, y: 10, z: 0.5 }],
+    });
+    const zombie = new Mob(MobType.ZOMBIE);
+    zombie.setPosition(0.5, 10, 0.5);
+    server.spawnEntity(zombie);
+    expect(server.entities.get(zombie.id)).toBe(zombie);
+    expect(server.snapshot().map((e) => e.id)).toContain(zombie.id);
+  });
+
+  it('掉落物按 spread 散开：spread 为 0 时没有水平初速度', () => {
+    const world = grassWorld();
+    const server = new ServerEntityWorld({ world, currentTime: () => 0, playerPositions: () => [] });
+    server.dropItem(0.5, 12, 0.5, { id: 'egg', count: 1 }, 0);
+    const [drop] = [...server.entities.values()];
+    expect(drop.vx).toBeCloseTo(0);
+    expect(drop.vz).toBeCloseTo(0);
+    expect(drop.vy).toBeGreaterThan(0);
+  });
+
+  it('没有水流：waterFlowAt 返回静止向量', () => {
+    const world = grassWorld();
+    const server = new ServerEntityWorld({ world, currentTime: () => 0, playerPositions: () => [] });
+    expect(server.waterFlowAt()).toEqual({ x: 0, z: 0 });
   });
 });

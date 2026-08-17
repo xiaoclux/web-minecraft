@@ -15,8 +15,7 @@ function canAfford(game: Game, give: readonly { id: string; count: number }[]): 
 
 /** 村民交易界面：左边是要付的东西，右边是换到的东西，点一下成交。 */
 export function TradeScreen({ game, state }: TradeScreenProps) {
-  // tradeVersion / inventoryVersion 变化时重新算"付不付得起"
-  void state.tradeVersion;
+  // inventoryVersion 变化（成交也会 bump）时重新算"付不付得起"
   void state.inventoryVersion;
   return (
     <div className="overlay center">

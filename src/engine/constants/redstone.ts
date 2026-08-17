@@ -69,8 +69,6 @@ export const SEMITONES_PER_OCTAVE = 12;
 /** 日光传感器多久重算一次输出（每 20 tick 一秒，够跟上昼夜变化）。 */
 export const DAYLIGHT_SENSOR_INTERVAL_TICKS = 20;
 
-/** 比较器 meta：低 2 位朝向。 */
-export const COMPARATOR_FACING_MASK = 3;
 /** 比较器 meta：模式位（0 = 比较，1 = 减法）。 */
 export const COMPARATOR_MODE_BIT = 4;
 /** 比较器 meta：输出强度存在高 4 位。 */

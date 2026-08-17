@@ -8,9 +8,9 @@
 /** 一笔交易：给出 give，换回 receive。 */
 export interface TradeOffer {
   /** 玩家要付出的（1~2 样）。 */
-  give: readonly { id: string; count: number }[];
+  give: readonly { readonly id: string; readonly count: number }[];
   /** 玩家换到的。 */
-  receive: { id: string; count: number };
+  receive: { readonly id: string; readonly count: number };
   /** 这笔交易还能做几次。 */
   uses: number;
 }
@@ -63,11 +63,7 @@ export const VILLAGER_TRADES: Record<VillagerProfession, readonly TradeOffer[]> 
 /** 所有职业（生成村民时随机挑一个）。 */
 export const VILLAGER_PROFESSIONS: readonly VillagerProfession[] = Object.values(VillagerProfession);
 
-/** 按职业造一份新的交易表（每个村民各有一份，用掉的次数互不影响）。 */
+/** 按职业造一份新的交易表：每个村民各有一份 uses 计数，give / receive 只读所以共享即可。 */
 export function rollTrades(profession: VillagerProfession): TradeOffer[] {
-  return VILLAGER_TRADES[profession].map((offer) => ({
-    give: offer.give.map((stack) => ({ ...stack })),
-    receive: { ...offer.receive },
-    uses: offer.uses,
-  }));
+  return VILLAGER_TRADES[profession].map((offer) => ({ ...offer }));
 }

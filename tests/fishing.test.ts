@@ -6,17 +6,13 @@ import { MobType } from '../src/engine/entities/MobDefs';
 import { getItem } from '../src/engine/items/ItemRegistry';
 import { LootTable, rollOne } from '../src/engine/world/structures/LootTables';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
-import { mobContext } from './helpers';
+import { fillLayer, mobContext } from './helpers';
 
 describe('钓鱼', () => {
   it('浮漂落到水面就停住并开始等咬钩', () => {
     const context = mobContext();
-    for (let x = -4; x <= 4; x++) {
-      for (let z = -4; z <= 4; z++) {
-        context.world.setBlock(x, 9, z, BlockId.WATER);
-      }
-    }
-    const bobber = new FishingBobberEntity(1);
+    fillLayer(context.world, 9, 4, BlockId.WATER);
+    const bobber = new FishingBobberEntity();
     bobber.setPosition(0.5, 12, 0.5);
     for (let i = 0; i < 100 && !bobber.inWaterSurface; i++) {
       bobber.move(context, 0.05);
@@ -28,12 +24,8 @@ describe('钓鱼', () => {
 
   it('等够时间就咬钩', () => {
     const context = mobContext();
-    for (let x = -4; x <= 4; x++) {
-      for (let z = -4; z <= 4; z++) {
-        context.world.setBlock(x, 9, z, BlockId.WATER);
-      }
-    }
-    const bobber = new FishingBobberEntity(1);
+    fillLayer(context.world, 9, 4, BlockId.WATER);
+    const bobber = new FishingBobberEntity();
     bobber.setPosition(0.5, 12, 0.5);
     for (let i = 0; i < 100 && !bobber.inWaterSurface; i++) {
       bobber.move(context, 0.05);
@@ -51,7 +43,7 @@ describe('钓鱼', () => {
         context.world.setBlock(x, 9, z, BlockId.STONE);
       }
     }
-    const bobber = new FishingBobberEntity(1);
+    const bobber = new FishingBobberEntity();
     bobber.setPosition(0.5, 12, 0.5);
     for (let i = 0; i < 100 && !bobber.isDead; i++) {
       bobber.move(context, 0.05);

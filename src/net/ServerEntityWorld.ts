@@ -1,10 +1,11 @@
-import { Difficulty } from '../engine/constants/game';
+import { Difficulty, ITEM_DROP_SPAWN_SPEED } from '../engine/constants/game';
 import { DimensionId } from '../engine/world/Dimension';
 import type { Entity } from '../engine/entities/Entity';
 import type { EnderCrystalEntity } from '../engine/entities/EnderCrystalEntity';
 import type { EntityContext } from '../engine/entities/EntityContext';
 import { ItemDropEntity } from '../engine/entities/ItemDropEntity';
 import { LivingEntity } from '../engine/entities/LivingEntity';
+import { Mob } from '../engine/entities/Mob';
 import { MobSpawner } from '../engine/entities/MobSpawner';
 import type { MobSoundKind } from '../engine/entities/mobSounds';
 import type { ItemStack } from '../engine/items/ItemStack';
@@ -30,8 +31,16 @@ export interface ServerEntityHost {
   playerPositions(): readonly ServerPlayerPosition[];
 }
 
-/** 没有玩家在线时也要有个"参照玩家"，否则刷怪器无处可刷。 */
+/** 没人在线时每隔多少 tick 清一次残留实体（不必每 tick 都做）。 */
 const IDLE_TICK_INTERVAL = 20;
+/** 掉落物没有水平初速度时的默认散开程度（与 Game.dropItem 一致）。 */
+const DEFAULT_DROP_SPREAD = 0.2;
+/** 散开程度到水平速度的换算系数（与 Game.dropItem 一致）。 */
+const DROP_SPREAD_SPEED_FACTOR = 4;
+/** 掉落物竖直初速度的最小占比，剩下的随机（与 Game.dropItem 一致）。 */
+const DROP_MIN_VERTICAL_RATIO = 0.5;
+/** 服务端没有水流，所有位置都返回同一个静止向量，省得每次调用都分配对象。 */
+const NO_WATER_FLOW: { readonly x: number; readonly z: number } = Object.freeze({ x: 0, z: 0 });
 /** 生物移动用的固定步长（服务端按 tick 推进，不看真实帧时间）。 */
 const SERVER_STEP_SECONDS = 1 / 20;
 
@@ -49,9 +58,12 @@ export class ServerEntityWorld implements EntityContext {
   private readonly spawner = new MobSpawner();
   /** 当前正在被 tick 的生物所对应的"最近玩家"。 */
   private readonly proxyPlayer = new Player();
-  private nextEntityId = 1;
   private tickCount = 0;
   private populated = false;
+  /** 本 tick 开头取一次的在线玩家列表，避免每只怪都去 host 重新分配一份。 */
+  private players: readonly ServerPlayerPosition[] = [];
+  /** 本 tick 是否白天，tickWorld 开头算一次，光照查询直接用。 */
+  private daytime = true;
 
   constructor(private readonly host: ServerEntityHost) {}
 
@@ -78,25 +90,29 @@ export class ServerEntityWorld implements EntityContext {
   }
 
   get canMobsTargetPlayer(): boolean {
-    return this.host.playerPositions().length > 0;
+    return this.players.length > 0;
   }
 
   isDaytime(): boolean {
-    return Sky.isDaytime(this.host.currentTime());
+    return this.daytime;
   }
 
   lightLevelAt(x: number, y: number, z: number): number {
-    const sky = this.world.getSkyLight(x, y, z) * (this.isDaytime() ? 1 : 0);
+    const sky = this.daytime ? this.world.getSkyLight(x, y, z) : 0;
     return Math.max(sky, this.world.getBlockLight(x, y, z));
   }
 
   spawnEntity(entity: Entity): void {
-    this.entities.set(this.nextEntityId++, entity);
+    this.entities.set(entity.id, entity);
   }
 
-  dropItem(x: number, y: number, z: number, stack: ItemStack): void {
+  dropItem(x: number, y: number, z: number, stack: ItemStack, spread = DEFAULT_DROP_SPREAD): void {
     const drop = new ItemDropEntity({ ...stack });
     drop.setPosition(x, y, z);
+    // 与 Game.dropItem 同样的散开方式：spread 决定水平初速度，竖直方向总有一跳
+    drop.vx = (this.random() - 0.5) * ITEM_DROP_SPAWN_SPEED * spread * DROP_SPREAD_SPEED_FACTOR;
+    drop.vy = ITEM_DROP_SPAWN_SPEED * (DROP_MIN_VERTICAL_RATIO + this.random() * (1 - DROP_MIN_VERTICAL_RATIO));
+    drop.vz = (this.random() - 0.5) * ITEM_DROP_SPAWN_SPEED * spread * DROP_SPREAD_SPEED_FACTOR;
     this.spawnEntity(drop);
   }
 
@@ -136,7 +152,7 @@ export class ServerEntityWorld implements EntityContext {
   }
 
   waterFlowAt(): { x: number; z: number } {
-    return { x: 0, z: 0 };
+    return NO_WATER_FLOW;
   }
 
   // ------------------------------------------------------------ 主循环
@@ -145,6 +161,8 @@ export class ServerEntityWorld implements EntityContext {
   tickWorld(): void {
     this.tickCount++;
     const players = this.host.playerPositions();
+    this.players = players;
+    this.daytime = Sky.isDaytime(this.host.currentTime());
     if (players.length === 0) {
       // 没人在线就别刷怪了，但每隔一会儿清一次远处的实体
       if (this.tickCount % IDLE_TICK_INTERVAL === 0) {
@@ -156,15 +174,20 @@ export class ServerEntityWorld implements EntityContext {
       this.populated = true;
       this.aimAt(players[0]);
       this.spawner.populateInitial(this);
+    } else {
+      this.aimAt(players[0]);
     }
-    this.aimAt(players[0]);
     this.spawner.tick(this, this.entities.values());
+    // 只有一个玩家时参照玩家已经就位；多人时只有会追人的 Mob 才需要换成最近的那个
+    const pickNearest = players.length > 1;
     for (const [id, e] of this.entities) {
       if (e.isDead) {
         this.entities.delete(id);
         continue;
       }
-      this.aimAt(this.nearestPlayerTo(e, players));
+      if (pickNearest && e instanceof Mob) {
+        this.aimAt(this.nearestPlayerTo(e, players));
+      }
       e.tick(this);
       e.move(this, SERVER_STEP_SECONDS);
     }
@@ -191,7 +214,7 @@ export class ServerEntityWorld implements EntityContext {
     let best = players[0];
     let bestDistSq = Infinity;
     for (const p of players) {
-      const distSq = (p.x - entity.x) ** 2 + (p.y - entity.y) ** 2 + (p.z - entity.z) ** 2;
+      const distSq = entity.distanceSqToPoint(p.x, p.y, p.z);
       if (distSq < bestDistSq) {
         bestDistSq = distSq;
         best = p;

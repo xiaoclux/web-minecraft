@@ -10,6 +10,7 @@ import { BlockPositionTracker } from '../world/BlockPositionTracker';
 import type { BlockEntityStore } from '../world/BlockEntityStore';
 import { unpackPos } from '../world/posKey';
 import type { World } from '../world/World';
+import { containerSlots } from './HopperSystem';
 import { comparatorOutput } from './RedstoneSystem';
 
 /** 比较器需要的外部信息。 */
@@ -31,11 +32,6 @@ export class ComparatorSystem {
 
   constructor(private readonly host: ComparatorHost) {
     this.comparators = new BlockPositionTracker(host.world, BlockId.COMPARATOR);
-  }
-
-  /** 已知的比较器数量（测试用）。 */
-  get count(): number {
-    return this.comparators.size;
   }
 
   /** 每游戏 tick 调用一次。 */
@@ -68,8 +64,7 @@ export class ComparatorSystem {
    * @returns 该位置不是容器时返回 0
    */
   private containerSignalAt(x: number, y: number, z: number): number {
-    const entity = this.host.blockEntities.get(x, y, z);
-    const items = entity && 'items' in entity ? entity.items : null;
+    const items = containerSlots(this.host.blockEntities.get(x, y, z));
     if (!items || items.length === 0) {
       return 0;
     }

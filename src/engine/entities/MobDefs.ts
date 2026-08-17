@@ -60,8 +60,10 @@ export interface MobDef {
    * 中立：平时不主动攻击，被打了才还手；且同族会一起被激怒（僵尸猪人）。
    */
   neutral?: boolean;
-  /** 远程攻击方式；不填表示只有近战。 */
+  /** 远程攻击方式；不填表示只有近战（近战的陆行生物才走 A* 寻路，远程的保持距离直线瞄）。 */
   ranged?: 'arrow' | 'fireball' | 'small_fireball';
+  /** 成年后每隔多少 tick 下一个蛋（鸡）；不填表示不下蛋。 */
+  eggIntervalTicks?: { readonly min: number; readonly max: number };
   /** 免疫火与岩浆（下界生物）。 */
   fireImmune?: boolean;
   /** 攻击时附带的着火 tick（烈焰人 / 凋灵骷髅）。 */
@@ -125,6 +127,7 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     ],
     xp: 5,
     burnsInSunlight: true,
+    ranged: 'arrow',
   },
   creeper: {
     type: 'creeper',
@@ -276,6 +279,8 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     burnsInSunlight: false,
     noFallDamage: true,
     breedingItems: ['wheat_seeds'],
+    // 1.8.9：成年鸡每 5~10 分钟下一个蛋
+    eggIntervalTicks: { min: 6000, max: 12000 },
   },
   enderman: {
     type: 'enderman',

@@ -1,6 +1,7 @@
 import { BlockId } from '../../blocks/BlockRegistry';
 import { CHUNK_SIZE, WORLD_SIZE_Y } from '../../constants/world';
 import { createRng, hashCoords, hashString } from '../../textures/PixelCanvas';
+import { MobType } from '../../entities/MobDefs';
 import { chunkKey, toChunkCoord, type Chunk, type PendingMob } from '../Chunk';
 import {
   StructureBuilder,
@@ -77,8 +78,6 @@ export interface VillagePiece {
   blocks: StructureBlock[];
 }
 
-/** 村民的生物类型（写成常量，免得生成器依赖 MobDefs）。 */
-const VILLAGER_MOB_TYPE = 'villager';
 
 /** 一座村庄。 */
 export interface Village {
@@ -228,7 +227,7 @@ export class VillageGenerator {
       pieces.push(house);
       pieces.push(this.buildPath(centerX, centerZ, doorFront.x, doorFront.z, facing, palette));
       // 每间房门口住一个村民
-      villagers.push({ x: doorFront.x, y: hy + 1, z: doorFront.z, type: VILLAGER_MOB_TYPE });
+      villagers.push({ x: doorFront.x, y: hy + 1, z: doorFront.z, type: MobType.VILLAGER });
     }
     const bounds = pieces.reduce<Bounds>(
       (acc, p) => ({

@@ -1,5 +1,5 @@
 import { BlockId, getBlock } from '../blocks/BlockRegistry';
-import { COCOA_MAX_STAGE, COCOA_STAGE_SHIFT } from '../blocks/blockShapes';
+import { COCOA_MAX_STAGE, COCOA_STAGE_SHIFT, FACING_MASK } from '../blocks/blockShapes';
 import { CHUNK_SIZE, SECTION_COUNT, SECTION_HEIGHT, WORLD_SIZE_Y } from '../constants/world';
 import { toChunkCoord } from '../world/Chunk';
 import { unpackPos } from '../world/posKey';
@@ -28,8 +28,6 @@ const SAPLING_MIN_LIGHT = 9;
 const MUSHROOM_MAX_LIGHT = 12;
 /** 可可果每次随机 tick 长一级的概率（1.8.9 为 1/5）。 */
 const COCOA_GROW_CHANCE = 0.2;
-/** 可可果 meta 的朝向位。 */
-const COCOA_FACING_MASK = 3;
 /** 每次随机 tick 命中蘑菇时向外蔓延的概率。 */
 const MUSHROOM_SPREAD_CHANCE = 0.25;
 /** 蘑菇蔓延的水平半径。 */
@@ -179,7 +177,7 @@ export class RandomTickSystem {
     if (stage >= COCOA_MAX_STAGE || this.host.random() > COCOA_GROW_CHANCE) {
       return;
     }
-    world.setBlock(x, y, z, BlockId.COCOA, (meta & COCOA_FACING_MASK) | ((stage + 1) << COCOA_STAGE_SHIFT));
+    world.setBlock(x, y, z, BlockId.COCOA, (meta & FACING_MASK) | ((stage + 1) << COCOA_STAGE_SHIFT));
   }
 
   /** 蘑菇：太亮就枯掉，否则有概率往附近的暗处蔓延一株。 */

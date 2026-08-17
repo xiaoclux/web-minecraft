@@ -72,8 +72,7 @@ export interface PendingMob {
   x: number;
   y: number;
   z: number;
-  /** 生物类型（用字符串，避免 Chunk 依赖 MobDefs 的具体枚举）。 */
-  type: string;
+  type: MobType;
 }
 
 /** 世界生成留下的方块实体标记。 */

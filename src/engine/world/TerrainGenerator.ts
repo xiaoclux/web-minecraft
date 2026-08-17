@@ -2,6 +2,7 @@ import { createNoise2D, createNoise3D } from 'simplex-noise';
 import { BlockId } from '../blocks/BlockRegistry';
 import { CHUNK_SIZE, SEA_LEVEL, WORLD_SIZE_Y } from '../constants/world';
 import { createRng, hashCoords, hashString } from '../textures/PixelCanvas';
+import { MobType } from '../entities/MobDefs';
 import { chunkKey, type Chunk } from './Chunk';
 import type { ChunkGenerator, SpawnPoint } from './ChunkGenerator';
 import { DesertTempleGenerator } from './structures/DesertTempleGenerator';
@@ -115,7 +116,6 @@ const WOLF_BIOMES: ReadonlySet<Biome> = new Set([Biome.FOREST, Biome.TAIGA]);
 const WOLF_PACK_CHANCE = 0.03;
 const WOLF_PACK_MIN = 3;
 const WOLF_PACK_MAX = 5;
-const WOLF_MOB_TYPE = 'wolf';
 /** 出生点搜索半径与步长。 */
 const SPAWN_SEARCH_RADIUS = 256;
 const SPAWN_SEARCH_STEP = 2;
@@ -504,7 +504,7 @@ export class TerrainGenerator implements ChunkGenerator {
       if (!chunk.containsColumn(x, z) || this.isReservedColumn(x, z)) {
         continue;
       }
-      chunk.pendingMobs.push({ x, y: this.heightAt(x, z) + 1, z, type: WOLF_MOB_TYPE });
+      chunk.pendingMobs.push({ x, y: this.heightAt(x, z) + 1, z, type: MobType.WOLF });
     }
   }
 

@@ -35,6 +35,7 @@ import { PISTON_MAX_PUSH, POWERED_RAIL_CHAIN, RailShape } from '../src/engine/co
 import { railAxis } from '../src/engine/entities/MinecartEntity';
 import { Chunk } from '../src/engine/world/Chunk';
 import { World } from '../src/engine/world/World';
+import { fillLayer } from './helpers';
 
 function testWorld(): World {
   const world = new World(true);
@@ -43,12 +44,7 @@ function testWorld(): World {
       world.addChunk(new Chunk(cx, cz, true));
     }
   }
-  // 铺一层石头当地面
-  for (let x = -16; x < 48; x++) {
-    for (let z = -16; z < 16; z++) {
-      world.setBlock(x, 9, z, BlockId.STONE);
-    }
-  }
+  fillLayer(world, 9, 47, BlockId.STONE);
   return world;
 }
 
