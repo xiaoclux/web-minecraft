@@ -168,6 +168,9 @@ function TouchButton({
  */
 export const TouchControls = memo(function TouchControls({ game }: TouchControlsProps) {
   const settings = useStore(settingsStore);
+  if (!settings.touchControlsEnabled) {
+    return null;
+  }
   /** 持续型按钮：按住即按键按下。 */
   const holdKey = (code: string) => (down: boolean) => game.setKeyInput(code, down);
   /** 轻点型按钮：按下的瞬间完成一次按下 + 抬起。 */

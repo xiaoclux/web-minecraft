@@ -242,6 +242,8 @@ const INITIAL_TIME_TICK = 1000;
 const MAX_FRAME_DT = 0.1;
 const TNT_FUSE_TICKS = 60;
 const TNT_EXPLOSION_RADIUS = 4;
+/** 经验条在 UI 里的精度（百分之一）。 */
+const XP_BAR_STEPS = 100;
 /** 在下界 / 末地睡床时的爆炸半径（1.8.9 床的威力 5，比 TNT 更狠）。 */
 const BED_EXPLOSION_RADIUS = 5;
 const EXPLOSION_DROP_CHANCE = 0.3;
@@ -647,7 +649,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       isPointerLocked: false,
       isFlying: false,
       isUnderwater: false,
-      breakProgress: 0,
       targetLabel: '',
       toast: '',
       achievementVersion: 0,
@@ -659,7 +660,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       isLoading: true,
       loadingText: '生成世界中…',
       openBlock: null,
-      cursorStack: null,
       deathMessage: '',
       isHardcoreDeath: false,
     });
@@ -2500,14 +2500,13 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       armor: p.armorPoints,
       effects: this.effectsForHud(),
       xpLevel: p.xpLevel,
-      xpProgress: p.xpProgress,
+      // 经验条只有整百分比的精度，量化后不会因为浮点微变每 tick 触发重渲染
+      xpProgress: Math.round(p.xpProgress * XP_BAR_STEPS) / XP_BAR_STEPS,
       selectedSlot: p.selectedSlot,
       isFlying: p.isFlying,
       isUnderwater: this.isPlayerUnderwater(),
-      breakProgress: this.breakNeededTicks > 0 ? this.breakProgressTicks / this.breakNeededTicks : 0,
       targetLabel: this.currentHit ? this.blockLabelAt(this.currentHit.x, this.currentHit.y, this.currentHit.z) : '',
       debug: this.debugEnabled ? this.buildDebugInfo() : null,
-      cursorStack: this.containers.cursor,
     });
   }
 
@@ -2709,7 +2708,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       return;
     }
     this.isPaused = false;
-    this.store.patch({ screen: Screen.NONE, openBlock: null, cursorStack: null });
+    this.store.patch({ screen: Screen.NONE, openBlock: null });
     this.requestPointerLock();
   }
 
@@ -4393,7 +4392,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   }
 
   private bumpInventory(): void {
-    this.store.patch({ inventoryVersion: this.store.get().inventoryVersion + 1, cursorStack: this.containers.cursor });
+    this.store.patch({ inventoryVersion: this.store.get().inventoryVersion + 1 });
   }
 
   // ---------------------------------------------------------------- ContainerHost 实现

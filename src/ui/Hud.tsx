@@ -1,4 +1,4 @@
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import { memo, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Game } from '../engine/Game';
 import { GameMode, HOTBAR_SIZE, PLAYER_MAX_FOOD, PLAYER_MAX_HEALTH, TICKS_PER_SECOND } from '../engine/constants/game';
 import { EFFECT_DEFS } from '../engine/entities/effects';
@@ -26,7 +26,8 @@ function formatEffectTime(ticks: number): string {
 }
 const BUBBLE_INDICES = Array.from({ length: BUBBLE_COUNT }, (_, i) => i);
 
-function StatRow({
+/** 状态条一行；memo 住，血量 / 饥饿没变时不跟着别的字段重渲染。 */
+const StatRow = memo(function StatRow({
   value,
   max,
   count,
@@ -44,7 +45,8 @@ function StatRow({
   reverse?: boolean;
 }) {
   const perIcon = max / count;
-  const icons = Array.from({ length: count }, (_, i) => i).map((i) => {
+  const icons = [];
+  for (let i = 0; i < count; i++) {
     const threshold = (i + 1) * perIcon;
     let cls = empty;
     if (value >= threshold) {
@@ -52,10 +54,10 @@ function StatRow({
     } else if (value >= threshold - perIcon / 2) {
       cls = half;
     }
-    return <span key={i} className={`stat-icon ${cls}`} />;
-  });
+    icons.push(<span key={i} className={`stat-icon ${cls}`} />);
+  }
   return <div className={`stat-row${reverse ? ' reverse' : ''}`}>{icons}</div>;
-}
+});
 
 /** 游戏内 HUD：准星、状态条、快捷栏。 */
 export function Hud({ game, state }: HudProps) {

@@ -12,7 +12,6 @@ import { PauseMenu } from './PauseMenu';
 import { StatsScreen } from './StatsScreen';
 import { TouchControls } from './TouchControls';
 import { useStore } from './useGameStore';
-import { settingsStore } from '../engine/settings/Settings';
 
 interface GameViewProps {
   /** 联机：要连的服务端地址与玩家名；单机时不填。 */
@@ -93,14 +92,12 @@ export function GameView({ meta, save, saveManager, onExit, server, joinTranspor
 
 function GameOverlays({ game }: { game: Game }) {
   const state = useStore(game.store);
-  const settings = useStore(settingsStore);
-  const showTouchControls = game.isTouch && settings.touchControlsEnabled;
   const showInventory = isContainerScreen(state.screen);
   return (
     <>
       {state.isUnderwater && <div className="underwater-tint" />}
       <Hud game={game} state={state} />
-      {showTouchControls && state.screen === Screen.NONE && <TouchControls game={game} />}
+      {game.isTouch && state.screen === Screen.NONE && <TouchControls game={game} />}
       {state.debug && <DebugOverlay info={state.debug} />}
       {showInventory && <InventoryScreen game={game} state={state} />}
       <ChatOverlay game={game} state={state} />

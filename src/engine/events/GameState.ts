@@ -1,6 +1,5 @@
 import type { GameMode } from '../constants/game';
 import type { ActiveEffect } from '../entities/effects';
-import type { ItemStack } from '../items/ItemStack';
 
 /** 一条聊天 / 指令消息。 */
 export interface ChatMessage {
@@ -72,8 +71,6 @@ export interface GameUiState {
   isPointerLocked: boolean;
   isFlying: boolean;
   isUnderwater: boolean;
-  /** 正在挖掘的进度 0~1。 */
-  breakProgress: number;
   /** 准星指向的方块名。 */
   targetLabel: string;
   /** 短暂提示（如捡起物品名）。 */
@@ -92,8 +89,6 @@ export interface GameUiState {
   loadingText: string;
   /** 打开中的容器交互位置（工作台/熔炉）。 */
   openBlock: { x: number; y: number; z: number } | null;
-  /** 光标拿着的物品。 */
-  cursorStack: ItemStack | null;
   deathMessage: string;
   isHardcoreDeath: boolean;
 }
