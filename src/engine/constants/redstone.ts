@@ -2,6 +2,8 @@
 
 /** 信号最大强度（红石粉从电源出发每格衰减 1）。 */
 export const REDSTONE_MAX_POWER = 15;
+/** 模拟电源（日光传感器）meta 里存强度的低 4 位。 */
+export const REDSTONE_POWER_MASK = 15;
 /** 方块变更后重算红石的邻域半径。 */
 export const REDSTONE_UPDATE_RADIUS = 1;
 /** 拉杆 / 按钮 / 压力板 meta 里"通电"的位。 */
@@ -63,3 +65,6 @@ export const NOTE_POWERED_BIT = 32;
 export const NOTE_CENTER = 12;
 /** 十二平均律的一个八度有几个半音。 */
 export const SEMITONES_PER_OCTAVE = 12;
+
+/** 日光传感器多久重算一次输出（每 20 tick 一秒，够跟上昼夜变化）。 */
+export const DAYLIGHT_SENSOR_INTERVAL_TICKS = 20;

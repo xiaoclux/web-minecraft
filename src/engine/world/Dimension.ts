@@ -5,6 +5,7 @@
 
 import type { Entity } from '../entities/Entity';
 import { RandomTickSystem } from '../systems/RandomTickSystem';
+import { DaylightSensorSystem } from '../systems/DaylightSensorSystem';
 import { BlockEntityStore } from './BlockEntityStore';
 import type { ChunkGenerator } from './ChunkGenerator';
 import { ChunkManager } from './ChunkManager';
@@ -85,6 +86,8 @@ export interface DimensionHost {
   random(): number;
   /** 当前天空亮度系数 0~1（昼夜）；无天空的维度用不到。 */
   readonly skyLevel: number;
+  /** 当前日光系数 0~1（夜里为 0，和 skyLevel 的区别是后者夜里还留有一点底光）。 */
+  readonly daylight: number;
   /** 是否在下雨（只影响有天气的维度）。 */
   readonly isRaining: boolean;
 }
@@ -96,6 +99,7 @@ export class Dimension {
   readonly chunkManager: ChunkManager;
   readonly fluids: FluidSimulator;
   readonly randomTicks: RandomTickSystem;
+  readonly daylightSensors: DaylightSensorSystem;
   readonly blockEntities = new BlockEntityStore();
   readonly entities = new Map<number, Entity>();
 
@@ -114,6 +118,12 @@ export class Dimension {
       lightLevelAt: (x, y, z) => this.lightLevelAt(x, y, z),
       get isRaining(): boolean {
         return def.hasWeather && host.isRaining;
+      },
+    });
+    this.daylightSensors = new DaylightSensorSystem({
+      world: this.world,
+      get daylight(): number {
+        return def.hasSkyLight ? host.daylight : 0;
       },
     });
   }

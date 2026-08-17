@@ -15,6 +15,7 @@ import {
   POWERED_RAIL_CHAIN,
   RAIL_SHAPE_MASK,
   REDSTONE_MAX_POWER,
+  REDSTONE_POWER_MASK,
   REDSTONE_UPDATE_RADIUS,
   REPEATER_FACING_MASK,
   NOTE_CENTER,
@@ -78,6 +79,10 @@ export function sourcePower(world: World, x: number, y: number, z: number): numb
   const { source } = def.redstone;
   if (source === undefined) {
     return 0;
+  }
+  // 日光传感器：强度是连续的，直接存在 meta 里
+  if (def.redstone.analogFromMeta) {
+    return Math.min(world.getMeta(x, y, z) & REDSTONE_POWER_MASK, REDSTONE_MAX_POWER);
   }
   // 拉杆 / 按钮 / 压力板：meta 的开关位决定通不通电
   if (def.redstone.poweredBit !== undefined) {

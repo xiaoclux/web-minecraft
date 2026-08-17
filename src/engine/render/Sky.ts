@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DAY_LENGTH_TICKS } from '../constants/world';
+import { daylightAt, sunHeightAt } from '../world/daylight';
 
 const DAY_COLOR = new THREE.Color(0x87ceeb);
 const NIGHT_COLOR = new THREE.Color(0x0b0f24);
@@ -9,8 +10,6 @@ const SUN_SIZE = 12;
 const MOON_SIZE = 8;
 const MIN_SKY_LEVEL = 0.27;
 /** 太阳高度（sin 值）达到该值即为完全白天。 */
-const FULL_DAYLIGHT_SUN_HEIGHT = 0.2;
-const DAWN_SUN_HEIGHT = -0.08;
 const STAR_COUNT = 400;
 
 /** 天空：背景色、太阳/月亮与昼夜亮度。 */
@@ -73,12 +72,8 @@ export class Sky {
     const t = (timeTick % DAY_LENGTH_TICKS) / DAY_LENGTH_TICKS;
     // 太阳角度：t=0 日出(东), 0.25 正午, 0.5 日落, 0.75 午夜
     const angle = t * Math.PI * 2;
-    const sunHeight = Math.sin(angle);
-    const daylight = THREE.MathUtils.clamp(
-      (sunHeight - DAWN_SUN_HEIGHT) / (FULL_DAYLIGHT_SUN_HEIGHT - DAWN_SUN_HEIGHT),
-      0,
-      1,
-    );
+    const sunHeight = sunHeightAt(timeTick);
+    const daylight = daylightAt(timeTick);
     this.skyLevel = MIN_SKY_LEVEL + (1 - MIN_SKY_LEVEL) * daylight;
     this.color.copy(NIGHT_COLOR).lerp(DAY_COLOR, daylight);
     const duskFactor = Math.max(0, 1 - Math.abs(sunHeight) / 0.25) * 0.6;

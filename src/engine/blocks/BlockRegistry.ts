@@ -135,6 +135,8 @@ export interface BlockDef {
     source?: number;
     /** meta 里表示"通电"的位（拉杆 / 按钮 / 压力板）；不填表示恒定输出。 */
     poweredBit?: number;
+    /** 模拟电源（日光传感器）：输出强度直接读 meta 的低 4 位。 */
+    analogFromMeta?: boolean;
     /** 用电器：被充能时换成这个"通电态"方块 id（红石灯灭 → 亮）。 */
     litBlockId?: number;
     /** 用电器：断电时换回这个"断电态"方块 id（红石灯亮 → 灭）。 */
@@ -279,6 +281,7 @@ export const BlockId = {
   DISPENSER: 23,
   DROPPER: 158,
   NOTE_BLOCK: 159,
+  DAYLIGHT_SENSOR: 160,
   LEVER: 69,
   STONE_BUTTON: 77,
   STONE_PRESSURE_PLATE: 70,
@@ -966,6 +969,23 @@ export const BLOCK_DEFS: BlockDef[] = [
     interactive: true,
     redstone: { noteBlock: true },
   }),
+  {
+    ...cube(
+      BlockId.DAYLIGHT_SENSOR,
+      'daylight_sensor',
+      '阳光传感器',
+      topSide('daylight_sensor_top', 'daylight_sensor_side'),
+      0.2,
+      ToolType.AXE,
+      {
+        solid: false,
+        opaque: false,
+        redstone: { source: REDSTONE_MAX_POWER, analogFromMeta: true },
+      },
+    ),
+    // 只有半格高，和压力板 / 中继器同一类扁平形状
+    shape: BlockShape.PRESSURE_PLATE,
+  },
   cube(BlockId.PISTON, 'piston', '活塞', topSide('piston_top', 'piston_side'), 0.5, null, {
     hasFacing: true,
     redstone: { piston: true },

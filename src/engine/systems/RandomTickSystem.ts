@@ -1,7 +1,8 @@
 import { BlockId, getBlock } from '../blocks/BlockRegistry';
 import { CHUNK_SIZE, SECTION_COUNT, SECTION_HEIGHT, WORLD_SIZE_Y } from '../constants/world';
 import { toChunkCoord } from '../world/Chunk';
-import { packPos, unpackPos } from '../world/posKey';
+import { unpackPos } from '../world/posKey';
+import { BlockPositionTracker } from '../world/BlockPositionTracker';
 import type { World } from '../world/World';
 import { CROP_MAX_STAGE, FARMLAND_MAX_MOISTURE } from '../blocks/blockShapes';
 import {
@@ -64,25 +65,12 @@ export interface RandomTickHost {
  */
 export class RandomTickSystem {
   /** 当前世界里的火（火要按自己的节奏更新，随机 tick 太稀疏了）。 */
-  private readonly fires = new Set<number>();
+  private readonly fires: BlockPositionTracker;
   private readonly posOut = [0, 0, 0];
   private tickCount = 0;
 
   constructor(private readonly host: RandomTickHost) {
-    host.world.onBlockChange((x, y, z, oldId, newId) => this.trackFire(x, y, z, oldId, newId));
-    host.world.onBatchChange((changes) => {
-      for (const c of changes) {
-        this.trackFire(c.x, c.y, c.z, c.oldId, c.newId);
-      }
-    });
-  }
-
-  private trackFire(x: number, y: number, z: number, oldId: number, newId: number): void {
-    if (newId === BlockId.FIRE) {
-      this.fires.add(packPos(x, y, z));
-    } else if (oldId === BlockId.FIRE) {
-      this.fires.delete(packPos(x, y, z));
-    }
+    this.fires = new BlockPositionTracker(host.world, BlockId.FIRE);
   }
 
   /** 按固定间隔更新所有火（每游戏 tick 调用一次）。 */
@@ -91,7 +79,7 @@ export class RandomTickSystem {
     if (this.tickCount % FIRE_TICK_INTERVAL !== 0 || this.fires.size === 0) {
       return;
     }
-    for (const key of [...this.fires]) {
+    for (const key of [...this.fires.positions]) {
       unpackPos(key, this.posOut);
       this.tickBlock(this.posOut[0], this.posOut[1], this.posOut[2]);
     }

@@ -172,6 +172,7 @@ import { EffectId, isEffectId, type ActiveEffect } from './entities/effects';
 import { Mob } from './entities/Mob';
 import { MobType, isMobType } from './entities/MobDefs';
 import { MobSpawner } from './entities/MobSpawner';
+import { daylightAt } from './world/daylight';
 import { Screen, isContainerScreen, type BossStatus, type DebugInfo, type GameUiState } from './events/GameState';
 import { Store } from './events/Store';
 import { ContainerController, type ContainerHost, type SlotRef } from './items/ContainerController';
@@ -471,6 +472,11 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   /** 天空亮度系数（DimensionHost；渲染器就绪前按满亮度算）。 */
   get skyLevel(): number {
     return this.renderer?.sky.skyLevel ?? 1;
+  }
+
+  /** 当前日光系数 0~1（夜里为 0），供日光传感器用。 */
+  get daylight(): number {
+    return daylightAt(this.timeTick);
   }
 
   private get generator(): ChunkGenerator {
@@ -1012,6 +1018,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.tickSpawners();
     this.tickGravityBlocks();
     this.randomTicks.tick(this.player.x, this.player.z);
+    this.current.daylightSensors.tick();
     this.weather.tick();
     this.tickWeatherEffects();
     this.tickBreeding();
