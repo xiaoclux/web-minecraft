@@ -1,7 +1,8 @@
 /**
  * 末地：中央一座末地石主岛（岛心厚、边缘薄，外围是虚空），岛上立若干黑曜石柱，
  * 柱顶各有一颗末影水晶（由 Game 在进入维度时生成实体）。
- * 主岛之外目前是空的（1.8.9 的外岛留到以后）。
+ * 主岛之外隔着一大片虚空，再往外是散落的浮空外岛（1.8.9 的外岛就是纯末地石，没有末地城 / 紫颂植物，
+ * 那些是 1.9 才有的）。
  */
 
 import { createNoise2D } from 'simplex-noise';
@@ -31,6 +32,18 @@ const PILLAR_MIN_HEIGHT = 12;
 const PILLAR_MAX_HEIGHT = 30;
 const SALT_END = 4321;
 
+/** 外岛：从离主岛多远开始出现（1.8.9 是 1000 格），以及岛屿噪声的缩放。 */
+const OUTER_ISLAND_START_DISTANCE = 1000;
+const OUTER_ISLAND_NOISE_SCALE = 1 / 220;
+/** 噪声超过这个值的地方才有岛，越高的地方岛越厚。 */
+const OUTER_ISLAND_THRESHOLD = 0.35;
+const OUTER_ISLAND_MAX_THICKNESS = 12;
+/** 外岛漂浮高度的噪声缩放与上下浮动幅度。 */
+const OUTER_ISLAND_HEIGHT_SCALE = 1 / 330;
+const OUTER_ISLAND_HEIGHT_RANGE = 22;
+const SALT_OUTER_SHAPE = 8765;
+const SALT_OUTER_HEIGHT = 8766;
+
 /** 一根黑曜石柱。 */
 export interface ObsidianPillar {
   x: number;
@@ -45,12 +58,16 @@ export class EndGenerator implements ChunkGenerator {
   readonly seed: string;
   private readonly base: number;
   private readonly edge: ReturnType<typeof createNoise2D>;
+  private readonly outerShape: ReturnType<typeof createNoise2D>;
+  private readonly outerHeight: ReturnType<typeof createNoise2D>;
   private readonly pillarsCache: ObsidianPillar[];
 
   constructor(seed: string) {
     this.seed = seed;
     this.base = hashString(`${seed}:end`);
     this.edge = createNoise2D(createRng(this.base + SALT_END));
+    this.outerShape = createNoise2D(createRng(this.base + SALT_OUTER_SHAPE));
+    this.outerHeight = createNoise2D(createRng(this.base + SALT_OUTER_HEIGHT));
     this.pillarsCache = this.rollPillars();
   }
 
@@ -90,6 +107,26 @@ export class EndGenerator implements ChunkGenerator {
     return Math.max(1, Math.round(END_ISLAND_MAX_THICKNESS * t * t));
   }
 
+  /**
+   * 外岛某列的岛面高度与厚度；不在岛上返回 null。
+   * 只在离主岛足够远的地方生成，中间那段虚空是原版"必须想办法飞过去"的部分。
+   */
+  private outerIslandAt(x: number, z: number): { surfaceY: number; thickness: number } | null {
+    const distance = Math.hypot(x - END_ISLAND_CENTER_X, z - END_ISLAND_CENTER_Z);
+    if (distance < OUTER_ISLAND_START_DISTANCE) {
+      return null;
+    }
+    const shape = this.outerShape(x * OUTER_ISLAND_NOISE_SCALE, z * OUTER_ISLAND_NOISE_SCALE);
+    if (shape <= OUTER_ISLAND_THRESHOLD) {
+      return null;
+    }
+    // 噪声越靠近 1，岛越厚；边缘自然收薄
+    const t = (shape - OUTER_ISLAND_THRESHOLD) / (1 - OUTER_ISLAND_THRESHOLD);
+    const thickness = Math.max(1, Math.round(OUTER_ISLAND_MAX_THICKNESS * t));
+    const offset = this.outerHeight(x * OUTER_ISLAND_HEIGHT_SCALE, z * OUTER_ISLAND_HEIGHT_SCALE);
+    return { surfaceY: END_ISLAND_SURFACE_Y + Math.round(offset * OUTER_ISLAND_HEIGHT_RANGE), thickness };
+  }
+
   generateChunk(chunk: Chunk): void {
     const x0 = chunk.originX;
     const z0 = chunk.originZ;
@@ -100,6 +137,13 @@ export class EndGenerator implements ChunkGenerator {
         const thickness = this.thicknessAt(x, z);
         for (let d = 0; d < thickness; d++) {
           chunk.setLocal(lx, END_ISLAND_SURFACE_Y - d, lz, BlockId.END_STONE);
+        }
+        const outer = this.outerIslandAt(x, z);
+        if (!outer) {
+          continue;
+        }
+        for (let d = 0; d < outer.thickness; d++) {
+          chunk.setLocal(lx, outer.surfaceY - d, lz, BlockId.END_STONE);
         }
       }
     }

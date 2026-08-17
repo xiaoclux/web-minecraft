@@ -6,6 +6,7 @@ import { NetherGenerator, NETHER_HEIGHT, NETHER_LAVA_LEVEL } from '../src/engine
 import { NetherFortressGenerator } from '../src/engine/world/structures/NetherFortressGenerator';
 import { Chunk } from '../src/engine/world/Chunk';
 import { World } from '../src/engine/world/World';
+import { CHUNK_SIZE, WORLD_SIZE_Y } from '../src/engine/constants/world';
 import { PORTAL_AXIS_X, mapCoordinate, tryLightPortal } from '../src/engine/systems/PortalSystem';
 
 function generate(generator: { generateChunk(c: Chunk): void }, cx: number, cz: number, hasSkyLight = false): Chunk {
@@ -186,5 +187,41 @@ describe('下界要塞', () => {
     for (let i = 0; i < 5; i++) {
       expect(a.getFortress(i, 0)).toEqual(b.getFortress(i, 0));
     }
+  });
+});
+
+describe('末地外岛', () => {
+  const generator = new EndGenerator('outer-island-seed');
+
+  /** 数一数一片区域里有多少列末地石。 */
+  function countEndStoneColumns(cx0: number, cz0: number, span: number): number {
+    let columns = 0;
+    for (let cz = cz0; cz < cz0 + span; cz++) {
+      for (let cx = cx0; cx < cx0 + span; cx++) {
+        const chunk = new Chunk(cx, cz, false);
+        generator.generateChunk(chunk);
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+          for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+            for (let y = 0; y < WORLD_SIZE_Y; y++) {
+              if (chunk.getLocal(lx, y, lz) === BlockId.END_STONE) {
+                columns++;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+    return columns;
+  }
+
+  it('主岛与外岛之间是一整片虚空', () => {
+    // 离主岛 300~500 格：主岛半径只有 56，外岛从 1000 格才开始
+    expect(countEndStoneColumns(20, 20, 4)).toBe(0);
+  });
+
+  it('足够远的地方能生成外岛', () => {
+    // 1000 格之外扫一片，应该有相当数量的末地石列
+    expect(countEndStoneColumns(70, 0, 8)).toBeGreaterThan(0);
   });
 });
