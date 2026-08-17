@@ -5,6 +5,7 @@
 
 import type { Entity } from '../entities/Entity';
 import { RandomTickSystem } from '../systems/RandomTickSystem';
+import { ComparatorSystem } from '../systems/ComparatorSystem';
 import { DaylightSensorSystem } from '../systems/DaylightSensorSystem';
 import { BlockEntityStore } from './BlockEntityStore';
 import type { ChunkGenerator } from './ChunkGenerator';
@@ -100,6 +101,7 @@ export class Dimension {
   readonly fluids: FluidSimulator;
   readonly randomTicks: RandomTickSystem;
   readonly daylightSensors: DaylightSensorSystem;
+  readonly comparators: ComparatorSystem;
   readonly blockEntities = new BlockEntityStore();
   readonly entities = new Map<number, Entity>();
 
@@ -120,6 +122,7 @@ export class Dimension {
         return def.hasWeather && host.isRaining;
       },
     });
+    this.comparators = new ComparatorSystem({ world: this.world, blockEntities: this.blockEntities });
     this.daylightSensors = new DaylightSensorSystem({
       world: this.world,
       get daylight(): number {

@@ -14,6 +14,10 @@ import { FACINGS } from '../blocks/blockShapes';
 import {
   POWERED_RAIL_CHAIN,
   RAIL_SHAPE_MASK,
+  COMPARATOR_FACING_MASK,
+  COMPARATOR_MODE_BIT,
+  COMPARATOR_OUTPUT_MASK,
+  COMPARATOR_OUTPUT_SHIFT,
   REDSTONE_MAX_POWER,
   REDSTONE_POWER_MASK,
   REDSTONE_UPDATE_RADIUS,
@@ -64,8 +68,8 @@ export function sourcePowerTo(
   toZ: number,
 ): number {
   const def = getBlock(world.getBlock(x, y, z));
-  if (def.redstone?.repeater) {
-    // 中继器只给正面那一格供电
+  if (def.redstone?.repeater || def.redstone?.comparator) {
+    // 中继器 / 比较器只给正面那一格供电
     const [fx, fz] = FACINGS[world.getMeta(x, y, z) & REPEATER_FACING_MASK];
     if (toX !== x + fx || toZ !== z + fz || toY !== y) {
       return 0;
@@ -84,6 +88,10 @@ export function sourcePower(world: World, x: number, y: number, z: number): numb
   const def = getBlock(id);
   if (!def.redstone) {
     return 0;
+  }
+  // 比较器：输出强度存在 meta 高 4 位，不需要 source 字段
+  if (def.redstone.comparator) {
+    return (world.getMeta(x, y, z) >> COMPARATOR_OUTPUT_SHIFT) & COMPARATOR_OUTPUT_MASK;
   }
   const { source } = def.redstone;
   if (source === undefined) {
@@ -200,17 +208,57 @@ export function isPoweredRailOn(world: World, x: number, y: number, z: number): 
 }
 
 /**
+ * 比较器该输出多强的信号。
+ * @param containerLevelAt 读容器充盈度的回调（背后是箱子 / 熔炉之类时用），非容器返回 0
+ */
+export function comparatorOutput(
+  world: World,
+  x: number,
+  y: number,
+  z: number,
+  containerLevelAt: (x: number, y: number, z: number) => number,
+): number {
+  const meta = world.getMeta(x, y, z);
+  const [fx, fz] = FACINGS[meta & COMPARATOR_FACING_MASK];
+  // 背面：先看容器充盈度，没有容器再看普通红石信号
+  const bx = x - fx;
+  const bz = z - fz;
+  const container = containerLevelAt(bx, y, bz);
+  const back = container > 0 ? container : inputPowerAt(world, bx, y, bz, x, y, z);
+  // 两侧：垂直于朝向的两格
+  const sideA = inputPowerAt(world, x + fz, y, z + fx, x, y, z);
+  const sideB = inputPowerAt(world, x - fz, y, z - fx, x, y, z);
+  const side = Math.max(sideA, sideB);
+  if ((meta & COMPARATOR_MODE_BIT) !== 0) {
+    // 减法模式
+    return Math.max(0, back - side);
+  }
+  return side > back ? 0 : back;
+}
+
+/** 某一格能给 (toX,toY,toZ) 送多强的信号（粉 / 电源 / 被强充能的实心方块都算）。 */
+function inputPowerAt(
+  world: World,
+  x: number,
+  y: number,
+  z: number,
+  toX: number,
+  toY: number,
+  toZ: number,
+): number {
+  const wire = wirePower(world, x, y, z);
+  const source = sourcePowerTo(world, x, y, z, toX, toY, toZ);
+  const conducted = isConductive(world, x, y, z) ? strongPowerOf(world, x, y, z) : 0;
+  return Math.max(wire, Math.max(source, conducted));
+}
+
+/**
  * 中继器背面收到的信号（只有正对背面的那一格算数）。
  */
 export function repeaterInputPower(world: World, x: number, y: number, z: number): number {
   const [fx, fz] = FACINGS[world.getMeta(x, y, z) & REPEATER_FACING_MASK];
   // 背面 = 正面的反方向
-  const bx = x - fx;
-  const bz = z - fz;
-  const wire = wirePower(world, bx, y, bz);
-  const source = sourcePowerTo(world, bx, y, bz, x, y, z);
-  const conducted = isConductive(world, bx, y, bz) ? strongPowerOf(world, bx, y, bz) : 0;
-  return Math.max(wire, source, conducted);
+  return inputPowerAt(world, x - fx, y, z - fz, x, y, z);
 }
 
 /**

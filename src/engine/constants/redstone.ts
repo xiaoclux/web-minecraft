@@ -68,3 +68,15 @@ export const SEMITONES_PER_OCTAVE = 12;
 
 /** 日光传感器多久重算一次输出（每 20 tick 一秒，够跟上昼夜变化）。 */
 export const DAYLIGHT_SENSOR_INTERVAL_TICKS = 20;
+
+/** 比较器 meta：低 2 位朝向。 */
+export const COMPARATOR_FACING_MASK = 3;
+/** 比较器 meta：模式位（0 = 比较，1 = 减法）。 */
+export const COMPARATOR_MODE_BIT = 4;
+/** 比较器 meta：输出强度存在高 4 位。 */
+export const COMPARATOR_OUTPUT_SHIFT = 4;
+export const COMPARATOR_OUTPUT_MASK = 15;
+/** 比较器重算输出的延迟（1.8.9 是 2 tick）。 */
+export const COMPARATOR_DELAY_TICKS = 2;
+/** 容器满载时比较器的输出强度（1.8.9 满箱输出 15，空箱 0，非空最低 1）。 */
+export const CONTAINER_SIGNAL_MAX = 15;

@@ -150,6 +150,8 @@ export interface BlockDef {
     invertedOnId?: number;
     /** 中继器：只吃背后的信号、延迟后向正面输出满强度。 */
     repeater?: boolean;
+    /** 比较器：读背后的信号 / 容器充盈度，减去两侧信号后向正面输出（强度存 meta 高 4 位）。 */
+    comparator?: boolean;
     /** 活塞：通电伸出、断电缩回。 */
     piston?: boolean;
     /** 粘性活塞：缩回时把前面那格拉回来。 */
@@ -283,6 +285,8 @@ export const BlockId = {
   DROPPER: 158,
   NOTE_BLOCK: 159,
   DAYLIGHT_SENSOR: 160,
+  COMPARATOR: 161,
+  TRAPPED_CHEST: 162,
   LEVER: 69,
   STONE_BUTTON: 77,
   STONE_PRESSURE_PLATE: 70,
@@ -874,6 +878,17 @@ export const BLOCK_DEFS: BlockDef[] = [
       noItem: true,
       drops: [{ item: 'repeater', min: 1, max: 1 }],
       redstone: { repeater: true, source: REDSTONE_MAX_POWER, unlitBlockId: BlockId.REPEATER },
+    }),
+    shape: BlockShape.PRESSURE_PLATE,
+  },
+  {
+    ...cube(BlockId.COMPARATOR, 'comparator', '红石比较器', same('comparator'), 0.5, null, {
+      solid: false,
+      opaque: false,
+      needsSupport: true,
+      interactive: true,
+      hasFacing: true,
+      redstone: { comparator: true },
     }),
     shape: BlockShape.PRESSURE_PLATE,
   },

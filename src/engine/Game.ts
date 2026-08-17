@@ -128,12 +128,20 @@ import { getBlockByName } from './blocks/BlockRegistry';
 import { ENCHANTMENT_DEFS, canEnchant, isEnchantmentId } from './items/enchantments';
 import { EFFECT_DEFS } from './entities/effects';
 import type { Weather } from './systems/WeatherSystem';
-import { isPoweredRailOn, powerAt, repeaterInputPower, notePitch, updateWires } from './systems/RedstoneSystem';
+import {
+  isPoweredRailOn,
+  notePitch,
+  powerAt,
+  repeaterInputPower,
+  updateWires,
+} from './systems/RedstoneSystem';
 import { containerSlots, extractOne, insertOne, isEmpty } from './systems/HopperSystem';
 import { extendPiston, pistonDirection, retractPiston } from './systems/PistonSystem';
 import {
   BUTTON_PRESS_TICKS,
   PRESSURE_PLATE_RANGE,
+  COMPARATOR_DELAY_TICKS,
+  COMPARATOR_MODE_BIT,
   REDSTONE_POWERED_BIT,
   REDSTONE_UPDATE_RADIUS,
   REPEATER_DELAYS,
@@ -1030,6 +1038,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.tickGravityBlocks();
     this.randomTicks.tick(this.player.x, this.player.z);
     this.current.daylightSensors.tick();
+    this.current.comparators.tick();
     this.weather.tick();
     this.tickWeatherEffects();
     this.tickBreeding();
@@ -1970,6 +1979,14 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.renderer.hand.swing();
   }
 
+  /** 右键比较器：在"比较"与"减法"两种模式之间切换。 */
+  private toggleComparatorMode(x: number, y: number, z: number): void {
+    const meta = this.world.getMeta(x, y, z);
+    this.world.setBlock(x, y, z, BlockId.COMPARATOR, meta ^ COMPARATOR_MODE_BIT);
+    this.sound.play('door');
+    this.renderer.hand.swing();
+  }
+
   /** 每 tick：按钮弹回、压力板感应、延迟更新（火把 / 中继器）。 */
   private tickRedstone(): void {
     this.tickButtons();
@@ -2011,6 +2028,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     const def = getBlock(id);
     const redstone = def.redstone;
     if (!redstone) {
+      return;
+    }
+    if (redstone.comparator) {
+      this.current.comparators.update(x, y, z);
       return;
     }
     if (redstone.repeater) {
@@ -2324,6 +2345,8 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
           }
           if (redstone.repeater) {
             this.scheduleRedstoneUpdate(nx, ny, nz, repeaterDelay(this.world.getMeta(nx, ny, nz)));
+          } else if (redstone.comparator) {
+            this.scheduleRedstoneUpdate(nx, ny, nz, COMPARATOR_DELAY_TICKS);
           } else if (redstone.piston) {
             this.scheduleRedstoneUpdate(nx, ny, nz, PISTON_DELAY_TICKS);
           } else if (redstone.dispenser || redstone.ignitesWhenPowered || redstone.poweredRail) {
@@ -3687,6 +3710,9 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       case BlockId.REPEATER:
       case BlockId.REPEATER_ON:
         this.cycleRepeaterDelay(hit.x, hit.y, hit.z);
+        return true;
+      case BlockId.COMPARATOR:
+        this.toggleComparatorMode(hit.x, hit.y, hit.z);
         return true;
       case BlockId.NOTE_BLOCK:
         this.cycleNote(hit.x, hit.y, hit.z);

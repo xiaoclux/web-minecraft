@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
-import { NOTE_CENTER, NOTE_COUNT, REDSTONE_MAX_POWER, REDSTONE_POWERED_BIT } from '../src/engine/constants/redstone';
+import { FACINGS } from '../src/engine/blocks/blockShapes';
 import {
+  COMPARATOR_MODE_BIT,
+  COMPARATOR_OUTPUT_SHIFT,
+  NOTE_CENTER,
+  NOTE_COUNT,
+  REDSTONE_MAX_POWER,
+  REDSTONE_POWERED_BIT,
+} from '../src/engine/constants/redstone';
+import {
+  comparatorOutput,
   isPoweredRailOn,
   notePitch,
   powerAt,
   repeaterInputPower,
   sourcePower,
+  sourcePowerTo,
   updateWires,
   wirePower,
 } from '../src/engine/systems/RedstoneSystem';
@@ -258,5 +268,57 @@ describe('音符盒', () => {
     for (let note = 1; note < NOTE_COUNT; note++) {
       expect(notePitch(note)).toBeGreaterThan(notePitch(note - 1));
     }
+  });
+});
+
+describe('比较器', () => {
+  /** 放一个朝 +x 的比较器（正面在 +x 侧），返回它的坐标。 */
+  function placeComparator(world: World, x: number, y: number, z: number, subtract = false): void {
+    const facing = FACINGS.findIndex(([fx, fz]) => fx === 1 && fz === 0);
+    world.setBlock(x, y, z, BlockId.COMPARATOR, facing | (subtract ? COMPARATOR_MODE_BIT : 0));
+  }
+
+  const noContainer = (): number => 0;
+
+  it('比较模式：背后信号强于两侧时原样输出，否则输出 0', () => {
+    const world = testWorld();
+    placeComparator(world, 0, 10, 0);
+    // 背后（-x 侧）放一个满强度的红石块
+    world.setBlock(-1, 10, 0, BlockId.REDSTONE_BLOCK);
+    expect(comparatorOutput(world, 0, 10, 0, noContainer)).toBe(REDSTONE_MAX_POWER);
+    // 侧面也来一个满强度：侧面不强于背后，仍然原样输出
+    world.setBlock(0, 10, 1, BlockId.REDSTONE_BLOCK);
+    expect(comparatorOutput(world, 0, 10, 0, noContainer)).toBe(REDSTONE_MAX_POWER);
+    // 背后换成弱信号（一根强度 4 的粉）：侧面更强，输出归零
+    world.setBlock(-1, 10, 0, BlockId.REDSTONE_WIRE, 4);
+    expect(comparatorOutput(world, 0, 10, 0, noContainer)).toBe(0);
+  });
+
+  it('减法模式：输出 = 背后 − 两侧较大者', () => {
+    const world = testWorld();
+    placeComparator(world, 0, 10, 0, true);
+    world.setBlock(-1, 10, 0, BlockId.REDSTONE_WIRE, 12);
+    world.setBlock(0, 10, 1, BlockId.REDSTONE_WIRE, 5);
+    expect(comparatorOutput(world, 0, 10, 0, noContainer)).toBe(7);
+    // 侧面比背后还强时输出 0，不会变成负数
+    world.setBlock(0, 10, 1, BlockId.REDSTONE_WIRE, 15);
+    expect(comparatorOutput(world, 0, 10, 0, noContainer)).toBe(0);
+  });
+
+  it('背后是容器时读充盈度', () => {
+    const world = testWorld();
+    placeComparator(world, 0, 10, 0);
+    const level = comparatorOutput(world, 0, 10, 0, (x, _y, z) => (x === -1 && z === 0 ? 9 : 0));
+    expect(level).toBe(9);
+  });
+
+  it('输出强度存在 meta 高 4 位，且只朝正面输出', () => {
+    const world = testWorld();
+    const facing = FACINGS.findIndex(([fx, fz]) => fx === 1 && fz === 0);
+    world.setBlock(0, 10, 0, BlockId.COMPARATOR, facing | (11 << COMPARATOR_OUTPUT_SHIFT));
+    expect(sourcePower(world, 0, 10, 0)).toBe(11);
+    expect(sourcePowerTo(world, 0, 10, 0, 1, 10, 0)).toBe(11);
+    expect(sourcePowerTo(world, 0, 10, 0, -1, 10, 0)).toBe(0);
+    expect(sourcePowerTo(world, 0, 10, 0, 0, 10, 1)).toBe(0);
   });
 });

@@ -767,6 +767,16 @@ function repeater(lit: boolean): Painter {
   };
 }
 
+/** 比较器：石板 + 前后两个火把点 + 中间的模式指示灯（1.8.9 用石英柱表示）。 */
+const comparator: Painter = (c, rng) => {
+  c.noise(hex('#a8a8a8'), 0.06, rng);
+  const torch = hex('#7a1a12');
+  c.rect(4, 3, 2, 2, torch);
+  c.rect(10, 3, 2, 2, torch);
+  c.rect(7, 11, 2, 2, hex('#e8e4dc'));
+  c.rect(0, 7, 16, 2, hex('#8a8a8a'));
+};
+
 /** 音符盒：木箱身 + 中间一圈深色音孔。 */
 const noteBlock: Painter = (c, rng) => {
   c.noise(hex('#5f4327'), 0.08, rng);
@@ -1155,6 +1165,7 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   note_block: noteBlock,
   daylight_sensor_top: daylightSensorTop,
   daylight_sensor_side: daylightSensorSide,
+  comparator,
   repeater: repeater(false),
   repeater_on: repeater(true),
   lever,
