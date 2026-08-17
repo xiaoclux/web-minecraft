@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Mob } from '../src/engine/entities/Mob';
 import { MobType } from '../src/engine/entities/MobDefs';
+import { ArrowEntity } from '../src/engine/entities/ArrowEntity';
 import { ThrownItemEntity } from '../src/engine/entities/ThrownItemEntity';
 import { mobContext } from './helpers';
 
@@ -43,5 +44,37 @@ describe('投掷物', () => {
       snowball.move(context, 0.02);
     }
     expect(snowball.hitEntity).toBeNull();
+  });
+});
+
+describe('玩家射出的箭', () => {
+  it('射中生物就扣血，伤害按构造时传的值算', () => {
+    const cow = new Mob(MobType.COW);
+    cow.setPosition(3, 10, 0.5);
+    const context = mobContext({ livingEntitiesNear: () => [cow] });
+    const before = cow.health;
+    const arrow = new ArrowEntity(999, true, 6);
+    arrow.setPosition(0, 10.5, 0.5);
+    arrow.vx = 24;
+    for (let i = 0; i < 60 && !arrow.isDead; i++) {
+      arrow.move(context, 0.005);
+    }
+    expect(arrow.isDead).toBe(true);
+    expect(before - cow.health).toBeCloseTo(6, 1);
+  });
+
+  it('不会射到射箭的人自己', () => {
+    const shooter = new Mob(MobType.COW);
+    shooter.setPosition(1, 10.2, 0.5);
+    const before = shooter.health;
+    const context = mobContext({ livingEntitiesNear: () => [shooter] });
+    const arrow = new ArrowEntity(shooter.id, true, 6);
+    arrow.setPosition(0, 10.5, 0.5);
+    arrow.vx = 24;
+    for (let i = 0; i < 10; i++) {
+      arrow.move(context, 0.005);
+    }
+    expect(shooter.health).toBe(before);
+    expect(arrow.isDead).toBe(false);
   });
 });

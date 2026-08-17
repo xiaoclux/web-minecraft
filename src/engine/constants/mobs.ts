@@ -131,3 +131,11 @@ export const SPAWNER_MAX_COUNT = 4;
 export const SPAWNER_SPAWN_RANGE = 4;
 /** 附近同类生物超过这个数就不再生成。 */
 export const SPAWNER_NEARBY_LIMIT = 6;
+
+/** 玩家拉满弓需要多少 tick（1.8.9 为 20 tick = 1 秒）。 */
+export const BOW_FULL_DRAW_TICKS = 20;
+/** 拉到这个比例以下松手不射（原版是"刚点一下不出箭"）。 */
+export const BOW_MIN_DRAW_RATIO = 0.15;
+/** 满弓的箭速与伤害；半途松手按比例缩水。 */
+export const BOW_MAX_ARROW_SPEED = 36;
+export const BOW_MAX_ARROW_DAMAGE = 9;

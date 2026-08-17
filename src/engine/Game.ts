@@ -72,6 +72,10 @@ import {
   SPLASH_POTION_RADIUS,
   SPLASH_POTION_SPEED,
   DRAGON_CIRCLE_RADIUS,
+  BOW_FULL_DRAW_TICKS,
+  BOW_MAX_ARROW_DAMAGE,
+  BOW_MAX_ARROW_SPEED,
+  BOW_MIN_DRAW_RATIO,
   DRAGON_CRUISE_HEIGHT,
   DRAGON_KILL_XP,
   ENDER_CRYSTAL_HEAL_RANGE,
@@ -399,6 +403,11 @@ const FOOTSTEP_INTERVAL_BLOCKS = 2.2;
 const DIG_SOUND_INTERVAL_TICKS = 5;
 /** 夜视把世界亮度托到的下限（1 = 满亮，略低一点保留一点氛围）。 */
 const NIGHT_VISION_MIN_LIGHT = 0.9;
+/** 弓与箭的物品 id。 */
+const BOW_ITEM_ID = 'bow';
+const ARROW_ITEM_ID = 'arrow';
+/** 放完一箭的冷却（tick）。 */
+const BOW_RELEASE_COOLDOWN_TICKS = 4;
 /** 没有告示牌在编辑时返回的空行（避免每次都新建数组）。 */
 const EMPTY_SIGN_LINES: readonly string[] = [];
 /** 蛋糕每一口回多少饥饿与饱和度（1.8.9 为 2 点饥饿）。 */
@@ -615,6 +624,8 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   private scheduledUpdates: { x: number; y: number; z: number; ticks: number }[] = [];
   /** 按下的按钮（到时间弹回）。 */
   private pressedButtons: { x: number; y: number; z: number; ticks: number }[] = [];
+  /** 拉弓已经拉了多少 tick；-1 表示没在拉。 */
+  private bowDrawTicks = -1;
   /** 正在重算红石：避免 setBlock 触发的变更事件递归。 */
   private redstoneUpdating = false;
   /** 末影龙是否已被击败（决定走返回传送门时放不放终末之诗）。 */
@@ -2695,6 +2706,51 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (this.controls.isMouseDown(MOUSE_RIGHT) && this.useCooldown === 0) {
       this.useItem();
     }
+    // 拉弓期间右键一直按着：蓄力慢慢涨，松手在 releaseBow 里结算
+    if (this.bowDrawTicks >= 0) {
+      if (this.controls.isMouseDown(MOUSE_RIGHT)) {
+        this.bowDrawTicks = Math.min(this.bowDrawTicks + 1, BOW_FULL_DRAW_TICKS);
+      } else {
+        this.releaseBow();
+      }
+    }
+  }
+
+  /** 开始拉弓（手里有箭或创造模式才拉得开）。 */
+  private drawBow(): void {
+    if (this.bowDrawTicks >= 0) {
+      return;
+    }
+    if (!this.rules.infiniteItems && this.player.inventory.countOf(ARROW_ITEM_ID) === 0) {
+      return;
+    }
+    this.bowDrawTicks = 0;
+  }
+
+  /** 松手放箭：拉得越满，箭越快越疼；点一下就松不出箭。 */
+  private releaseBow(): void {
+    const drawn = this.bowDrawTicks;
+    this.bowDrawTicks = -1;
+    const ratio = Math.min(1, drawn / BOW_FULL_DRAW_TICKS);
+    if (ratio < BOW_MIN_DRAW_RATIO) {
+      return;
+    }
+    if (!this.rules.infiniteItems && !this.player.inventory.removeItems(ARROW_ITEM_ID, 1)) {
+      return;
+    }
+    const p = this.player;
+    const dir = this.lookDirection();
+    const arrow = new ArrowEntity(p.id, true, BOW_MAX_ARROW_DAMAGE * ratio);
+    arrow.setPosition(p.x, p.eyeY, p.z);
+    const speed = BOW_MAX_ARROW_SPEED * ratio;
+    arrow.vx = dir.x * speed;
+    arrow.vy = dir.y * speed;
+    arrow.vz = dir.z * speed;
+    this.spawnEntity(arrow);
+    this.sound.play('bow');
+    this.damageHeldTool(1);
+    this.renderer.hand.swing();
+    this.useCooldown = BOW_RELEASE_COOLDOWN_TICKS;
   }
 
   /** 选择快捷栏。 */
@@ -3255,6 +3311,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
         }
         this.renderer.hand.swing();
       }
+      return;
+    }
+    if (def.id === BOW_ITEM_ID) {
+      this.drawBow();
       return;
     }
     if (THROWN_ITEM_IDS.has(def.id)) {
