@@ -1,5 +1,6 @@
 import { BlockId } from '../blocks/BlockRegistry';
 import {
+  DESPAWN_CHANCE_PER_CHECK,
   DESPAWN_DISTANCE,
   HOSTILE_SPAWN_ATTEMPTS_PER_TICK,
   HOSTILE_SPAWN_INTERVAL_TICKS,
@@ -71,23 +72,31 @@ export class MobSpawner {
   /** 是否允许敌对生成（和平难度关闭）。 */
   hostileEnabled = true;
 
-  /** 每 tick 调用。 */
+  /** 每 tick 调用；实际只按敌对刷怪间隔干活（数生物、远处消失、尝试生成），其余 tick 直接返回。 */
   tick(ctx: EntityContext, entities: Iterable<Entity>): void {
+    if (ctx.tick % HOSTILE_SPAWN_INTERVAL_TICKS !== 0) {
+      return;
+    }
     let hostile = 0;
     let passive = 0;
-    const list: Mob[] = [];
+    const player = ctx.player;
     for (const e of entities) {
-      if (e instanceof Mob && !e.isDead) {
-        list.push(e);
-        if (e.def.hostile) {
-          hostile++;
-        } else {
-          passive++;
-        }
+      if (!(e instanceof Mob) || e.isDead) {
+        continue;
+      }
+      if (!e.def.hostile) {
+        passive++;
+        continue;
+      }
+      hostile++;
+      // 离玩家太远的敌对生物有概率直接消失（顺手在同一趟遍历里做，不再单独收集数组）
+      const dx = e.x - player.x;
+      const dz = e.z - player.z;
+      if (dx * dx + dz * dz > DESPAWN_DISTANCE * DESPAWN_DISTANCE && ctx.random() < DESPAWN_CHANCE_PER_CHECK) {
+        e.isDead = true;
       }
     }
-    this.despawnFar(ctx, list);
-    if (this.hostileEnabled && ctx.tick % HOSTILE_SPAWN_INTERVAL_TICKS === 0 && hostile < MAX_HOSTILE_MOBS) {
+    if (this.hostileEnabled && hostile < MAX_HOSTILE_MOBS) {
       for (let i = 0; i < HOSTILE_SPAWN_ATTEMPTS_PER_TICK; i++) {
         this.trySpawnHostile(ctx);
       }
@@ -143,20 +152,6 @@ export class MobSpawner {
   populateInitial(ctx: EntityContext): void {
     for (let i = 0; i < INITIAL_PASSIVE_GROUPS; i++) {
       this.trySpawnPassiveGroup(ctx, 8, INITIAL_SPAWN_RADIUS);
-    }
-  }
-
-  private despawnFar(ctx: EntityContext, mobs: Mob[]): void {
-    const player = ctx.player;
-    for (const mob of mobs) {
-      if (!mob.def.hostile) {
-        continue;
-      }
-      const dx = mob.x - player.x;
-      const dz = mob.z - player.z;
-      if (dx * dx + dz * dz > DESPAWN_DISTANCE * DESPAWN_DISTANCE && ctx.random() < 0.05) {
-        mob.isDead = true;
-      }
     }
   }
 

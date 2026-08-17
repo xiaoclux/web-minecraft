@@ -5,6 +5,8 @@ export const HOSTILE_SPAWN_LIGHT_MAX = 7;
 export const SPAWN_MIN_DISTANCE = 24;
 export const SPAWN_MAX_DISTANCE = 56;
 export const DESPAWN_DISTANCE = 96;
+/** 每次检查（每 HOSTILE_SPAWN_INTERVAL_TICKS 一次）远处敌对生物消失的概率（≈ 原来逐 tick 5% 累计 20 tick）。 */
+export const DESPAWN_CHANCE_PER_CHECK = 0.64;
 export const HOSTILE_SPAWN_ATTEMPTS_PER_TICK = 4;
 export const PASSIVE_SPAWN_INTERVAL_TICKS = 400;
 export const HOSTILE_SPAWN_INTERVAL_TICKS = 20;
