@@ -43,6 +43,7 @@ import { EffectId } from './effects';
 import { EnchantmentId, enchantLevel } from '../items/enchantments';
 import { AABB } from '../physics/AABB';
 import { isBoxBlocked } from '../physics/collision';
+import { findPath, type PathNode } from './ai/Pathfinder';
 import { ArrowEntity } from './ArrowEntity';
 import type { Entity, EntitySaveData } from './Entity';
 import type { EntityContext } from './EntityContext';
@@ -60,6 +61,14 @@ const TELEPORT_VERTICAL_RANGE = 4;
 /** 史莱姆死亡分裂出的数量与体型比例。 */
 const SLIME_SPLIT_COUNT = 2;
 const SLIME_SPLIT_SCALE = 0.6;
+/** 多久重新算一次路（20 tick = 1 秒；玩家跑远了会提前重算）。 */
+const PATH_REFRESH_TICKS = 20;
+/** 目标离上次算路时的位置差超过这么多格就立刻重算。 */
+const PATH_TARGET_MOVE_THRESHOLD = 2;
+/** 走到离路点这么近就算到达，切下一个路点。 */
+const WAYPOINT_REACHED_DISTANCE = 0.6;
+/** 超过这个距离就别费劲算路了，直线追（A\* 的节点上限也撑不住）。 */
+const PATH_MAX_DISTANCE = 24;
 const STUCK_TICKS_BEFORE_DETOUR = 15;
 const DETOUR_TICKS = 25;
 
@@ -89,6 +98,12 @@ export class Mob extends LivingEntity {
   /** 追击时被卡住的 tick 数与绕行剩余 tick。 */
   private stuckTicks = 0;
   private detourTicks = 0;
+  /** 当前寻路路径（方块坐标的落脚点序列）与进度。 */
+  private path: PathNode[] = [];
+  private pathIndex = 0;
+  private pathCooldown = 0;
+  private pathTargetX = 0;
+  private pathTargetZ = 0;
   private detourYaw = 0;
   /** 苦力怕引信。 */
   fuse = 0;
@@ -231,7 +246,14 @@ export class Mob extends LivingEntity {
         return;
       }
       this.chase(ctx, distSq);
-      this.handleStuck(ctx);
+      // 已经贴到目标身上时不算"卡住"：那是在打人，不是被墙挡住，绕行只会把自己推开
+      const reach = MOB_ATTACK_RANGE + this.width;
+      if (distSq > reach * reach) {
+        this.handleStuck(ctx);
+      } else {
+        this.stuckTicks = 0;
+        this.detourTicks = 0;
+      }
       return;
     }
     this.wander(ctx);
@@ -306,10 +328,11 @@ export class Mob extends LivingEntity {
 
   private chase(ctx: EntityContext, distSq: number): void {
     const player = ctx.player;
-    const dx = player.x - this.x;
-    const dz = player.z - this.z;
-    this.targetYaw = Math.atan2(-dx, -dz);
     const dist = Math.sqrt(distSq);
+    // 陆行近战生物走 A* 找的路绕开障碍；远程 / 飞行的仍然直接朝玩家转向
+    const usesPath = !this.def.flying && this.type !== MobType.SKELETON;
+    const waypointYaw = usesPath ? this.followPath(ctx, dist) : null;
+    this.targetYaw = waypointYaw ?? Math.atan2(-(player.x - this.x), -(player.z - this.z));
     switch (this.type) {
       case MobType.CREEPER:
         this.chaseCreeper(ctx, dist);
@@ -330,6 +353,51 @@ export class Mob extends LivingEntity {
         }
         break;
     }
+  }
+
+  /**
+   * 沿 A\* 路径走：必要时重新算路，然后朝当前路点转向。
+   * @returns 朝下一个路点的 yaw；没有可用路径（太远 / 找不到）时返回 null，由调用方退回直线追
+   */
+  private followPath(ctx: EntityContext, dist: number): number | null {
+    if (this.pathCooldown > 0) {
+      this.pathCooldown--;
+    }
+    const player = ctx.player;
+    const targetMoved =
+      Math.abs(player.x - this.pathTargetX) > PATH_TARGET_MOVE_THRESHOLD ||
+      Math.abs(player.z - this.pathTargetZ) > PATH_TARGET_MOVE_THRESHOLD;
+    if (dist > PATH_MAX_DISTANCE) {
+      this.path = [];
+      return null;
+    }
+    if (this.pathCooldown === 0 || targetMoved) {
+      this.recomputePath(ctx);
+    }
+    // 走到跟前的路点就换下一个
+    while (this.pathIndex < this.path.length) {
+      const node = this.path[this.pathIndex];
+      const dx = node.x + 0.5 - this.x;
+      const dz = node.z + 0.5 - this.z;
+      if (Math.hypot(dx, dz) > WAYPOINT_REACHED_DISTANCE) {
+        return Math.atan2(-dx, -dz);
+      }
+      this.pathIndex++;
+    }
+    return null;
+  }
+
+  private recomputePath(ctx: EntityContext): void {
+    const player = ctx.player;
+    this.pathCooldown = PATH_REFRESH_TICKS;
+    this.pathTargetX = player.x;
+    this.pathTargetZ = player.z;
+    this.pathIndex = 0;
+    this.path = findPath(
+      ctx.world,
+      { x: Math.floor(this.x), y: Math.floor(this.y + 0.01), z: Math.floor(this.z) },
+      { x: Math.floor(player.x), y: Math.floor(player.y + 0.01), z: Math.floor(player.z) },
+    );
   }
 
   private chaseCreeper(ctx: EntityContext, dist: number): void {
