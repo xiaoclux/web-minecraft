@@ -75,6 +75,10 @@ const CHICKEN_EGG_MIN_TICKS = 6000;
 const CHICKEN_EGG_MAX_TICKS = 12000;
 /** 蛋掉在脚下时的散开幅度。 */
 const EGG_DROP_SPREAD = 0.1;
+/** 宠物跟人：离这么近就停下、离这么远就小跑、目标跑出这个距离就放弃。 */
+const PET_FOLLOW_STOP_RANGE = 3;
+const PET_FOLLOW_RUN_RANGE = 8;
+const PET_GIVE_UP_RANGE = 24;
 const STUCK_TICKS_BEFORE_DETOUR = 15;
 const DETOUR_TICKS = 25;
 
@@ -104,6 +108,12 @@ export class Mob extends LivingEntity {
   /** 追击时被卡住的 tick 数与绕行剩余 tick。 */
   /** 距离下一次下蛋还有多少 tick（只有鸡用）；-1 表示还没随机过。 */
   private eggTicks = -1;
+  /** 宠物当前要咬的目标。 */
+  private petTarget: Mob | null = null;
+  /** 已经被驯服（狼）。 */
+  isTamed = false;
+  /** 主人让它坐下了：坐着就不动，也不跟人。 */
+  isSitting = false;
   /** 村民的职业与交易表（只有村民有）。 */
   profession: VillagerProfession | null = null;
   trades: TradeOffer[] = [];
@@ -184,6 +194,27 @@ export class Mob extends LivingEntity {
       this.handleSunlight(ctx);
     }
     super.tick(ctx);
+  }
+
+  /**
+   * 拿着某样东西右键它：驯服（狼吃骨头）或者让它坐下 / 起来。
+   * @returns 这次交互做了什么，'none' 表示这东西对它没用
+   */
+  interactWithItem(itemId: string | null, random: () => number): 'tamed' | 'failed' | 'sit' | 'stand' | 'none' {
+    if (this.isTamed) {
+      // 已经驯服了：空手右键切换坐下 / 起立
+      this.isSitting = !this.isSitting;
+      return this.isSitting ? 'sit' : 'stand';
+    }
+    if (!itemId || !this.def.tameItems?.includes(itemId)) {
+      return 'none';
+    }
+    if (random() < (this.def.tameChance ?? 1)) {
+      this.isTamed = true;
+      this.isSitting = false;
+      return 'tamed';
+    }
+    return 'failed';
   }
 
   /** 给村民安排职业与交易表。 */
@@ -269,6 +300,10 @@ export class Mob extends LivingEntity {
       }
       return;
     }
+    if (this.isTamed) {
+      this.thinkPet(ctx);
+      return;
+    }
     if (this.seekMate()) {
       return;
     }
@@ -297,6 +332,49 @@ export class Mob extends LivingEntity {
       return;
     }
     this.wander(ctx);
+  }
+
+  /**
+   * 驯服过的宠物：坐着就不动，站着就跟在主人身边；主人打谁它就打谁。
+   */
+  private thinkPet(ctx: EntityContext): void {
+    if (this.isSitting) {
+      this.moveForward = 0;
+      this.state = MobState.IDLE;
+      return;
+    }
+    if (this.petTarget && (this.petTarget.isDead || this.distanceSqTo(this.petTarget) > PET_GIVE_UP_RANGE ** 2)) {
+      this.petTarget = null;
+    }
+    if (this.petTarget) {
+      this.state = MobState.CHASE;
+      this.targetYaw = Math.atan2(-(this.petTarget.x - this.x), -(this.petTarget.z - this.z));
+      this.moveForward = 1;
+      const reach = MOB_ATTACK_RANGE + this.width;
+      if (this.distanceSqTo(this.petTarget) < reach * reach && this.attackCooldown === 0) {
+        this.attackCooldown = MOB_ATTACK_COOLDOWN_TICKS;
+        this.petTarget.hurt(ctx, this.def.attackDamage, this, true);
+      }
+      return;
+    }
+    // 没有目标就跟着主人走，够近了就停下
+    const player = ctx.player;
+    const distSq = this.distanceSqTo(player);
+    this.state = MobState.WANDER;
+    if (distSq < PET_FOLLOW_STOP_RANGE ** 2) {
+      this.moveForward = 0;
+      return;
+    }
+    this.targetYaw = Math.atan2(-(player.x - this.x), -(player.z - this.z));
+    this.moveForward = distSq > PET_FOLLOW_RUN_RANGE ** 2 ? 1.3 : 1;
+  }
+
+  /** 主人打了谁，宠物就去咬谁。 */
+  setPetTarget(target: Mob | null): void {
+    if (this.isTamed && this.def.tamedAttacksBack) {
+      this.petTarget = target;
+      this.isSitting = false;
+    }
   }
 
   /** 追击中若长时间无法前进，则随机绕行一小段时间。 */
@@ -710,6 +788,8 @@ export class Mob extends LivingEntity {
       woolRegrowTicks: this.woolRegrowTicks,
       isBaby: this.isBaby,
       growTicks: this.growTicks,
+      isTamed: this.isTamed,
+      isSitting: this.isSitting,
       profession: this.profession,
       trades: this.trades,
     };
@@ -723,6 +803,10 @@ export class Mob extends LivingEntity {
     mob.age = data.age;
     if (typeof data.health === 'number') {
       mob.health = data.health;
+    }
+    if (typeof data.isTamed === 'boolean') {
+      mob.isTamed = data.isTamed;
+      mob.isSitting = data.isSitting === true;
     }
     if (typeof data.profession === 'string') {
       mob.profession = data.profession as VillagerProfession;

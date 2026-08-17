@@ -21,6 +21,7 @@ export const MobType = {
   WITHER_SKELETON: 'wither_skeleton',
   VILLAGER: 'villager',
   CAVE_SPIDER: 'cave_spider',
+  WOLF: 'wolf',
 } as const;
 export type MobType = (typeof MobType)[keyof typeof MobType];
 
@@ -68,6 +69,12 @@ export interface MobDef {
   witherTicks?: number;
   /** 攻击时附带的中毒时长（洞穴蜘蛛）。 */
   poisonTicks?: number;
+  /** 可以用这些物品驯服；不填表示不能驯服。 */
+  tameItems?: readonly string[];
+  /** 驯服的概率（1.8.9：狼 1/3、豹猫 1/3）。 */
+  tameChance?: number;
+  /** 被驯服之后才会跟着主人打的怪（狼）。 */
+  tamedAttacksBack?: boolean;
   /** 只在这些维度里自然生成；不填表示只在主世界。 */
   dimensions?: readonly string[];
 }
@@ -130,6 +137,23 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     drops: [{ item: 'gunpowder', min: 0, max: 2 }],
     xp: 5,
     burnsInSunlight: false,
+  },
+  wolf: {
+    type: 'wolf',
+    label: '狼',
+    width: 0.6,
+    height: 0.8,
+    maxHealth: 8,
+    speed: 3.6,
+    hostile: false,
+    attackDamage: 3,
+    drops: [],
+    xp: 3,
+    burnsInSunlight: false,
+    breedingItems: ['beef', 'porkchop', 'chicken', 'mutton'],
+    tameItems: ['bone'],
+    tameChance: 1 / 3,
+    tamedAttacksBack: true,
   },
   cave_spider: {
     type: 'cave_spider',

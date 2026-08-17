@@ -3296,6 +3296,9 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (this.tryTradeWithVillager()) {
       return;
     }
+    if (this.tryTamePet()) {
+      return;
+    }
     const hit = this.currentHit;
     const held = this.player.heldItem;
     const p = this.player;
@@ -3738,6 +3741,40 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   }
 
   /** 用手里的食物喂准星里的动物，让它进入求爱状态。 */
+  /**
+   * 右键狼这类可驯服 / 已驯服的生物：喂骨头驯服，或者让它坐下 / 起来。
+   * @returns 是否处理掉了这次右键
+   */
+  private tryTamePet(): boolean {
+    const target = this.findEntityInCrosshair();
+    if (!(target instanceof Mob) || target.isDead) {
+      return false;
+    }
+    if (!target.isTamed && !target.def.tameItems) {
+      return false;
+    }
+    const held = this.player.heldItem;
+    const result = target.interactWithItem(held?.id ?? null, this.rng);
+    if (result === 'none') {
+      return false;
+    }
+    if (result === 'tamed' || result === 'failed') {
+      if (!this.rules.infiniteItems) {
+        this.player.inventory.consume(this.player.selectedSlot, 1);
+      }
+      if (result === 'tamed') {
+        this.spawnHeartParticles(target);
+        this.showToast(`${target.def.label}被驯服了`);
+      }
+    }
+    if (result === 'sit' || result === 'stand') {
+      this.showToast(result === 'sit' ? `${target.def.label}坐下了` : `${target.def.label}站起来了`);
+    }
+    this.sound.play('pop');
+    this.renderer.hand.swing();
+    return true;
+  }
+
   /** 右键村民：打开交易界面。 */
   private tryTradeWithVillager(): boolean {
     const target = this.findEntityInCrosshair();
@@ -4222,6 +4259,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     );
     target.lastDamageCause = 'mob';
     if (target.hurt(this, damage, this.player, true)) {
+      this.sicPetsOn(target);
       this.achievements.onDamageDealt(damage);
       this.sound.play('hit');
       this.player.onAttack();
@@ -4238,6 +4276,18 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       }
     }
     this.renderer.hand.swing();
+  }
+
+  /** 主人打了谁，附近驯服过的狼就一起上。 */
+  private sicPetsOn(target: LivingEntity): void {
+    if (!(target instanceof Mob)) {
+      return;
+    }
+    for (const e of this.entities.values()) {
+      if (e instanceof Mob && e.isTamed && e !== target && !e.isDead) {
+        e.setPetTarget(target);
+      }
+    }
   }
 
   /**

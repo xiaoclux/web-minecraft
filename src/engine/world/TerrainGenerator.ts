@@ -55,6 +55,7 @@ const Salt = {
   TREES: 3,
   PLANTS: 4,
   SAND_PLANTS: 5,
+  WOLVES: 6,
 } as const;
 
 /** 四邻的水平偏移。 */
@@ -109,6 +110,12 @@ const PUMPKIN_CHANCE = 0.0006;
 /** 蘑菇只长在沼泽与黑森林的地面上（1.8.9 里这两处最多）。 */
 const MUSHROOM_BIOMES: ReadonlySet<Biome> = new Set([Biome.SWAMP, Biome.ROOFED_FOREST]);
 const MUSHROOM_CHANCE = 0.006;
+/** 狼群：只在森林 / 针叶林里，按 chunk 掷一次。 */
+const WOLF_BIOMES: ReadonlySet<Biome> = new Set([Biome.FOREST, Biome.TAIGA]);
+const WOLF_PACK_CHANCE = 0.03;
+const WOLF_PACK_MIN = 3;
+const WOLF_PACK_MAX = 5;
+const WOLF_MOB_TYPE = 'wolf';
 /** 出生点搜索半径与步长。 */
 const SPAWN_SEARCH_RADIUS = 256;
 const SPAWN_SEARCH_STEP = 2;
@@ -281,6 +288,7 @@ export class TerrainGenerator implements ChunkGenerator {
     }
     this.generatePlants(chunk);
     this.generateSandPlants(chunk);
+    this.generateWolfPack(chunk);
     this.strongholds?.placeInChunk(chunk);
     this.dungeons?.placeInChunk(chunk);
     this.mineshafts?.placeInChunk(chunk);
@@ -475,6 +483,28 @@ export class TerrainGenerator implements ChunkGenerator {
           chunk.setLocal(lx, h + 1, lz, flowerRoll < 0.5 ? BlockId.BROWN_MUSHROOM : BlockId.RED_MUSHROOM);
         }
       }
+    }
+  }
+
+  /** 森林与针叶林里偶尔有一群狼（1.8.9 的狼就住这两种林子）。 */
+  private generateWolfPack(chunk: Chunk): void {
+    const rng = this.rngAt(chunk.cx, chunk.cz, Salt.WOLVES);
+    if (rng() >= WOLF_PACK_CHANCE) {
+      return;
+    }
+    const cx = chunk.originX + Math.floor(rng() * CHUNK_SIZE);
+    const cz = chunk.originZ + Math.floor(rng() * CHUNK_SIZE);
+    if (!WOLF_BIOMES.has(this.biomeAt(cx, cz))) {
+      return;
+    }
+    const count = WOLF_PACK_MIN + Math.floor(rng() * (WOLF_PACK_MAX - WOLF_PACK_MIN + 1));
+    for (let i = 0; i < count; i++) {
+      const x = cx + Math.floor(rng() * 5) - 2;
+      const z = cz + Math.floor(rng() * 5) - 2;
+      if (!chunk.containsColumn(x, z) || this.isReservedColumn(x, z)) {
+        continue;
+      }
+      chunk.pendingMobs.push({ x, y: this.heightAt(x, z) + 1, z, type: WOLF_MOB_TYPE });
     }
   }
 

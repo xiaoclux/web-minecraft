@@ -56,6 +56,9 @@ const ZOMBIE_FACE = ['........', '........', '.KK..KK.', '.KK..KK.', '........',
 const SKELETON_BONE = '#c8c8c8';
 const SKELETON_FACE = ['........', '........', '.KK..KK.', '.KK..KK.', '........', '..K..K..', '...KK...', '........'];
 /** 村民：褐色长袍 + 大鼻子（N 是鼻子的肤色块）。 */
+/** 狼：灰白毛 + 黑眼睛，尾巴用一节额外的方块。 */
+const WOLF_FUR = '#d7d3d2';
+const WOLF_FACE = ['........', '........', '..K..K..', '..K..K..', '........', '...KK...', '...KK...', '........'];
 const VILLAGER_SKIN = '#c69b7b';
 const VILLAGER_ROBE = '#8a6a45';
 const VILLAGER_FACE = ['........', '........', '.KK..KK.', '.KK..KK.', '..NNNN..', '..NNNN..', '...NN...', '........'];
@@ -498,6 +501,16 @@ export const MOB_MODELS: Record<MobType, MobModelSpec> = {
   },
   spider: SPIDER_MODEL,
   cave_spider: SPIDER_MODEL,
+  wolf: quadruped(
+    [6, 6, 10],
+    7,
+    6,
+    2,
+    WOLF_FUR,
+    WOLF_FUR,
+    { size: [6, 6, 6], y: 9, color: WOLF_FUR, face: WOLF_FACE },
+    [{ name: 'tail', size: [2, 6, 2], pivot: [0, 10, 6], offset: [0, -3, 0], color: WOLF_FUR, anim: PartAnim.NONE }],
+  ),
   pig: quadruped([10, 8, 16], 6, 6, 4, '#f0a0a0', '#f0a0a0', {
     size: [8, 8, 8],
     y: 8,
