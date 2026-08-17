@@ -83,6 +83,10 @@ export class ParticleSystem {
   private readonly matrix = new THREE.Matrix4();
   private readonly hidden = new THREE.Matrix4().makeScale(0, 0, 0);
   private next = 0;
+  /** 当前活跃粒子数（为 0 时 update 直接返回）。 */
+  private activeCount = 0;
+  /** 自上次上传后有没有新生成的粒子（uv / 大小 / 亮度只在生成时变）。 */
+  private attributesDirty = false;
   /** 有粒子受重力时用来判断落地的回调（由 Game 注入世界查询）。 */
   private isSolidAt: (x: number, y: number, z: number) => boolean = () => false;
 
@@ -151,7 +155,11 @@ export class ParticleSystem {
     p.life = minLife + Math.random() * ((options.maxLife ?? 0.9) - minLife);
     p.size = options.size ?? DEFAULT_SIZE;
     p.brightness = options.brightness ?? 1;
-    p.active = true;
+    if (!p.active) {
+      p.active = true;
+      this.activeCount++;
+    }
+    this.attributesDirty = true;
     const region = this.atlas.region(textureKey);
     const span = (region.u1 - region.u0) * (1 - PARTICLE_TEXEL / TEXTURE_SIZE);
     this.uvOffsets.setXY(index, region.u0 + Math.random() * span, region.v0 + Math.random() * span);
@@ -159,10 +167,12 @@ export class ParticleSystem {
     this.brightness.setX(index, p.brightness);
   }
 
-  /** 推进模拟并写入实例数据。 */
+  /** 推进模拟并写入实例数据；没有活跃粒子时直接返回，不空扫 2048 个槽。 */
   update(dt: number): void {
+    if (this.activeCount === 0) {
+      return;
+    }
     const drag = Math.pow(PARTICLE_DRAG, dt);
-    let anyActive = false;
     for (let i = 0; i < MAX_PARTICLES; i++) {
       const p = this.particles[i];
       if (!p.active) {
@@ -171,10 +181,10 @@ export class ParticleSystem {
       p.life -= dt;
       if (p.life <= 0) {
         p.active = false;
+        this.activeCount--;
         this.mesh.setMatrixAt(i, this.hidden);
         continue;
       }
-      anyActive = true;
       p.vy += PARTICLE_GRAVITY * dt;
       p.vx *= drag;
       p.vz *= drag;
@@ -191,8 +201,10 @@ export class ParticleSystem {
       this.matrix.makeTranslation(p.x, p.y, p.z);
       this.mesh.setMatrixAt(i, this.matrix);
     }
-    if (anyActive) {
-      this.mesh.instanceMatrix.needsUpdate = true;
+    // 矩阵每帧都变；uv / 大小 / 亮度只在生成时写，没新粒子就不重传
+    this.mesh.instanceMatrix.needsUpdate = true;
+    if (this.attributesDirty) {
+      this.attributesDirty = false;
       this.uvOffsets.needsUpdate = true;
       this.sizes.needsUpdate = true;
       this.brightness.needsUpdate = true;

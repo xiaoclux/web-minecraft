@@ -2,12 +2,21 @@ import * as THREE from 'three';
 import { CHUNK_SIZE } from '../constants/world';
 import type { TextureAtlas } from '../textures/TextureAtlas';
 import { ChunkMesher, type MeshBuffers } from '../world/ChunkMesher';
-import { chunkKey, toChunkCoord } from '../world/Chunk';
+import { toChunkCoord } from '../world/Chunk';
 import type { World } from '../world/World';
 import { createChunkMaterials } from './ChunkMaterial';
 
 /** 每帧最多重建的 chunk 数。 */
 const MAX_REBUILDS_PER_FRAME = 3;
+/** 网格还不到这么多时（刚进世界）放开限速，尽快把眼前铺出来。 */
+const INITIAL_BURST_MESH_COUNT = 16;
+
+interface RebuildCandidate {
+  key: number;
+  cx: number;
+  cz: number;
+  dist: number;
+}
 
 interface ChunkMeshes {
   cx: number;
@@ -29,8 +38,8 @@ export class ChunkRenderer {
   private readonly materials;
   private mesher: ChunkMesher;
   private readonly meshes = new Map<number, ChunkMeshes>();
-  /** 已构建过网格的 chunk。 */
-  private readonly built = new Set<number>();
+  /** 本帧待重建的候选（复用数组，避免每帧分配）。 */
+  private readonly candidates: RebuildCandidate[] = [];
   private renderDistance: number;
   private unsubscribeUnload: () => void;
   private lastCenterX = Number.NaN;
@@ -61,8 +70,9 @@ export class ChunkRenderer {
       }
     }
     this.meshes.clear();
-    this.built.clear();
     this.world = world;
+    // 网格全丢了，新世界里已经"干净"的 chunk 也得重建
+    world.markAllDirty();
     this.mesher = new ChunkMesher(world, this.atlas);
     this.unsubscribeUnload = world.onChunkUnload((chunk) => this.unload(chunk.key));
   }
@@ -74,32 +84,47 @@ export class ChunkRenderer {
     this.sharedUniforms.uFogNear.value = Math.max(8, distance * CHUNK_SIZE * 0.55);
   }
 
-  /** 每帧调用：按玩家位置显示/隐藏并重建脏 chunk。 */
+  /**
+   * 每帧调用：按玩家位置显示/隐藏并重建脏 chunk。
+   * 只看 world.dirtyChunks（chunk 加载 / 方块变化 / 切世界都会往里标），世界静止时这里几乎零开销。
+   */
   update(playerX: number, playerZ: number): void {
     const pcx = toChunkCoord(playerX);
     const pcz = toChunkCoord(playerZ);
-    const r = this.renderDistance;
-    const candidates: { key: number; cx: number; cz: number; dist: number }[] = [];
     if (pcx !== this.lastCenterX || pcz !== this.lastCenterZ) {
       this.lastCenterX = pcx;
       this.lastCenterZ = pcz;
       this.updateVisibility(pcx, pcz);
     }
-    for (let cz = pcz - r; cz <= pcz + r; cz++) {
-      for (let cx = pcx - r; cx <= pcx + r; cx++) {
-        const key = chunkKey(cx, cz);
-        const needsBuild = this.world.dirtyChunks.has(key) || !this.built.has(key);
-        if (needsBuild && this.world.isChunkRenderable(cx, cz)) {
-          candidates.push({ key, cx, cz, dist: Math.max(Math.abs(cx - pcx), Math.abs(cz - pcz)) });
-        }
+    const dirty = this.world.dirtyChunks;
+    if (dirty.size === 0) {
+      return;
+    }
+    const r = this.renderDistance;
+    const candidates = this.candidates;
+    candidates.length = 0;
+    for (const key of dirty) {
+      const chunk = this.world.getChunkByKey(key);
+      if (!chunk) {
+        dirty.delete(key);
+        continue;
+      }
+      const dist = Math.max(Math.abs(chunk.cx - pcx), Math.abs(chunk.cz - pcz));
+      if (dist <= r && this.world.isChunkRenderable(chunk.cx, chunk.cz)) {
+        candidates.push({ key, cx: chunk.cx, cz: chunk.cz, dist });
       }
     }
+    if (candidates.length === 0) {
+      return;
+    }
     candidates.sort((a, b) => a.dist - b.dist);
-    const limit = this.built.size < 16 ? MAX_REBUILDS_PER_FRAME * 4 : MAX_REBUILDS_PER_FRAME;
-    for (let i = 0; i < Math.min(limit, candidates.length); i++) {
+    const limit = this.meshes.size < INITIAL_BURST_MESH_COUNT ? MAX_REBUILDS_PER_FRAME * 4 : MAX_REBUILDS_PER_FRAME;
+    const n = Math.min(limit, candidates.length);
+    for (let i = 0; i < n; i++) {
       const c = candidates[i];
       this.rebuild(c.key, c.cx, c.cz);
     }
+    candidates.length = 0;
   }
 
   /** 玩家跨 chunk 时刷新各 chunk 网格的可见性。 */
@@ -117,7 +142,6 @@ export class ChunkRenderer {
   private unload(key: number): void {
     const meshes = this.meshes.get(key);
     if (!meshes) {
-      this.built.delete(key);
       return;
     }
     for (const m of meshes.layers) {
@@ -125,7 +149,6 @@ export class ChunkRenderer {
       m.geometry.dispose();
     }
     this.meshes.delete(key);
-    this.built.delete(key);
   }
 
   /** 是否还有待构建的可见 chunk。 */
@@ -156,16 +179,17 @@ export class ChunkRenderer {
     this.fill(meshes.layers[1].geometry, data.cutout);
     this.fill(meshes.layers[2].geometry, data.translucent);
     this.world.dirtyChunks.delete(key);
-    this.built.add(key);
   }
 
   private fill(geometry: THREE.BufferGeometry, buffers: MeshBuffers): void {
+    // 先释放旧的 GPU 缓冲；three 只在 geometry.dispose() 时 deleteBuffer，直接换 attribute 会让旧缓冲等 GC
+    geometry.dispose();
     geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
     geometry.setAttribute('uv', new THREE.BufferAttribute(buffers.uvs, 2));
     geometry.setAttribute('aLight', new THREE.BufferAttribute(buffers.lights, 3));
     geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
+    // 视锥剔除只用包围球，包围盒没人读，省一遍全顶点扫描
     geometry.computeBoundingSphere();
-    geometry.computeBoundingBox();
   }
 
   /** 释放资源。 */

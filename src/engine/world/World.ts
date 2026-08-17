@@ -314,6 +314,18 @@ export class World {
     }
   }
 
+  /** 把所有已加载 chunk 标脏（渲染器切换世界后要从头重建网格）。 */
+  markAllDirty(): void {
+    for (const key of this.chunks.keys()) {
+      this.dirtyChunks.add(key);
+    }
+  }
+
+  /** 按键取 chunk（脏集合里存的就是键）。 */
+  getChunkByKey(key: number): Chunk | null {
+    return this.chunks.get(key) ?? null;
+  }
+
   /** 标记 chunk 为脏（未加载则忽略）。 */
   markDirty(cx: number, cz: number): void {
     const key = chunkKey(cx, cz);

@@ -26,6 +26,8 @@ import { MOB_MODELS, PartAnim, type MobModelSpec, type PartSpec } from './MobMod
 
 const PIXEL = 1 / 16;
 const HURT_COLOR = new THREE.Color(1, 0.35, 0.35);
+/** 着火的生物闪烁时的偏橙色调。 */
+const BURN_COLOR = new THREE.Color(1.4, 0.8, 0.4);
 const CREEPER_FLASH_COLOR = new THREE.Color(2, 2, 2);
 const ITEM_BOB_SPEED = 2;
 const ITEM_BOB_HEIGHT = 0.1;
@@ -77,7 +79,11 @@ export class EntityRenderer {
   updateRemotePlayers(
     players: readonly { id: number; name: string; x: number; y: number; z: number; yaw: number }[],
   ): void {
-    const alive = new Set<number>();
+    if (players.length === 0 && this.remotePlayers.size === 0) {
+      return;
+    }
+    const alive = this.alive;
+    alive.clear();
     for (const player of players) {
       alive.add(player.id);
       let rendered = this.remotePlayers.get(player.id);
@@ -104,7 +110,11 @@ export class EntityRenderer {
    * 画服务端同步过来的实体（生物 / 掉落物）。这些实体在本地没有逻辑，只有位置与朝向。
    */
   updateRemoteEntities(entities: readonly { id: number; kind: string; x: number; y: number; z: number; yaw: number }[]): void {
-    const alive = new Set<number>();
+    if (entities.length === 0 && this.remoteEntities.size === 0) {
+      return;
+    }
+    const alive = this.alive;
+    alive.clear();
     for (const entity of entities) {
       alive.add(entity.id);
       let rendered = this.remoteEntities.get(entity.id);
@@ -208,10 +218,13 @@ export class EntityRenderer {
   /** 每帧同步。 */
   /** 夜视等效果给的最低亮度 0~1（0 表示按环境光正常渲染）。 */
   private minLight = 0;
+  /** 本帧还活着的实体 id（复用，避免每帧新建 Set）。 */
+  private readonly alive = new Set<number>();
 
   update(entities: Iterable<Entity>, skyLevel: number, time: number, cameraYaw: number, minLight = 0): void {
     this.minLight = minLight;
-    const alive = new Set<number>();
+    const alive = this.alive;
+    alive.clear();
     for (const entity of entities) {
       alive.add(entity.id);
       let r: RenderedEntity | null = this.rendered.get(entity.id) ?? null;
@@ -638,7 +651,7 @@ export class EntityRenderer {
     } else if (mob.isCharging && Math.floor(mob.fuse / 3) % 2 === 0) {
       color = CREEPER_FLASH_COLOR;
     } else if (mob.isBurning && mob.age % 6 < 3) {
-      color = new THREE.Color(1.4, 0.8, 0.4);
+      color = BURN_COLOR;
     }
     for (const m of r.materials) {
       if (color) {
