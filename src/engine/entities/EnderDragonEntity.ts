@@ -24,6 +24,11 @@ import { LivingEntity } from './LivingEntity';
 const DRAGON_WIDTH = 6;
 const DRAGON_HEIGHT = 3;
 
+/** 记录多少个历史位置供身体分段跟随（越长尾巴甩得越开）。 */
+const HISTORY_LENGTH = 24;
+/** 历史采样的字段数：x, y, z, yaw。 */
+const HISTORY_STRIDE = 4;
+
 /** 末影龙的行为阶段。 */
 export const DragonPhase = {
   /** 绕岛盘旋。 */
@@ -41,6 +46,9 @@ export class EnderDragonEntity extends LivingEntity {
   private angle = 0;
   private chargeCooldown = DRAGON_CHARGE_COOLDOWN_TICKS;
   private healTimer = 0;
+  /** 最近若干帧的位置与朝向（环形缓冲），脖子与尾巴按不同延迟跟着它走。 */
+  private readonly history = new Float32Array(HISTORY_LENGTH * HISTORY_STRIDE);
+  private historyHead = -1;
 
   constructor(
     /** 盘旋中心（主岛中心）。 */
@@ -92,6 +100,7 @@ export class EnderDragonEntity extends LivingEntity {
   }
 
   override move(ctx: EntityContext, dt: number): void {
+    this.recordHistory();
     if (this.health <= 0) {
       // 死亡动画期间缓缓上升
       this.y += dt;
@@ -137,6 +146,37 @@ export class EnderDragonEntity extends LivingEntity {
   private endCharge(): void {
     this.phase = DragonPhase.CIRCLE;
     this.chargeCooldown = DRAGON_CHARGE_COOLDOWN_TICKS;
+  }
+
+  /**
+   * 取 stepsAgo 帧之前的位置与朝向；历史还没攒够时退回当前状态。
+   * 渲染端用它摆脖子与尾巴的分段，让身体像蛇一样跟着头走。
+   * @param stepsAgo 0 表示当前帧
+   */
+  sampleHistory(stepsAgo: number, out: { x: number; y: number; z: number; yaw: number }): void {
+    if (this.historyHead < 0) {
+      out.x = this.x;
+      out.y = this.y;
+      out.z = this.z;
+      out.yaw = this.yaw;
+      return;
+    }
+    const index = ((this.historyHead - Math.min(stepsAgo, HISTORY_LENGTH - 1)) % HISTORY_LENGTH + HISTORY_LENGTH) % HISTORY_LENGTH;
+    const base = index * HISTORY_STRIDE;
+    out.x = this.history[base];
+    out.y = this.history[base + 1];
+    out.z = this.history[base + 2];
+    out.yaw = this.history[base + 3];
+  }
+
+  /** 把当前位置压进历史缓冲。 */
+  private recordHistory(): void {
+    this.historyHead = (this.historyHead + 1) % HISTORY_LENGTH;
+    const base = this.historyHead * HISTORY_STRIDE;
+    this.history[base] = this.x;
+    this.history[base + 1] = this.y;
+    this.history[base + 2] = this.z;
+    this.history[base + 3] = this.yaw;
   }
 
   /** 朝目标点飞，同时把朝向转过去。 */

@@ -59,7 +59,27 @@ interface RenderedEntity {
   parts: { mesh: THREE.Mesh; spec: PartSpec }[];
   materials: THREE.MeshLambertMaterial[];
   kind: 'mob' | 'item' | 'arrow' | 'xp' | 'fireball' | 'crystal' | 'dragon' | 'wither' | 'minecart';
+  /** 不跟随 group 变换、需要各自摆在世界坐标里的部件（末影龙的脖子与尾巴分段）。 */
+  extraMeshes?: THREE.Mesh[];
 }
+
+/**
+ * 末影龙脖子与尾巴的分段。
+ * delay = 取多少帧之前的位置（越大离头越远），offset = 沿当时朝向再挪多少（正数在前），
+ * rise = 相对当时高度抬高多少。
+ */
+const DRAGON_SEGMENTS: readonly { width: number; height: number; length: number; delay: number; offset: number; rise: number }[] =
+  [
+    // 头与脖子：几乎不延迟，靠 offset 顶在身体前面
+    { width: 1.6, height: 1.4, length: 2, delay: 0, offset: 3.6, rise: 0.25 },
+    { width: 1.2, height: 1.1, length: 1.5, delay: 1, offset: 2.2, rise: 0.35 },
+    { width: 1, height: 0.9, length: 1.4, delay: 2, offset: 1.1, rise: 0.4 },
+    // 尾巴：延迟逐节加大，转弯时才甩出弧线，直飞时连成一条
+    { width: 1.2, height: 1, length: 1.6, delay: 3, offset: -3.2, rise: 0.1 },
+    { width: 1, height: 0.85, length: 1.5, delay: 5, offset: -4.5, rise: 0.05 },
+    { width: 0.8, height: 0.7, length: 1.4, delay: 7, offset: -5.7, rise: 0 },
+    { width: 0.6, height: 0.55, length: 1.3, delay: 9, offset: -6.8, rise: 0 },
+  ];
 
 /** 负责实体的 three.js 表现：模型、动画、受伤闪烁、光照。 */
 export class EntityRenderer {
@@ -208,17 +228,27 @@ export class EntityRenderer {
     }
     this.world = world;
     for (const [id, r] of this.rendered) {
-      this.group.remove(r.group);
-      for (const m of r.materials) {
-        m.dispose();
-      }
+      this.removeRendered(r);
       this.rendered.delete(id);
+    }
+  }
+
+  /** 从场景里摘掉一个实体的所有部件并释放材质。 */
+  private removeRendered(r: RenderedEntity): void {
+    this.group.remove(r.group);
+    for (const mesh of r.extraMeshes ?? []) {
+      this.group.remove(mesh);
+    }
+    for (const m of r.materials) {
+      m.dispose();
     }
   }
 
   /** 每帧同步。 */
   /** 夜视等效果给的最低亮度 0~1（0 表示按环境光正常渲染）。 */
   private minLight = 0;
+  /** 采样龙的历史位置时复用的输出对象。 */
+  private readonly dragonSample = { x: 0, y: 0, z: 0, yaw: 0 };
   /** 本帧还活着的实体 id（复用，避免每帧新建 Set）。 */
   private readonly alive = new Set<number>();
 
@@ -241,10 +271,7 @@ export class EntityRenderer {
     }
     for (const [id, r] of this.rendered) {
       if (!alive.has(id)) {
-        this.group.remove(r.group);
-        for (const m of r.materials) {
-          m.dispose();
-        }
+        this.removeRendered(r);
         this.rendered.delete(id);
       }
     }
@@ -440,19 +467,28 @@ export class EntityRenderer {
     return { group, parts: [], materials: [m], kind: 'crystal' };
   }
 
-  /** 末影龙：黑色的身体 + 头 + 两片翅膀（用盒子拼）。 */
+  /**
+   * 末影龙：身体 + 两片翅膀（跟着本体转），外加脖子与尾巴的分段。
+   * 分段不挂在身体下面，而是各自按"若干帧之前的位置"摆放，飞起来才有蛇一样的甩动。
+   */
   private createDragon(): RenderedEntity {
     const group = new THREE.Group();
     const m = new THREE.MeshLambertMaterial({ color: 0x1b1b26 });
     const body = new THREE.Mesh(this.boxGeometry(2.4, 1.4, 5), m);
-    const head = new THREE.Mesh(this.boxGeometry(1.6, 1.4, 2), m);
-    head.position.set(0, 0.2, -3.2);
     const wingLeft = new THREE.Mesh(this.boxGeometry(5, 0.3, 2.4), m);
     wingLeft.position.set(3.4, 0.5, 0);
     const wingRight = wingLeft.clone();
     wingRight.position.x = -3.4;
-    group.add(body, head, wingLeft, wingRight);
-    return { group, parts: [], materials: [m], kind: 'dragon' };
+    group.add(body, wingLeft, wingRight);
+    const segments: THREE.Mesh[] = [];
+    for (let i = 0; i < DRAGON_SEGMENTS.length; i++) {
+      const spec = DRAGON_SEGMENTS[i];
+      const mesh = new THREE.Mesh(this.boxGeometry(spec.width, spec.height, spec.length), m);
+      // 分段用世界坐标摆放，所以挂在场景根上而不是龙的 group 里
+      this.group.add(mesh);
+      segments.push(mesh);
+    }
+    return { group, parts: [], materials: [m], kind: 'dragon', extraMeshes: segments };
   }
 
   /** 凋灵：一根身体 + 三个头。 */
@@ -594,6 +630,9 @@ export class EntityRenderer {
     }
     if (r.kind === 'dragon') {
       r.group.rotation.set(0, entity.yaw, 0);
+      if (entity instanceof EnderDragonEntity) {
+        this.syncDragonSegments(entity, r);
+      }
       for (const m of r.materials) {
         m.color.setScalar(Math.max(brightness, DRAGON_MIN_BRIGHTNESS));
       }
@@ -606,6 +645,29 @@ export class EntityRenderer {
         m.color.setRGB(0.56 * brightness, 0.42 * brightness, 0.23 * brightness);
       }
       void cameraYaw;
+    }
+  }
+
+  /** 按龙的位置历史摆脖子与尾巴：每一节取"更早若干帧"的位置，自然拖成一条线。 */
+  private syncDragonSegments(dragon: EnderDragonEntity, r: RenderedEntity): void {
+    const meshes = r.extraMeshes;
+    if (!meshes) {
+      return;
+    }
+    for (let i = 0; i < meshes.length; i++) {
+      const spec = DRAGON_SEGMENTS[i];
+      dragon.sampleHistory(spec.delay, this.dragonSample);
+      const sample = this.dragonSample;
+      // 沿该帧朝向再往前 / 往后挪一点，脖子在头前、尾巴在身后
+      const forwardX = -Math.sin(sample.yaw);
+      const forwardZ = -Math.cos(sample.yaw);
+      meshes[i].position.set(
+        sample.x + forwardX * spec.offset,
+        sample.y + spec.rise,
+        sample.z + forwardZ * spec.offset,
+      );
+      meshes[i].rotation.set(0, sample.yaw, 0);
+      meshes[i].visible = !dragon.isDead;
     }
   }
 
