@@ -3182,7 +3182,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
         p.eat(def.food.hunger, def.food.saturation);
         this.sound.play('eat');
         this.useCooldown = EAT_COOLDOWN_TICKS;
-        if (!this.rules.infiniteItems) {
+        if (def.food.leftover) {
+          // 蘑菇煲这类吃完留个空容器（与桶 / 玻璃瓶一致，创造模式不消耗也不换）
+          this.replaceHeldItem(def.food.leftover);
+        } else if (!this.rules.infiniteItems) {
           p.inventory.consume(p.selectedSlot, 1);
         }
         this.renderer.hand.swing();

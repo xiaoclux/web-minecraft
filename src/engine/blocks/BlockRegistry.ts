@@ -292,6 +292,8 @@ export const BlockId = {
   GLASS_PANE: 165,
   IRON_BARS: 166,
   TRAPDOOR: 167,
+  BROWN_MUSHROOM: 168,
+  RED_MUSHROOM: 169,
   LEVER: 69,
   STONE_BUTTON: 77,
   STONE_PRESSURE_PLATE: 70,
@@ -593,6 +595,9 @@ export const BLOCK_DEFS: BlockDef[] = [
     })),
   }),
   cross(BlockId.DANDELION, 'dandelion', '蒲公英', 'dandelion'),
+  // 蘑菇：只长在暗处，随机 tick 会向四周蔓延
+  cross(BlockId.BROWN_MUSHROOM, 'brown_mushroom', '棕色蘑菇', 'brown_mushroom'),
+  cross(BlockId.RED_MUSHROOM, 'red_mushroom', '红色蘑菇', 'red_mushroom'),
   cross(BlockId.POPPY, 'poppy', '虞美人', 'poppy'),
   cube(BlockId.BRICKS, 'bricks', '砖块', same('bricks'), 2, ToolType.PICKAXE, { minTier: ToolTier.WOOD }),
   cube(BlockId.TNT, 'tnt', 'TNT', topSide('tnt_top', 'tnt_side', 'tnt_bottom'), 0, null, {

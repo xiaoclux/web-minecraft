@@ -101,6 +101,9 @@ const ORES: OreConfig[] = [
 /** 树概率上限：随机数超过它的列不用再查群系。 */
 const MAX_TREE_CHANCE = Math.max(...Object.values(BIOME_DEFS).map((b) => b.treeChance));
 const PUMPKIN_CHANCE = 0.0006;
+/** 蘑菇只长在沼泽与黑森林的地面上（1.8.9 里这两处最多）。 */
+const MUSHROOM_BIOMES: ReadonlySet<Biome> = new Set([Biome.SWAMP, Biome.ROOFED_FOREST]);
+const MUSHROOM_CHANCE = 0.006;
 /** 出生点搜索半径与步长。 */
 const SPAWN_SEARCH_RADIUS = 256;
 const SPAWN_SEARCH_STEP = 2;
@@ -457,6 +460,8 @@ export class TerrainGenerator implements ChunkGenerator {
           chunk.setLocal(lx, h + 1, lz, flowerRoll < 0.5 ? BlockId.DANDELION : BlockId.POPPY);
         } else if (roll < flowerEnd + PUMPKIN_CHANCE) {
           chunk.setLocal(lx, h + 1, lz, BlockId.PUMPKIN);
+        } else if (roll < flowerEnd + PUMPKIN_CHANCE + MUSHROOM_CHANCE && MUSHROOM_BIOMES.has(def.id)) {
+          chunk.setLocal(lx, h + 1, lz, flowerRoll < 0.5 ? BlockId.BROWN_MUSHROOM : BlockId.RED_MUSHROOM);
         }
       }
     }

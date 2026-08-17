@@ -23,6 +23,12 @@ const GRASS_SPREAD_MIN_LIGHT = 9;
 const GRASS_DIE_MAX_LIGHT = 4;
 /** 树苗长大的光照下限与每次随机 tick 的概率。 */
 const SAPLING_MIN_LIGHT = 9;
+/** 蘑菇：光照高于这个值就枯死，蔓延也只在暗处发生（1.8.9 是 12）。 */
+const MUSHROOM_MAX_LIGHT = 12;
+/** 每次随机 tick 命中蘑菇时向外蔓延的概率。 */
+const MUSHROOM_SPREAD_CHANCE = 0.25;
+/** 蘑菇蔓延的水平半径。 */
+const MUSHROOM_SPREAD_RANGE = 2;
 const SAPLING_GROW_CHANCE = 0.15;
 /** 树苗长大需要的净空高度。 */
 const SAPLING_CLEARANCE = 6;
@@ -129,6 +135,10 @@ export class RandomTickSystem {
       case BlockId.SAPLING:
         this.tickSapling(x, y, z);
         break;
+      case BlockId.BROWN_MUSHROOM:
+      case BlockId.RED_MUSHROOM:
+        this.tickMushroom(x, y, z, id);
+        break;
       case BlockId.FARMLAND:
         this.tickFarmland(x, y, z);
         break;
@@ -151,6 +161,34 @@ export class RandomTickSystem {
     if (above.opaque || this.host.lightLevelAt(x, y + 1, z) < GRASS_DIE_MAX_LIGHT) {
       world.setBlock(x, y, z, BlockId.DIRT);
     }
+  }
+
+  /** 蘑菇：太亮就枯掉，否则有概率往附近的暗处蔓延一株。 */
+  private tickMushroom(x: number, y: number, z: number, id: number): void {
+    const world = this.host.world;
+    if (this.host.lightLevelAt(x, y, z) > MUSHROOM_MAX_LIGHT) {
+      world.setBlock(x, y, z, BlockId.AIR);
+      return;
+    }
+    if (this.host.random() > MUSHROOM_SPREAD_CHANCE) {
+      return;
+    }
+    const range = MUSHROOM_SPREAD_RANGE * 2 + 1;
+    const nx = x + Math.floor(this.host.random() * range) - MUSHROOM_SPREAD_RANGE;
+    const nz = z + Math.floor(this.host.random() * range) - MUSHROOM_SPREAD_RANGE;
+    const ny = y + Math.floor(this.host.random() * 3) - 1;
+    if (ny < 1 || ny >= WORLD_SIZE_Y) {
+      return;
+    }
+    if (world.getBlock(nx, ny, nz) !== BlockId.AIR || this.host.lightLevelAt(nx, ny, nz) > MUSHROOM_MAX_LIGHT) {
+      return;
+    }
+    // 得站在不透光的实心方块上
+    const ground = getBlock(world.getBlock(nx, ny - 1, nz));
+    if (!ground.solid || !ground.opaque) {
+      return;
+    }
+    world.setBlock(nx, ny, nz, id);
   }
 
   /** 露天且够亮的泥土，若邻近有草方块就长出草。 */

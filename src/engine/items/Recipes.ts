@@ -210,6 +210,8 @@ export const RECIPES: Recipe[] = [
   shaped(['GGG', 'GGG'], { G: 'glass' }, 'glass_pane', 16),
   shaped(['III', 'III'], { I: 'iron_ingot' }, 'iron_bars', 16),
   shaped(['PPP', 'PPP'], { P: '#planks' }, 'trapdoor', 2),
+  shaped(['P P', ' P '], { P: '#planks' }, 'bowl', 4),
+  shapeless(['brown_mushroom', 'red_mushroom', 'bowl'], 'mushroom_stew'),
   shaped(['PPP', 'CIC', 'CRC'], { P: '#planks', C: 'cobblestone', I: 'iron_ingot', R: 'redstone' }, 'piston'),
   shapeless(['piston', 'slimeball'], 'sticky_piston'),
   shaped(['I I', 'ICI', ' I '], { I: 'iron_ingot', C: 'chest' }, 'hopper'),
@@ -221,7 +223,7 @@ export const RECIPES: Recipe[] = [
   shaped(['QQ', 'QQ'], { Q: 'quartz' }, 'quartz_block'),
   shapeless(['blaze_powder', 'slimeball'], 'magma_cream'),
   // 1.8.9 还要一个棕色蘑菇；蘑菇没做之前先用蛛眼 + 糖
-  shapeless(['spider_eye', 'sugar'], 'fermented_spider_eye'),
+  shapeless(['spider_eye', 'sugar', 'brown_mushroom'], 'fermented_spider_eye'),
   shaped(['GG', 'GG'], { G: 'glowstone_dust' }, 'glowstone'),
   shaped([' B ', 'CCC'], { B: 'blaze_rod', C: 'cobblestone' }, 'brewing_stand'),
   shaped([' B ', 'DOD', 'OOO'], { B: 'book', D: 'diamond', O: 'obsidian' }, 'enchanting_table'),

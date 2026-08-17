@@ -767,6 +767,18 @@ function repeater(lit: boolean): Painter {
   };
 }
 
+/** 蘑菇：一根白柄 + 一顶伞盖。 */
+function mushroom(cap: Rgba): Painter {
+  return (c) => {
+    c.fill(TRANSPARENT);
+    const stem = hex('#e0dcd0');
+    c.rect(7, 8, 2, 5, stem);
+    c.rect(5, 4, 6, 4, cap);
+    c.rect(6, 3, 4, 1, shade(cap, 1.15));
+    c.rect(5, 8, 6, 1, shade(cap, 0.8));
+  };
+}
+
 /** 铁栏杆：竖直的铁条。 */
 const ironBars: Painter = (c) => {
   c.fill(TRANSPARENT);
@@ -1209,6 +1221,8 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   daylight_sensor_top: daylightSensorTop,
   daylight_sensor_side: daylightSensorSide,
   comparator,
+  brown_mushroom: mushroom(hex('#a1734f')),
+  red_mushroom: mushroom(hex('#c93a34')),
   iron_bars: ironBars,
   trapdoor,
   tripwire_hook: tripwireHook,

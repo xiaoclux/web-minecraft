@@ -49,6 +49,8 @@ export interface ArmorProps {
 export interface FoodProps {
   hunger: number;
   saturation: number;
+  /** 吃完之后手里剩下什么（蘑菇煲吃完剩个碗）。 */
+  leftover?: string;
 }
 
 /** 物品定义。 */
@@ -308,6 +310,7 @@ export const ITEM_DEFS: ItemDef[] = [
   material('flint', '燧石'),
   material('lapis_lazuli', '青金石'),
   material('sugar', '糖'),
+  material('bowl', '碗'),
   material('gold_nugget', '金粒'),
   material('book', '书'),
   material('enchanted_book', '附魔书', { maxStack: 1 }),
@@ -336,6 +339,7 @@ export const ITEM_DEFS: ItemDef[] = [
   material('lava_bucket', '岩浆桶', { maxStack: 1 }),
   material('milk_bucket', '牛奶桶', { maxStack: 1 }),
   food('apple', '苹果', 4, 2.4),
+  food('mushroom_stew', '蘑菇煲', 6, 7.2, { maxStack: 1, food: { hunger: 6, saturation: 7.2, leftover: 'bowl' } }),
   food('bread', '面包', 5, 6),
   food('porkchop', '生猪排', 3, 1.8, { smeltsInto: 'cooked_porkchop' }),
   food('cooked_porkchop', '熟猪排', 8, 12.8),
