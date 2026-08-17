@@ -110,7 +110,10 @@ export abstract class Entity {
     }
     const wantedDx = this.vx * dt;
     const wantedDz = this.vz * dt;
+    // 结果对象是复用的，先把要用的字段读出来再触发可能引起连锁移动的回调
     const result = moveWithCollisions(world, before, wantedDx, this.vy * dt, wantedDz);
+    const movedDy = result.dy;
+    const landed = result.onGround;
     const wasFalling = this.vy < 0;
     this.x = (result.box.minX + result.box.maxX) / 2;
     this.y = result.box.minY;
@@ -123,15 +126,15 @@ export abstract class Entity {
     }
     this.collidedHorizontally = result.collidedX || result.collidedZ;
     if (result.collidedY) {
-      if (wasFalling && result.onGround) {
+      if (wasFalling && landed) {
         this.onLand(ctx, this.fallDistance);
         this.fallDistance = 0;
       }
       this.vy = 0;
     }
-    this.onGround = result.onGround;
+    this.onGround = landed;
     if (!this.onGround && this.vy < 0) {
-      this.fallDistance += -result.dy;
+      this.fallDistance += -movedDy;
     } else if (this.onGround || this.inWater) {
       this.fallDistance = 0;
     }

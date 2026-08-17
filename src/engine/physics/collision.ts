@@ -4,16 +4,51 @@ import type { World } from '../world/World';
 import { AABB } from './AABB';
 
 const EPSILON = 1e-4;
+/** 碰撞扫描范围在位移之外再多留的一点余量，避免贴着方块面时因浮点误差漏掉那一格。 */
+const SWEEP_MARGIN = 0.05;
 
-/** 收集与包围盒相交区域内的实心方块盒。 */
-export function collectBlockBoxes(world: World, box: AABB): AABB[] {
-  const out: AABB[] = [];
-  const x0 = Math.floor(box.minX);
-  const x1 = Math.floor(box.maxX);
-  const y0 = Math.floor(box.minY);
-  const y1 = Math.floor(box.maxY);
-  const z0 = Math.floor(box.minZ);
-  const z1 = Math.floor(box.maxZ);
+/**
+ * 实心方块盒的复用池：碰撞每帧对每个实体跑一次，逐块 new AABB 是热路径里最大的 GC 来源。
+ * 池里的盒只在下一次 collect 之前有效，调用方不得保留引用。
+ */
+const BOX_POOL: AABB[] = [];
+let boxCount = 0;
+
+function pushBox(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): void {
+  let box = BOX_POOL[boxCount];
+  if (!box) {
+    box = new AABB(0, 0, 0, 0, 0, 0);
+    BOX_POOL[boxCount] = box;
+  }
+  box.minX = x0;
+  box.minY = y0;
+  box.minZ = z0;
+  box.maxX = x1;
+  box.maxY = y1;
+  box.maxZ = z1;
+  boxCount++;
+}
+
+/**
+ * 把与给定范围相交的实心方块盒收进池里。
+ * @returns 收集到的盒数（池里前 n 个有效）
+ */
+function collectBoxes(
+  world: World,
+  minX: number,
+  minY: number,
+  minZ: number,
+  maxX: number,
+  maxY: number,
+  maxZ: number,
+): number {
+  boxCount = 0;
+  const x0 = Math.floor(minX);
+  const x1 = Math.floor(maxX);
+  const y0 = Math.floor(minY);
+  const y1 = Math.floor(maxY);
+  const z0 = Math.floor(minZ);
+  const z1 = Math.floor(maxZ);
   for (let y = y0; y <= y1; y++) {
     for (let z = z0; z <= z1; z++) {
       for (let x = x0; x <= x1; x++) {
@@ -23,30 +58,41 @@ export function collectBlockBoxes(world: World, box: AABB): AABB[] {
           if (!world.isSolidAt(x, y, z)) {
             continue;
           }
-          out.push(new AABB(x, y, z, x + 1, y + 1, z + 1));
-          continue;
-        }
-        const def = getBlock(id);
-        if (!def.solid) {
-          continue;
-        }
-        if (isFullCube(def)) {
-          out.push(new AABB(x, y, z, x + 1, y + 1, z + 1));
-          continue;
-        }
-        const connections = needsConnections(def)
-          ? computeConnections(def, (dx, dz) => getBlock(world.getBlock(x + dx, y, z + dz)))
-          : 0;
-        for (const b of collisionBoxes(def, world.getMeta(x, y, z), connections)) {
-          out.push(new AABB(x + b.x0, y + b.y0, z + b.z0, x + b.x1, y + b.y1, z + b.z1));
+          pushBox(x, y, z, x + 1, y + 1, z + 1);
+        } else {
+          const def = getBlock(id);
+          if (!def.solid) {
+            continue;
+          }
+          if (isFullCube(def)) {
+            pushBox(x, y, z, x + 1, y + 1, z + 1);
+          } else {
+            const connections = needsConnections(def)
+              ? computeConnections(def, (dx, dz) => getBlock(world.getBlock(x + dx, y, z + dz)))
+              : 0;
+            for (const b of collisionBoxes(def, world.getMeta(x, y, z), connections)) {
+              pushBox(x + b.x0, y + b.y0, z + b.z0, x + b.x1, y + b.y1, z + b.z1);
+            }
+          }
         }
       }
     }
   }
+  return boxCount;
+}
+
+/** 收集与包围盒相交区域内的实心方块盒（返回新数组，供不在乎分配的调用方 / 测试用）。 */
+export function collectBlockBoxes(world: World, box: AABB): AABB[] {
+  const n = collectBoxes(world, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
+  const out: AABB[] = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const b = BOX_POOL[i];
+    out[i] = new AABB(b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ);
+  }
   return out;
 }
 
-/** 移动结果。 */
+/** 移动结果。box 与整个对象都是复用的，只在下一次 moveWithCollisions 之前有效。 */
 export interface MoveResult {
   box: AABB;
   dx: number;
@@ -58,38 +104,67 @@ export interface MoveResult {
   onGround: boolean;
 }
 
+const MOVE_RESULT: MoveResult = {
+  box: new AABB(0, 0, 0, 0, 0, 0),
+  dx: 0,
+  dy: 0,
+  dz: 0,
+  collidedX: false,
+  collidedY: false,
+  collidedZ: false,
+  onGround: false,
+};
+
 /**
  * 沿位移移动包围盒并与世界方块做分轴碰撞（先 Y 后 X/Z）。
+ * 返回的结果对象是复用的，调用方应立即读取。
  */
 export function moveWithCollisions(world: World, box: AABB, dx: number, dy: number, dz: number): MoveResult {
-  const sweep = box.expand(Math.abs(dx) + 1, Math.abs(dy) + 1, Math.abs(dz) + 1);
-  const blocks = collectBlockBoxes(world, sweep);
-  let current = box;
+  const ex = Math.abs(dx) + SWEEP_MARGIN;
+  const ey = Math.abs(dy) + SWEEP_MARGIN;
+  const ez = Math.abs(dz) + SWEEP_MARGIN;
+  const count = collectBoxes(
+    world,
+    box.minX - ex,
+    box.minY - ey,
+    box.minZ - ez,
+    box.maxX + ex,
+    box.maxY + ey,
+    box.maxZ + ez,
+  );
+  const current = MOVE_RESULT.box;
+  current.minX = box.minX;
+  current.minY = box.minY;
+  current.minZ = box.minZ;
+  current.maxX = box.maxX;
+  current.maxY = box.maxY;
+  current.maxZ = box.maxZ;
   let moveY = dy;
-  for (const b of blocks) {
-    moveY = clipY(current, b, moveY);
+  for (let i = 0; i < count; i++) {
+    moveY = clipY(current, BOX_POOL[i], moveY);
   }
-  current = current.offset(0, moveY, 0);
+  current.minY += moveY;
+  current.maxY += moveY;
   let moveX = dx;
-  for (const b of blocks) {
-    moveX = clipX(current, b, moveX);
+  for (let i = 0; i < count; i++) {
+    moveX = clipX(current, BOX_POOL[i], moveX);
   }
-  current = current.offset(moveX, 0, 0);
+  current.minX += moveX;
+  current.maxX += moveX;
   let moveZ = dz;
-  for (const b of blocks) {
-    moveZ = clipZ(current, b, moveZ);
+  for (let i = 0; i < count; i++) {
+    moveZ = clipZ(current, BOX_POOL[i], moveZ);
   }
-  current = current.offset(0, 0, moveZ);
-  return {
-    box: current,
-    dx: moveX,
-    dy: moveY,
-    dz: moveZ,
-    collidedX: Math.abs(moveX - dx) > EPSILON,
-    collidedY: Math.abs(moveY - dy) > EPSILON,
-    collidedZ: Math.abs(moveZ - dz) > EPSILON,
-    onGround: dy < 0 && Math.abs(moveY - dy) > EPSILON,
-  };
+  current.minZ += moveZ;
+  current.maxZ += moveZ;
+  MOVE_RESULT.dx = moveX;
+  MOVE_RESULT.dy = moveY;
+  MOVE_RESULT.dz = moveZ;
+  MOVE_RESULT.collidedX = Math.abs(moveX - dx) > EPSILON;
+  MOVE_RESULT.collidedY = Math.abs(moveY - dy) > EPSILON;
+  MOVE_RESULT.collidedZ = Math.abs(moveZ - dz) > EPSILON;
+  MOVE_RESULT.onGround = dy < 0 && MOVE_RESULT.collidedY;
+  return MOVE_RESULT;
 }
 
 function clipY(a: AABB, b: AABB, dy: number): number {
@@ -131,9 +206,24 @@ function clipZ(a: AABB, b: AABB, dz: number): number {
   return dz;
 }
 
-/** 包围盒是否与任何实心方块重叠。 */
+/** 包围盒是否与任何实心方块重叠（扫到第一个相交的就停）。 */
 export function isBoxBlocked(world: World, box: AABB): boolean {
-  return collectBlockBoxes(world, box).some((b) => b.intersects(box));
+  // 只扫盒子实际覆盖的格；maxX 恰好落在整数边界时不算下一格
+  const count = collectBoxes(
+    world,
+    box.minX,
+    box.minY,
+    box.minZ,
+    box.maxX - EPSILON,
+    box.maxY - EPSILON,
+    box.maxZ - EPSILON,
+  );
+  for (let i = 0; i < count; i++) {
+    if (BOX_POOL[i].intersects(box)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** 采样点向包围盒内收缩的距离，避免恰好落在相邻方块列上。 */
@@ -144,7 +234,8 @@ const LIQUID_SAMPLE_INSET = 0.05;
  */
 export function isBoxInLiquid(world: World, box: AABB, fraction = 0.5): boolean {
   const y = Math.floor(box.minY + (box.maxY - box.minY) * fraction);
-  const [cx, , cz] = box.center();
+  const cx = (box.minX + box.maxX) / 2;
+  const cz = (box.minZ + box.maxZ) / 2;
   const x0 = box.minX + LIQUID_SAMPLE_INSET;
   const x1 = box.maxX - LIQUID_SAMPLE_INSET;
   const z0 = box.minZ + LIQUID_SAMPLE_INSET;
