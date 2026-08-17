@@ -45,6 +45,12 @@ export function isContainerScreen(screen: Screen): boolean {
   return CONTAINER_SCREENS.has(screen);
 }
 
+/** HUD 顶部的 Boss 血条数据。 */
+export interface BossStatus {
+  label: string;
+  ratio: number;
+}
+
 /** 引擎暴露给 React 的 UI 状态快照。 */
 export interface GameUiState {
   mode: GameMode;
@@ -76,7 +82,7 @@ export interface GameUiState {
   /** 成就 / 统计每变化一次 +1（成就页据此刷新）。 */
   achievementVersion: number;
   /** Boss 血条：没有 Boss 时为 null。 */
-  boss: { label: string; ratio: number } | null;
+  boss: BossStatus | null;
   /** 聊天记录（最新的在最后）。 */
   chat: readonly ChatMessage[];
   /** 聊天栏是否打开。 */
@@ -84,7 +90,6 @@ export interface GameUiState {
   debug: DebugInfo | null;
   isLoading: boolean;
   loadingText: string;
-  timeOfDay: number;
   /** 打开中的容器交互位置（工作台/熔炉）。 */
   openBlock: { x: number; y: number; z: number } | null;
   /** 光标拿着的物品。 */

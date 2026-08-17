@@ -26,6 +26,7 @@ import {
   Difficulty,
   DOUBLE_TAP_MS,
   GameMode,
+  HOTBAR_SIZE,
   ITEM_DROP_SPAWN_SPEED,
   MAX_TICKS_PER_FRAME,
   PLAYER_FLY_SPEED,
@@ -171,7 +172,7 @@ import { EffectId, isEffectId, type ActiveEffect } from './entities/effects';
 import { Mob } from './entities/Mob';
 import { MobType, isMobType } from './entities/MobDefs';
 import { MobSpawner } from './entities/MobSpawner';
-import { Screen, isContainerScreen, type DebugInfo, type GameUiState } from './events/GameState';
+import { Screen, isContainerScreen, type BossStatus, type DebugInfo, type GameUiState } from './events/GameState';
 import { Store } from './events/Store';
 import { ContainerController, type ContainerHost, type SlotRef } from './items/ContainerController';
 import { createFurnace, tickFurnace, type FurnaceState } from './items/Furnace';
@@ -524,6 +525,8 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   /** 上次交给 HUD 的效果列表及其对应的版本号（见 effectsForHud）。 */
   private hudEffects: ActiveEffect[] = EMPTY_EFFECTS;
   private hudEffectsVersion = -1;
+  /** 上一次交给 HUD 的 Boss 血条快照，内容没变就复用引用避免重渲染。 */
+  private hudBoss: BossStatus | null = null;
   private rafId = 0;
   private lastFrame = 0;
   private accumulator = 0;
@@ -649,7 +652,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       debug: null,
       isLoading: true,
       loadingText: '生成世界中…',
-      timeOfDay: 0,
       openBlock: null,
       cursorStack: null,
       deathMessage: '',
@@ -1216,7 +1218,17 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   }
 
   /** Boss 血条内容（当前维度里活着的末影龙）。 */
-  private bossStatus(): { label: string; ratio: number } | null {
+  /** Boss 血条：只有 label / ratio 变化时才换新对象，让 Store 的浅比较能挡住无变化的 tick。 */
+  private bossStatusForHud(): BossStatus | null {
+    const next = this.bossStatus();
+    const prev = this.hudBoss;
+    if (next === null || prev === null || prev.label !== next.label || prev.ratio !== next.ratio) {
+      this.hudBoss = next;
+    }
+    return this.hudBoss;
+  }
+
+  private bossStatus(): BossStatus | null {
     for (const e of this.entities.values()) {
       if (e instanceof EnderDragonEntity && !e.isDead && e.health > 0) {
         return { label: '末影龙', ratio: e.healthRatio };
@@ -2476,7 +2488,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       health: p.health,
       food: p.food,
       achievementVersion: this.achievements.version,
-      boss: this.bossStatus(),
+      boss: this.bossStatusForHud(),
       air: p.air,
       armor: p.armorPoints,
       effects: this.effectsForHud(),
@@ -2487,7 +2499,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       isUnderwater: this.isPlayerUnderwater(),
       breakProgress: this.breakNeededTicks > 0 ? this.breakProgressTicks / this.breakNeededTicks : 0,
       targetLabel: this.currentHit ? this.blockLabelAt(this.currentHit.x, this.currentHit.y, this.currentHit.z) : '',
-      timeOfDay: (this.timeTick % DAY_LENGTH_TICKS) / DAY_LENGTH_TICKS,
       debug: this.debugEnabled ? this.buildDebugInfo() : null,
       cursorStack: this.containers.cursor,
     });
@@ -2541,9 +2552,8 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     };
     this.controls.onKeyDown = (code, ctrlKey) => this.handleKey(code, ctrlKey);
     this.controls.onMouseDown = (button) => this.handleMouseDown(button);
-    this.controls.onWheel = (deltaY) => {
-      const dir = deltaY > 0 ? 1 : -1;
-      this.selectSlot((this.player.selectedSlot + dir + 9) % 9);
+    this.controls.onWheel = (direction) => {
+      this.selectSlot((this.player.selectedSlot + direction + HOTBAR_SIZE) % HOTBAR_SIZE);
     };
   }
 

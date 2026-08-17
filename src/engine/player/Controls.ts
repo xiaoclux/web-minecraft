@@ -14,6 +14,15 @@ export interface InputState {
 
 /** 俯仰角上下限（略小于 90°，避免万向锁）。 */
 const PITCH_LIMIT = Math.PI / 2 - 0.001;
+/**
+ * 滚轮累计到多少像素才切一格快捷栏。
+ * 触控板一次两指滑动会连发几十个小 delta 事件，逐个响应会在一瞬间来回切好几格并连带重建手持模型。
+ */
+const WHEEL_SLOT_STEP_PIXELS = 40;
+/** deltaMode 为"行"时每行折算的像素数（浏览器惯例）。 */
+const WHEEL_LINE_PIXELS = 16;
+/** 每次滚轮切格后至少间隔多久才允许再切（毫秒），把惯性滚动压成可控的节奏。 */
+const WHEEL_SLOT_COOLDOWN_MS = 60;
 
 /** 处理键鼠与触屏输入、指针锁定。 */
 /** 事件目标是不是文本输入框（打字时游戏按键要让路）。 */
@@ -29,12 +38,15 @@ export class Controls {
   private locked = false;
   private virtualForward = 0;
   private virtualStrafe = 0;
+  private wheelAccum = 0;
+  private lastWheelSwitch = 0;
   private handlers: { type: string; target: EventTarget; fn: EventListener }[] = [];
   /** 一次性事件回调。 */
   onKeyDown: ((code: string, ctrlKey: boolean) => void) | null = null;
   onMouseDown: ((button: number) => void) | null = null;
   onMouseUp: ((button: number) => void) | null = null;
-  onWheel: ((deltaY: number) => void) | null = null;
+  /** 滚轮切快捷栏：direction 为 +1（下一格）或 -1（上一格）。 */
+  onWheel: ((direction: number) => void) | null = null;
   onLockChange: ((locked: boolean) => void) | null = null;
 
   constructor(
@@ -91,7 +103,7 @@ export class Controls {
     });
     on(document, 'wheel', (e) => {
       if (this.locked) {
-        this.onWheel?.(e.deltaY);
+        this.handleWheel(e);
       }
     });
     on(document, 'pointerlockchange', () => {
@@ -103,6 +115,27 @@ export class Controls {
     });
     on(document, 'contextmenu', (e) => e.preventDefault());
     on(window, 'blur', () => this.clearInput());
+  }
+
+  /** 滚轮切快捷栏：累计位移过阈值才切一格，并做最小间隔限流。 */
+  private handleWheel(e: WheelEvent): void {
+    const delta = e.deltaMode === WheelEvent.DOM_DELTA_PIXEL ? e.deltaY : e.deltaY * WHEEL_LINE_PIXELS;
+    // 反向滚动时清掉之前的累计，避免"往回一点点"被旧方向吃掉
+    if (Math.sign(delta) !== Math.sign(this.wheelAccum)) {
+      this.wheelAccum = 0;
+    }
+    this.wheelAccum += delta;
+    if (Math.abs(this.wheelAccum) < WHEEL_SLOT_STEP_PIXELS) {
+      return;
+    }
+    const now = performance.now();
+    if (now - this.lastWheelSwitch < WHEEL_SLOT_COOLDOWN_MS) {
+      return;
+    }
+    this.lastWheelSwitch = now;
+    const dir = Math.sign(this.wheelAccum);
+    this.wheelAccum = 0;
+    this.onWheel?.(dir);
   }
 
   /**

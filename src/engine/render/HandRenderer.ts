@@ -20,6 +20,8 @@ export class HandRenderer {
   private swingStart = 0;
   private baseColor = new THREE.Color(1, 1, 1);
   private readonly textureCache = new Map<string, THREE.Texture>();
+  /** 每种手持物只建一次网格：切物品栏只是换个子节点，不再每次新建材质 / 几何体。 */
+  private readonly meshCache = new Map<string, { mesh: THREE.Mesh; baseColor: THREE.Color }>();
 
   constructor(private readonly atlas: TextureAtlas) {
     this.group.position.copy(HAND_POSITION);
@@ -57,19 +59,30 @@ export class HandRenderer {
   private rebuild(itemId: string | null): void {
     if (this.mesh) {
       this.group.remove(this.mesh);
-      this.mesh.geometry.dispose();
       this.mesh = null;
     }
+    const cacheKey = itemId ?? 'hand';
+    let entry = this.meshCache.get(cacheKey);
+    if (!entry) {
+      entry = this.buildMesh(itemId);
+      this.meshCache.set(cacheKey, entry);
+    }
+    this.mesh = entry.mesh;
+    this.baseColor.copy(entry.baseColor);
+    this.group.add(this.mesh);
+  }
+
+  private buildMesh(itemId: string | null): { mesh: THREE.Mesh; baseColor: THREE.Color } {
     const def = itemId ? getItem(itemId) : undefined;
-    this.baseColor.set(1, 1, 1);
+    const baseColor = new THREE.Color(1, 1, 1);
+    let mesh: THREE.Mesh;
     if (!def) {
       const skin = new THREE.MeshBasicMaterial({ color: HAND_SKIN_COLOR, depthTest: false, depthWrite: false });
-      this.baseColor.copy(HAND_SKIN_COLOR);
-      this.mesh = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.45), skin);
-      this.mesh.rotation.set(0.2, 0, 0);
-      this.mesh.renderOrder = HAND_RENDER_ORDER;
-      this.group.add(this.mesh);
-      return;
+      baseColor.copy(HAND_SKIN_COLOR);
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.45), skin);
+      mesh.rotation.set(0.2, 0, 0);
+      mesh.renderOrder = HAND_RENDER_ORDER;
+      return { mesh, baseColor };
     }
     if (def.kind === ItemKind.BLOCK && def.blockId !== undefined && getBlock(def.blockId).render !== RenderType.CROSS) {
       const block = getBlock(def.blockId);
@@ -91,8 +104,8 @@ export class HandRenderer {
             depthWrite: false,
           }),
       );
-      this.mesh = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SCALE, BLOCK_SCALE, BLOCK_SCALE), mats);
-      this.mesh.rotation.set(0.1, -0.6, 0);
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SCALE, BLOCK_SCALE, BLOCK_SCALE), mats);
+      mesh.rotation.set(0.1, -0.6, 0);
     } else {
       const key =
         def.kind === ItemKind.BLOCK && def.blockId !== undefined
@@ -107,11 +120,11 @@ export class HandRenderer {
         depthTest: false,
         depthWrite: false,
       });
-      this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(ITEM_SCALE, ITEM_SCALE), mat);
-      this.mesh.rotation.set(0, -0.4, 0.4);
+      mesh = new THREE.Mesh(new THREE.PlaneGeometry(ITEM_SCALE, ITEM_SCALE), mat);
+      mesh.rotation.set(0, -0.4, 0.4);
     }
-    this.mesh.renderOrder = HAND_RENDER_ORDER;
-    this.group.add(this.mesh);
+    mesh.renderOrder = HAND_RENDER_ORDER;
+    return { mesh, baseColor };
   }
 
   private blockTexture(key: string): THREE.Texture {
