@@ -23,6 +23,12 @@ const WHEEL_SLOT_STEP_PIXELS = 40;
 const WHEEL_LINE_PIXELS = 16;
 /** 每次滚轮切格后至少间隔多久才允许再切（毫秒），把惯性滚动压成可控的节奏。 */
 const WHEEL_SLOT_COOLDOWN_MS = 60;
+/**
+ * 单个 mousemove 事件允许的最大位移（像素）。
+ * 高回报率鼠标（1000Hz 以上）在指针锁定下，Chromium 偶尔会吐出一个几千像素的错误 movementX/Y，
+ * 视角瞬间甩一圈又甩回来，看起来就是闪屏。正常操作里一个事件（≤ 8ms）不可能有这么大位移，直接丢弃。
+ */
+const MAX_LOOK_DELTA_PIXELS = 400;
 
 /** 处理键鼠与触屏输入、指针锁定。 */
 /** 事件目标是不是文本输入框（打字时游戏按键要让路）。 */
@@ -36,6 +42,8 @@ export class Controls {
   yaw = 0;
   pitch = 0;
   private locked = false;
+  /** 浏览器不支持 unadjustedMovement 时记住，之后直接走普通锁定。 */
+  private isUnadjustedMovementUnsupported = false;
   private virtualForward = 0;
   private virtualStrafe = 0;
   private wheelAccum = 0;
@@ -86,6 +94,10 @@ export class Controls {
     on(document, 'keyup', (e) => this.keys.delete(e.code));
     on(document, 'mousemove', (e) => {
       if (!this.locked) {
+        return;
+      }
+      const isSpike = Math.abs(e.movementX) > MAX_LOOK_DELTA_PIXELS || Math.abs(e.movementY) > MAX_LOOK_DELTA_PIXELS;
+      if (isSpike) {
         return;
       }
       this.lookByPixels(e.movementX, e.movementY, 'mouse');
@@ -193,19 +205,47 @@ export class Controls {
     this.handlers = [];
   }
 
-  /** 请求指针锁定。 */
+  /**
+   * 请求指针锁定。
+   * 优先要"未经系统加速的原始位移"（unadjustedMovement），高回报率鼠标下位移更平滑；
+   * 浏览器不支持时退回普通锁定。
+   */
   requestLock(): void {
-    if (!this.locked) {
-      try {
-        const result = this.element.requestPointerLock() as unknown;
-        if (result instanceof Promise) {
-          result.catch(() => {
-            /* 用户取消或浏览器拒绝：保持未锁定状态即可 */
-          });
-        }
-      } catch {
-        // 某些浏览器在快速重复请求时抛错，忽略
+    if (this.locked) {
+      return;
+    }
+    if (this.isUnadjustedMovementUnsupported) {
+      this.requestPlainLock();
+      return;
+    }
+    try {
+      const result = this.element.requestPointerLock({ unadjustedMovement: true }) as unknown;
+      if (result instanceof Promise) {
+        result.catch((err: unknown) => {
+          // 只有"不支持该选项"才退回普通锁定；用户取消之类的拒绝保持未锁定即可
+          if (err instanceof DOMException && err.name === 'NotSupportedError') {
+            this.isUnadjustedMovementUnsupported = true;
+            this.requestPlainLock();
+          }
+        });
       }
+    } catch {
+      this.isUnadjustedMovementUnsupported = true;
+      this.requestPlainLock();
+    }
+  }
+
+  /** 不带选项的普通指针锁定（老浏览器 / 不支持原始位移时的退路）。 */
+  private requestPlainLock(): void {
+    try {
+      const result = this.element.requestPointerLock() as unknown;
+      if (result instanceof Promise) {
+        result.catch(() => {
+          /* 用户取消或浏览器拒绝：保持未锁定状态即可 */
+        });
+      }
+    } catch {
+      // 某些浏览器在快速重复请求时抛错，忽略
     }
   }
 
