@@ -7,12 +7,20 @@ import { rleDecode, rleDecodeAuto, rleEncode } from './serialize';
  * 数组长度按 chunk 最高的已分配段截断，因此高空全是空气时不会写入无用数据。
  */
 export function serializeChunk(chunk: Chunk): ChunkSaveData {
-  return {
+  // 自动存档会把所有改过的 chunk 都序列化一遍；上次存档后没再动过的直接复用，省掉一次 RLE 编码
+  const cached = chunk.saveCache as ChunkSaveData | null;
+  if (cached && !chunk.isDirtySinceSave) {
+    return cached;
+  }
+  const data: ChunkSaveData = {
     cx: chunk.cx,
     cz: chunk.cz,
     blocks: rleEncode(chunk.toFlatBlocks()),
     meta: rleEncode(chunk.toFlatMeta()),
   };
+  chunk.saveCache = data;
+  chunk.isDirtySinceSave = false;
+  return data;
 }
 
 /**

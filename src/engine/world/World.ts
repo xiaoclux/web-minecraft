@@ -224,7 +224,7 @@ export class World {
     section ??= chunk.ensureSectionAt(y);
     section.blocks[idx] = id;
     section.meta[idx] = meta;
-    chunk.isModified = true;
+    chunk.markModified();
     this.markDirtyAround(x, y, z);
     if (this.batchDepth > 0) {
       this.batchChanges.push({ x, y, z, oldId: old, newId: id });
@@ -246,7 +246,7 @@ export class World {
       return false;
     }
     (this.hitSection ?? this.hitChunk!.ensureSectionAt(y)).meta[this.hitIndex] = meta;
-    this.hitChunk!.isModified = true;
+    this.hitChunk!.markModified();
     this.markDirtyAround(x, y, z);
     return true;
   }

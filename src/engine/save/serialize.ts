@@ -1,17 +1,29 @@
 /** 对方块数组做 RLE 压缩：[count, id, count, id, ...]。 */
 export function rleEncode(data: Uint8Array): Uint32Array {
-  const out: number[] = [];
-  let i = 0;
-  while (i < data.length) {
+  // 先数出有多少段，直接分配定长输出，避免 number[] 增长再整体拷贝
+  let runs = 0;
+  for (let i = 0; i < data.length; ) {
     const value = data[i];
-    let run = 1;
-    while (i + run < data.length && data[i + run] === value && run < 0xffffffff) {
-      run++;
+    let j = i + 1;
+    while (j < data.length && data[j] === value) {
+      j++;
     }
-    out.push(run, value);
-    i += run;
+    runs++;
+    i = j;
   }
-  return Uint32Array.from(out);
+  const out = new Uint32Array(runs * 2);
+  let n = 0;
+  for (let i = 0; i < data.length; ) {
+    const value = data[i];
+    let j = i + 1;
+    while (j < data.length && data[j] === value) {
+      j++;
+    }
+    out[n++] = j - i;
+    out[n++] = value;
+    i = j;
+  }
+  return out;
 }
 
 /** RLE 解压到指定长度。 */

@@ -92,8 +92,18 @@ export class Chunk {
   readonly pendingBlockEntities: PendingBlockEntity[] = [];
   /** 玩家 / 实体改动过 → 必须存档、不可卸载。 */
   isModified = false;
+  /** 上次序列化之后又有改动（存档时据此决定能不能复用缓存的序列化结果）。 */
+  isDirtySinceSave = false;
+  /** 上一次序列化的结果缓存（由 chunkSerializer 维护，泛型化以免 Chunk 依赖存档模块）。 */
+  saveCache: unknown = null;
   /** 光照是否已计算。 */
   isLit = false;
+
+  /** 记录一次玩家 / 实体改动。 */
+  markModified(): void {
+    this.isModified = true;
+    this.isDirtySinceSave = true;
+  }
   /** 已分配段的段号范围；无任何分配时 lowestSection > highestSection。 */
   private lowestSection = SECTION_COUNT;
   private highestSection = -1;
