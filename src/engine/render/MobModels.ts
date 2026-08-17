@@ -59,6 +59,8 @@ const SKELETON_FACE = ['........', '........', '.KK..KK.', '.KK..KK.', '........
 /** 狼：灰白毛 + 黑眼睛，尾巴用一节额外的方块。 */
 const WOLF_FUR = '#d7d3d2';
 const WOLF_FACE = ['........', '........', '..K..K..', '..K..K..', '........', '...KK...', '...KK...', '........'];
+/** 豹猫：浅黄底 + 黑眼。 */
+const OCELOT_FACE = ['........', '........', '..K..K..', '..K..K..', '........', '...KK...', '........', '........'];
 const VILLAGER_SKIN = '#c69b7b';
 const VILLAGER_ROBE = '#8a6a45';
 const VILLAGER_FACE = ['........', '........', '.KK..KK.', '.KK..KK.', '..NNNN..', '..NNNN..', '...NN...', '........'];
@@ -501,6 +503,16 @@ export const MOB_MODELS: Record<MobType, MobModelSpec> = {
   },
   spider: SPIDER_MODEL,
   cave_spider: SPIDER_MODEL,
+  ocelot: quadruped(
+    [5, 5, 9],
+    6,
+    5,
+    2,
+    '#efc88a',
+    '#efc88a',
+    { size: [5, 5, 5], y: 8, color: '#efc88a', face: OCELOT_FACE },
+    [{ name: 'tail', size: [2, 7, 2], pivot: [0, 9, 5], offset: [0, -3, 0], color: '#efc88a', anim: PartAnim.NONE }],
+  ),
   wolf: quadruped(
     [6, 6, 10],
     7,

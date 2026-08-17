@@ -135,3 +135,9 @@ export const CACTUS_DAMAGE = 1;
 /** 告示牌的行数与每行最多几个字符（1.8.9 是 4 行 × 15 字符）。 */
 export const SIGN_LINE_COUNT = 4;
 export const SIGN_LINE_MAX_CHARS = 15;
+
+/** 钓鱼：抛竿后咬钩的等待时间区间（1.8.9 为 5~30 秒）。 */
+export const FISHING_MIN_WAIT_TICKS = 100;
+export const FISHING_MAX_WAIT_TICKS = 600;
+/** 浮漂最远能抛多远（格）。 */
+export const FISHING_MAX_DISTANCE = 6;

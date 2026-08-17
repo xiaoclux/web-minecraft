@@ -82,7 +82,7 @@ import {
   WITHER_KILL_XP,
 } from './constants/mobs';
 import { CHEST_SLOT_COUNT } from './constants/ui';
-import { rollLoot } from './world/structures/LootTables';
+import { LootTable, rollLoot, rollOne } from './world/structures/LootTables';
 import { WATER_SOURCE_META, WATER_TICK_INTERVAL } from './constants/fluids';
 import {
   DAY_LENGTH_TICKS,
@@ -113,6 +113,7 @@ import { VILLAGER_PROFESSIONS, type TradeOffer } from './entities/villagerTrades
 import { potionOfItem } from './items/potions';
 import { biomeHasSnowfall, biomeLabel } from './world/biomes';
 import { ArrowEntity } from './entities/ArrowEntity';
+import { FishingBobberEntity } from './entities/FishingBobberEntity';
 import { ThrownItemEntity } from './entities/ThrownItemEntity';
 import { ThrownPotionEntity } from './entities/ThrownPotionEntity';
 import { FireballEntity } from './entities/FireballEntity';
@@ -406,6 +407,10 @@ const DIG_SOUND_INTERVAL_TICKS = 5;
 const NIGHT_VISION_MIN_LIGHT = 0.9;
 /** 没在交易时返回的空交易表。 */
 const EMPTY_TRADES: readonly TradeOffer[] = [];
+/** 钓鱼竿的物品 id 与抛竿的初速、上抛量。 */
+const FISHING_ROD_ITEM_ID = 'fishing_rod';
+const FISHING_CAST_SPEED = 10;
+const FISHING_CAST_LIFT = 4;
 /** 弓与箭的物品 id。 */
 const BOW_ITEM_ID = 'bow';
 const ARROW_ITEM_ID = 'arrow';
@@ -630,6 +635,8 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   private scheduledUpdates: { x: number; y: number; z: number; ticks: number }[] = [];
   /** 按下的按钮（到时间弹回）。 */
   private pressedButtons: { x: number; y: number; z: number; ticks: number }[] = [];
+  /** 当前抛出去的鱼漂；没抛时为 null。 */
+  private bobber: FishingBobberEntity | null = null;
   /** 正在交易的村民；没在交易时为 null。 */
   private tradingVillager: Mob | null = null;
   /** 拉弓已经拉了多少 tick；-1 表示没在拉。 */
@@ -2728,6 +2735,51 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     }
   }
 
+  /**
+   * 右键鱼竿：没抛就抛出去，抛了就收竿。
+   * 收竿时若鱼已咬钩，按钓鱼战利品表给一份收获。
+   */
+  private useFishingRod(): void {
+    const existing = this.bobber;
+    if (existing && !existing.isDead) {
+      this.reelIn(existing);
+      return;
+    }
+    const p = this.player;
+    const dir = this.lookDirection();
+    const bobber = new FishingBobberEntity(p.id);
+    bobber.setPosition(p.x, p.eyeY, p.z);
+    bobber.vx = dir.x * FISHING_CAST_SPEED;
+    bobber.vy = dir.y * FISHING_CAST_SPEED + FISHING_CAST_LIFT;
+    bobber.vz = dir.z * FISHING_CAST_SPEED;
+    this.spawnEntity(bobber);
+    this.bobber = bobber;
+    this.sound.play('bow');
+    this.renderer.hand.swing();
+    this.useCooldown = PLACE_COOLDOWN_TICKS;
+  }
+
+  /** 收竿：咬钩了就把东西钓上来，没咬钩就白收一次。 */
+  private reelIn(bobber: FishingBobberEntity): void {
+    bobber.isDead = true;
+    this.bobber = null;
+    this.renderer.hand.swing();
+    this.useCooldown = PLACE_COOLDOWN_TICKS;
+    if (!bobber.hasBite) {
+      return;
+    }
+    this.sound.play('pop');
+    this.damageHeldTool(1);
+    // 一竿必有收获：按权重抽一样（多半是鱼，偶尔是垃圾或绿宝石）
+    const stack = rollOne(LootTable.FISHING, this.rng);
+    this.achievements.onItemObtained(stack.id);
+    const leftover = this.player.inventory.add(stack);
+    if (leftover > 0) {
+      this.dropItem(this.player.x, this.player.eyeY, this.player.z, { ...stack, count: leftover }, 0.2);
+    }
+    this.bumpInventory();
+  }
+
   /** 开始拉弓（手里有箭或创造模式才拉得开）。 */
   private drawBow(): void {
     if (this.bowDrawTicks >= 0) {
@@ -3329,6 +3381,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
         }
         this.renderer.hand.swing();
       }
+      return;
+    }
+    if (def.id === FISHING_ROD_ITEM_ID) {
+      this.useFishingRod();
       return;
     }
     if (def.id === BOW_ITEM_ID) {

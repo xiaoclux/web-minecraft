@@ -14,6 +14,8 @@ export type ItemKind = (typeof ItemKind)[keyof typeof ItemKind];
 
 /** 剪刀耐久（1.8.9 为 238）。 */
 export const SHEARS_DURABILITY = 238;
+/** 钓鱼竿耐久（1.8.9 为 65 次）。 */
+export const FISHING_ROD_DURABILITY = 65;
 
 /** 工具属性。 */
 export interface ToolProps {
@@ -313,6 +315,7 @@ export const ITEM_DEFS: ItemDef[] = [
   material('sugar', '糖'),
   material('cocoa_beans', '可可豆'),
   material('emerald', '绿宝石'),
+  material('fishing_rod', '钓鱼竿', { maxStack: 1, durability: FISHING_ROD_DURABILITY }),
   material('bowl', '碗'),
   material('gold_nugget', '金粒'),
   material('book', '书'),
@@ -344,6 +347,8 @@ export const ITEM_DEFS: ItemDef[] = [
   food('apple', '苹果', 4, 2.4),
   food('pumpkin_pie', '南瓜派', 8, 4.8),
   food('cookie', '曲奇', 2, 0.4),
+  food('fish', '生鱼', 2, 0.4, { smeltsInto: 'cooked_fish' }),
+  food('cooked_fish', '熟鱼', 5, 6),
   food('mushroom_stew', '蘑菇煲', 6, 7.2, { maxStack: 1, food: { hunger: 6, saturation: 7.2, leftover: 'bowl' } }),
   food('bread', '面包', 5, 6),
   food('porkchop', '生猪排', 3, 1.8, { smeltsInto: 'cooked_porkchop' }),

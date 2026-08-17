@@ -5,6 +5,7 @@ import { ArrowEntity } from '../entities/ArrowEntity';
 import { XpOrbEntity } from '../entities/XpOrbEntity';
 import type { Entity } from '../entities/Entity';
 import { ItemDropEntity } from '../entities/ItemDropEntity';
+import { FishingBobberEntity } from '../entities/FishingBobberEntity';
 import { ThrownItemEntity } from '../entities/ThrownItemEntity';
 import { ThrownPotionEntity } from '../entities/ThrownPotionEntity';
 import { FireballEntity } from '../entities/FireballEntity';
@@ -58,7 +59,7 @@ interface RenderedEntity {
   group: THREE.Group;
   parts: { mesh: THREE.Mesh; spec: PartSpec }[];
   materials: THREE.MeshLambertMaterial[];
-  kind: 'mob' | 'item' | 'arrow' | 'xp' | 'fireball' | 'crystal' | 'dragon' | 'wither' | 'minecart';
+  kind: 'mob' | 'item' | 'arrow' | 'xp' | 'fireball' | 'crystal' | 'dragon' | 'wither' | 'minecart' | 'bobber';
   /** 不跟随 group 变换、需要各自摆在世界坐标里的部件（末影龙的脖子与尾巴分段）。 */
   extraMeshes?: THREE.Mesh[];
 }
@@ -288,6 +289,9 @@ export class EntityRenderer {
     if (entity instanceof ThrownItemEntity) {
       return this.createItem({ id: entity.itemId, count: 1 });
     }
+    if (entity instanceof FishingBobberEntity) {
+      return this.createBobber();
+    }
     if (entity instanceof ArrowEntity) {
       return this.createArrow();
     }
@@ -489,6 +493,15 @@ export class EntityRenderer {
       segments.push(mesh);
     }
     return { group, parts: [], materials: [m], kind: 'dragon', extraMeshes: segments };
+  }
+
+  /** 钓鱼浮漂：一个小白红方块。 */
+  private createBobber(): RenderedEntity {
+    const group = new THREE.Group();
+    const m = new THREE.MeshLambertMaterial({ color: 0xdd4444 });
+    const mesh = new THREE.Mesh(this.boxGeometry(2, 2, 2), m);
+    group.add(mesh);
+    return { group, parts: [], materials: [m], kind: 'bobber' };
   }
 
   /** 凋灵：一根身体 + 三个头。 */

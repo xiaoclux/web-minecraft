@@ -214,6 +214,7 @@ export const RECIPES: Recipe[] = [
   shaped(['P P', ' P '], { P: '#planks' }, 'bowl', 4),
   shaped(['EEE', 'EEE', 'EEE'], { E: 'emerald' }, 'emerald_block'),
   shapeless(['emerald_block'], 'emerald', 9),
+  shaped(['  S', ' SF', 'S F'], { S: 'stick', F: 'string' }, 'fishing_rod'),
   shapeless(['brown_mushroom', 'red_mushroom', 'bowl'], 'mushroom_stew'),
   shapeless(['pumpkin', 'sugar', 'egg'], 'pumpkin_pie'),
   shaped(['WCW'], { W: 'wheat', C: 'cocoa_beans' }, 'cookie', 8),

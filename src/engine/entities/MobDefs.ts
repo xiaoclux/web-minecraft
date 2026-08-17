@@ -22,6 +22,7 @@ export const MobType = {
   VILLAGER: 'villager',
   CAVE_SPIDER: 'cave_spider',
   WOLF: 'wolf',
+  OCELOT: 'ocelot',
 } as const;
 export type MobType = (typeof MobType)[keyof typeof MobType];
 
@@ -154,6 +155,21 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     tameItems: ['bone'],
     tameChance: 1 / 3,
     tamedAttacksBack: true,
+  },
+  ocelot: {
+    type: 'ocelot',
+    label: '豹猫',
+    width: 0.6,
+    height: 0.7,
+    maxHealth: 10,
+    speed: 3.4,
+    hostile: false,
+    attackDamage: 0,
+    drops: [],
+    xp: 3,
+    burnsInSunlight: false,
+    tameItems: ['fish'],
+    tameChance: 1 / 3,
   },
   cave_spider: {
     type: 'cave_spider',
