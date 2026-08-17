@@ -775,6 +775,17 @@ const noteBlock: Painter = (c, rng) => {
   c.rect(6, 6, 4, 4, hex('#2a1d12'));
 };
 
+/** 阳光传感器：木框 + 深蓝玻璃板。 */
+const daylightSensorTop: Painter = (c, rng) => {
+  c.noise(hex('#6b4b2c'), 0.08, rng);
+  c.rect(2, 2, 12, 12, hex('#1d3f6b'));
+  c.rect(4, 4, 8, 8, hex('#2f6aa8'));
+};
+const daylightSensorSide: Painter = (c, rng) => {
+  c.noise(hex('#6b4b2c'), 0.08, rng);
+  c.rect(0, 0, 16, 4, hex('#1d3f6b'));
+};
+
 /** 拉杆：石座 + 木柄。 */
 const lever: Painter = (c) => {
   c.fill(TRANSPARENT);
@@ -903,10 +914,11 @@ const netherBricks: Painter = (c, rng) => {
 };
 
 /** 传送门：紫色漩涡。 */
+/** 下界传送门：半透明的紫色雾面，透过去还能看见后面的方块。 */
 const netherPortal: Painter = (c, rng) => {
-  c.noise(hex('#7a3ac0'), 0.25, rng);
-  c.speckle(hex('#c08ae8'), 40, rng);
-  c.speckle(hex('#3a1060'), 30, rng);
+  c.noise(hex('#7a3ac0b8'), 0.25, rng);
+  c.speckle(hex('#c08ae8d0'), 40, rng);
+  c.speckle(hex('#3a1060c8'), 30, rng);
 };
 
 /** 甘蔗：细长的浅绿叶片。 */
@@ -1141,6 +1153,8 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   piston_top: pistonTop,
   sticky_piston_top: stickyPistonTop,
   note_block: noteBlock,
+  daylight_sensor_top: daylightSensorTop,
+  daylight_sensor_side: daylightSensorSide,
   repeater: repeater(false),
   repeater_on: repeater(true),
   lever,

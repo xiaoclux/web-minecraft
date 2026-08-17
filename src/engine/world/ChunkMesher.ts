@@ -447,6 +447,9 @@ export class ChunkMesher {
             case RenderType.CUTOUT:
               this.cube(cutout, def, x, y, z);
               break;
+            case RenderType.TRANSLUCENT:
+              this.cube(translucent, def, x, y, z);
+              break;
             default:
               break;
           }
@@ -470,7 +473,8 @@ export class ChunkMesher {
     }
     const idx = snap.at(nx, ny, nz);
     const neighborId = snap.blocks[idx];
-    if (neighborId === def.id && (def.render === RenderType.CUTOUT || def.isLiquid) && def.id !== BlockId.LEAVES) {
+    const mergesWithSelf = (def.render !== RenderType.OPAQUE || def.isLiquid) && def.id !== BlockId.LEAVES;
+    if (neighborId === def.id && mergesWithSelf) {
       return false;
     }
     return snap.opaque[idx] === 0;
