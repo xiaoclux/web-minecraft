@@ -17,6 +17,7 @@ export const BlockEntityType = {
   BEACON: 'beacon',
   HOPPER: 'hopper',
   DISPENSER: 'dispenser',
+  SIGN: 'sign',
 } as const;
 export type BlockEntityType = (typeof BlockEntityType)[keyof typeof BlockEntityType];
 
@@ -71,7 +72,14 @@ export interface DispenserBlockEntity {
   items: (ItemStack | null)[];
 }
 
+/** 告示牌：四行字。 */
+export interface SignBlockEntity {
+  type: typeof BlockEntityType.SIGN;
+  lines: string[];
+}
+
 export type BlockEntity =
+  | SignBlockEntity
   | HopperBlockEntity
   | DispenserBlockEntity
   | FurnaceBlockEntity

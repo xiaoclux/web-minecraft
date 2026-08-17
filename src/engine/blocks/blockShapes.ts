@@ -63,6 +63,8 @@ export const BlockShape = {
   CAKE: 'cake',
   /** 可可果：贴在丛林原木侧面的小豆荚，随成熟度变大。 */
   COCOA: 'cocoa',
+  /** 告示牌：立在地上的一块板（带柱子）或贴在墙上的一块板。 */
+  SIGN: 'sign',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -197,6 +199,34 @@ const DOOR_BOXES: readonly BlockBox[][][] = FACINGS.map(([fx, fz]) => [
   [panelBox(-fx, -fz, DOOR_THICKNESS)],
   [panelBox(-fz, fx, DOOR_THICKNESS)],
 ]);
+
+/** 告示牌 meta：低 2 位朝向，该位为 1 表示贴在墙上（否则是立在地上的）。 */
+export const SIGN_WALL_BIT = 4;
+/** 告示牌板与柱子的尺寸。 */
+const SIGN_BOARD_BOTTOM = 9 / 16;
+const SIGN_BOARD_THICKNESS = 2 / 16;
+const SIGN_POST_MIN = 7 / 16;
+const SIGN_POST_MAX = 9 / 16;
+
+/** 立牌：一根柱子 + 上面一块板；挂牌：只有板，贴在朝向的反面（背靠墙）。 */
+function buildSignBoxes(): readonly BlockBox[][][] {
+  return FACINGS.map(([fx, fz]) => {
+    // 板面垂直于朝向：朝 ±x 时板在 z 方向铺开
+    const board =
+      fx !== 0
+        ? box(0.5 - SIGN_BOARD_THICKNESS / 2, SIGN_BOARD_BOTTOM, 0, 0.5 + SIGN_BOARD_THICKNESS / 2, 1, 1)
+        : box(0, SIGN_BOARD_BOTTOM, 0.5 - SIGN_BOARD_THICKNESS / 2, 1, 1, 0.5 + SIGN_BOARD_THICKNESS / 2);
+    const standing = [box(SIGN_POST_MIN, 0, SIGN_POST_MIN, SIGN_POST_MAX, SIGN_BOARD_BOTTOM, SIGN_POST_MAX), board];
+    // 挂牌整块贴到背面那侧
+    const wallBoard =
+      fx !== 0
+        ? box(fx > 0 ? 0 : 1 - SIGN_BOARD_THICKNESS, SIGN_BOARD_BOTTOM, 0, fx > 0 ? SIGN_BOARD_THICKNESS : 1, 1, 1)
+        : box(0, SIGN_BOARD_BOTTOM, fz > 0 ? 0 : 1 - SIGN_BOARD_THICKNESS, 1, 1, fz > 0 ? SIGN_BOARD_THICKNESS : 1);
+    return [standing, [wallBoard]];
+  });
+}
+
+const SIGN_BOXES = buildSignBoxes();
 
 /** 可可果的成熟阶段数（1.8.9 为 3 段）。 */
 export const COCOA_MAX_STAGE = 2;
@@ -408,6 +438,8 @@ export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readon
       return CAKE_BOXES[Math.min(meta, CAKE_BITES - 1)];
     case BlockShape.COCOA:
       return COCOA_BOXES[meta & FACING_MASK][Math.min(meta >> COCOA_STAGE_SHIFT, COCOA_MAX_STAGE)];
+    case BlockShape.SIGN:
+      return SIGN_BOXES[meta & FACING_MASK][(meta & SIGN_WALL_BIT) !== 0 ? 1 : 0];
     case BlockShape.TRAPDOOR:
       return TRAPDOOR_BOXES[meta & FACING_MASK][trapdoorVariant(meta)];
     case BlockShape.CROSS:

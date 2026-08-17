@@ -26,6 +26,8 @@ export const Screen = {
   DEATH: 'death',
   /** 终末之诗（打完龙从返回传送门离开末地时滚动播放）。 */
   CREDITS: 'credits',
+  /** 刚放下告示牌时的编辑界面。 */
+  SIGN: 'sign',
 } as const;
 export type Screen = (typeof Screen)[keyof typeof Screen];
 
@@ -69,6 +71,8 @@ export interface GameUiState {
   selectedSlot: number;
   /** 背包版本号：每次背包变化 +1，驱动 UI 刷新。 */
   inventoryVersion: number;
+  /** 告示牌文字的版本号（改一行就 +1，驱动编辑界面重渲染）。 */
+  signVersion: number;
   screen: Screen;
   isPointerLocked: boolean;
   isFlying: boolean;

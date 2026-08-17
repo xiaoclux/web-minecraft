@@ -7,6 +7,7 @@ import {
   DOOR_THICKNESS,
   DOOR_UPPER_BIT,
   FENCE_COLLISION_HEIGHT,
+  SIGN_WALL_BIT,
   SLAB_TOP_BIT,
   TRAPDOOR_OPEN_BIT,
   TRAPDOOR_TOP_BIT,
@@ -197,5 +198,31 @@ describe('玻璃板 / 铁栏杆 / 活板门', () => {
 
   it('开着的活板门仍然挡人（1.8.9 里可以站在竖起来的门上）', () => {
     expect(collisionBoxes(trapdoor, TRAPDOOR_OPEN_BIT).length).toBe(1);
+  });
+});
+
+describe('告示牌', () => {
+  const sign = getBlock(BlockId.SIGN);
+
+  it('立牌是一根柱子加一块板，挂牌只有贴墙的板', () => {
+    const standing = shapeBoxes(sign, 0);
+    expect(standing.length).toBe(2);
+    // 柱子在下、板在上
+    expect(standing[0].y1).toBeLessThan(standing[1].y0 + 0.01);
+    expect(standing[1].y1).toBe(1);
+
+    const wall = shapeBoxes(sign, SIGN_WALL_BIT);
+    expect(wall.length).toBe(1);
+    expect(wall[0].y1).toBe(1);
+  });
+
+  it('板面垂直于朝向：朝 +x 时板沿 z 铺开', () => {
+    const board = shapeBoxes(sign, 0)[1];
+    expect(board.z1 - board.z0).toBe(1);
+    expect(board.x1 - board.x0).toBeLessThan(0.2);
+  });
+
+  it('告示牌不挡人', () => {
+    expect(collisionBoxes(sign, 0).length).toBe(0);
   });
 });

@@ -7,6 +7,8 @@ import { ChunkRenderer } from './ChunkRenderer';
 import { EntityRenderer } from './EntityRenderer';
 import { HandRenderer } from './HandRenderer';
 import { ParticleSystem } from './ParticleSystem';
+import { SignRenderer } from './SignRenderer';
+import type { BlockEntityStore } from '../world/BlockEntityStore';
 import { Sky } from './Sky';
 
 const CAMERA_FOV = 70;
@@ -33,11 +35,12 @@ export class Renderer {
   readonly outline: BlockOutline;
   readonly hand: HandRenderer;
   readonly particles: ParticleSystem;
+  readonly signs: SignRenderer;
   private readonly ambient: THREE.AmbientLight;
   private readonly sun: THREE.DirectionalLight;
   private resizeHandler: () => void;
 
-  constructor(canvas: HTMLCanvasElement, world: World, atlas: TextureAtlas) {
+  constructor(canvas: HTMLCanvasElement, world: World, atlas: TextureAtlas, blockEntities: BlockEntityStore) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     this.renderer.autoClear = true;
@@ -51,10 +54,12 @@ export class Renderer {
     this.hand = new HandRenderer(atlas);
     this.outline = new BlockOutline(atlas);
     this.particles = new ParticleSystem(atlas);
+    this.signs = new SignRenderer(world, blockEntities);
     this.particles.setSolidTest((x, y, z) => world.isSolidAt(x, y, z));
     this.scene.add(
       this.chunks.group,
       this.entities.group,
+      this.signs.group,
       this.sky.group,
       this.outline.group,
       this.particles.mesh,
@@ -85,9 +90,10 @@ export class Renderer {
   }
 
   /** 换维度：区块与实体渲染都切到新世界。 */
-  setWorld(world: World): void {
+  setWorld(world: World, blockEntities: BlockEntityStore): void {
     this.chunks.setWorld(world);
     this.entities.setWorld(world);
+    this.signs.setWorld(world, blockEntities);
   }
 
   /** 渲染一帧。 */
@@ -122,6 +128,7 @@ export class Renderer {
     this.chunks.dispose();
     this.entities.dispose();
     this.particles.dispose();
+    this.signs.dispose();
     this.renderer.dispose();
   }
 }

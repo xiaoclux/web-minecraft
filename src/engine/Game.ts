@@ -6,6 +6,7 @@ import {
   BlockShape,
   DOOR_OPEN_BIT,
   CAKE_BITES,
+  SIGN_WALL_BIT,
   TRAPDOOR_TOP_BIT,
   DOOR_UPPER_BIT,
   FACINGS,
@@ -45,6 +46,8 @@ import {
   XP_ORB_MAX_AMOUNT,
   SPRINT_FOOD_THRESHOLD,
   TICK_MS,
+  SIGN_LINE_COUNT,
+  SIGN_LINE_MAX_CHARS,
   TICKS_PER_SECOND,
 } from './constants/game';
 import type { ParticleOptions } from './render/ParticleSystem';
@@ -396,6 +399,8 @@ const FOOTSTEP_INTERVAL_BLOCKS = 2.2;
 const DIG_SOUND_INTERVAL_TICKS = 5;
 /** 夜视把世界亮度托到的下限（1 = 满亮，略低一点保留一点氛围）。 */
 const NIGHT_VISION_MIN_LIGHT = 0.9;
+/** 没有告示牌在编辑时返回的空行（避免每次都新建数组）。 */
+const EMPTY_SIGN_LINES: readonly string[] = [];
 /** 蛋糕每一口回多少饥饿与饱和度（1.8.9 为 2 点饥饿）。 */
 const CAKE_SLICE_HUNGER = 2;
 const CAKE_SLICE_SATURATION = 0.4;
@@ -654,7 +659,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.weather = new WeatherSystem(this.rng);
     this.current = this.dimensionOf(DimensionId.OVERWORLD);
     this.atlas = new TextureAtlas();
-    this.renderer = new Renderer(options.canvas, this.world, this.atlas);
+    this.renderer = new Renderer(options.canvas, this.world, this.atlas, this.blockEntities);
     this.controls = new Controls(options.canvas, settingsStore.get());
     this.unsubscribeSettings = settingsStore.subscribe(() => {
       this.controls.setSettings(settingsStore.get());
@@ -674,6 +679,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       xpProgress: 0,
       selectedSlot: 0,
       inventoryVersion: 0,
+      signVersion: 0,
       screen: Screen.NONE,
       isPointerLocked: false,
       isFlying: false,
@@ -828,7 +834,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (playerDimension && isDimensionId(playerDimension) && playerDimension !== this.current.id) {
       const target = this.dimensionOf(playerDimension);
       this.current = target;
-      this.renderer.setWorld(target.world);
+      this.renderer.setWorld(target.world, target.blockEntities);
       this.chunkManager.ensureLoaded(this.player.x, this.player.z, SPAWN_PRELOAD_RADIUS);
     }
   }
@@ -998,6 +1004,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     );
     const brightness = this.brightnessAtPlayer();
     this.renderer.particles.update(dt);
+    this.renderer.signs.update(this.player.x, this.player.eyeY, this.player.z);
     this.renderer.hand.update(this.player.heldItem?.id ?? null, brightness);
     this.renderer.render(
       this.timeTick,
@@ -1218,7 +1225,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       return;
     }
     this.current = target;
-    this.renderer.setWorld(target.world);
+    this.renderer.setWorld(target.world, target.blockEntities);
     this.chunkManager.ensureLoaded(x, z, PORTAL_LOAD_RADIUS);
     let spot = { x: x + 0.5, y, z: z + 0.5 };
     if (usePortal) {
@@ -2738,6 +2745,50 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     }
   }
 
+  /** 正在编辑的告示牌坐标；没在编辑时为 null。 */
+  private editingSign: { x: number; y: number; z: number } | null = null;
+
+  /** 当前正在编辑的告示牌文字（UI 读）。 */
+  get signLines(): readonly string[] {
+    const at = this.editingSign;
+    const entity = at ? this.blockEntities.get(at.x, at.y, at.z) : null;
+    return entity?.type === BlockEntityType.SIGN ? entity.lines : EMPTY_SIGN_LINES;
+  }
+
+  /**
+   * 改告示牌的某一行（UI 调）。
+   * @param index 行号 0 ~ SIGN_LINE_COUNT-1
+   */
+  setSignLine(index: number, text: string): void {
+    const at = this.editingSign;
+    if (!at || index < 0 || index >= SIGN_LINE_COUNT) {
+      return;
+    }
+    const entity = this.blockEntities.get(at.x, at.y, at.z);
+    if (entity?.type !== BlockEntityType.SIGN) {
+      return;
+    }
+    // 字数上限与换行符都在这里挡掉，免得渲染时排不下
+    entity.lines[index] = text.replace(/[\r\n]/g, '').slice(0, SIGN_LINE_MAX_CHARS);
+    this.store.patch({ signVersion: this.store.get().signVersion + 1 });
+  }
+
+  /** 刚放下告示牌：建好方块实体并打开编辑界面。 */
+  private beginEditingSign(x: number, y: number, z: number): void {
+    this.blockEntities.getOrCreate(x, y, z, () => ({
+      type: BlockEntityType.SIGN,
+      lines: new Array<string>(SIGN_LINE_COUNT).fill(''),
+    }));
+    this.editingSign = { x, y, z };
+    this.openScreen(Screen.SIGN, { x, y, z });
+  }
+
+  /** 关掉告示牌编辑界面（写完了）。 */
+  finishEditingSign(): void {
+    this.editingSign = null;
+    this.closeScreen();
+  }
+
   /** 陷阱箱被打开 / 关闭时切换它的通电位（1.8.9 按查看人数输出，这里只有本地玩家）。 */
   private setTrappedChestPowered(at: { x: number; y: number; z: number } | null, powered: boolean): void {
     if (!at || this.world.getBlock(at.x, at.y, at.z) !== BlockId.TRAPPED_CHEST) {
@@ -3841,6 +3892,14 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       const [dx, dz] = this.lookHorizontal();
       return facingIndexOf(-dx, -dz);
     }
+    if (def.shape === BlockShape.SIGN) {
+      // 点侧面就挂在那面墙上（正面朝外），点顶面就立在地上、正面朝玩家
+      if (hit.ny === 0) {
+        return facingIndexOf(hit.nx, hit.nz) | SIGN_WALL_BIT;
+      }
+      const [dx, dz] = this.lookHorizontal();
+      return facingIndexOf(-dx, -dz);
+    }
     if (def.shape === BlockShape.TRAPDOOR) {
       // 铰链朝玩家点的那面墙；点上半格就装在格子上沿
       const upper = hit.ny < 0 || (hit.ny === 0 && hit.hy - Math.floor(hit.hy) >= 0.5);
@@ -3987,6 +4046,9 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.playBlockSound(placeSound(soundGroupOf(def)), px, py, pz, 'place');
     if (blockId === BlockId.WITHER_SKULL) {
       this.trySummonWither(px, py, pz);
+    }
+    if (blockId === BlockId.SIGN) {
+      this.beginEditingSign(px, py, pz);
     }
     this.achievements.addStat(StatId.BLOCKS_PLACED);
     if (def.shape === BlockShape.BED) {
@@ -4492,8 +4554,12 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (!entity) {
       return;
     }
-    // 刷怪笼与信标里没有物品，直接走
-    if (entity.type === BlockEntityType.SPAWNER || entity.type === BlockEntityType.BEACON) {
+    // 刷怪笼 / 信标 / 告示牌里没有物品，直接走
+    if (
+      entity.type === BlockEntityType.SPAWNER ||
+      entity.type === BlockEntityType.BEACON ||
+      entity.type === BlockEntityType.SIGN
+    ) {
       return;
     }
     const stacks: (ItemStack | null)[] =

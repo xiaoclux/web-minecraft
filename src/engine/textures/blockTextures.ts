@@ -767,6 +767,13 @@ function repeater(lit: boolean): Painter {
   };
 }
 
+/** 告示牌：一块浅色木板。 */
+const sign: Painter = (c, rng) => {
+  c.noise(hex('#b08b52'), 0.06, rng);
+  c.rect(0, 0, 16, 1, hex('#8a6a3f'));
+  c.rect(0, 15, 16, 1, hex('#8a6a3f'));
+};
+
 /** 可可果：越熟越大越橙。 */
 function cocoa(stage: number): Painter {
   return (c) => {
@@ -1250,6 +1257,7 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   daylight_sensor_top: daylightSensorTop,
   daylight_sensor_side: daylightSensorSide,
   comparator,
+  sign,
   cocoa_stage_0: cocoa(0),
   cocoa_stage_1: cocoa(1),
   cocoa_stage_2: cocoa(2),

@@ -1496,3 +1496,17 @@ button:disabled {
     top: -180%;
   }
 }
+
+/* 告示牌编辑 */
+.sign-editor .sign-line {
+  width: 100%;
+  margin-bottom: 6px;
+  font-family: inherit;
+  font-size: 15px;
+  letter-spacing: 1px;
+  text-align: center;
+  background: #b08b52;
+  color: #2b1d0e;
+  border: 2px solid #6b4f2c;
+  padding: 4px 6px;
+}

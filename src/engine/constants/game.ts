@@ -131,3 +131,7 @@ export const XP_ORB_MAX_AMOUNT = 7;
 /** 碰到仙人掌每隔多少 tick 掉多少血。 */
 export const CACTUS_DAMAGE_INTERVAL_TICKS = 10;
 export const CACTUS_DAMAGE = 1;
+
+/** 告示牌的行数与每行最多几个字符（1.8.9 是 4 行 × 15 字符）。 */
+export const SIGN_LINE_COUNT = 4;
+export const SIGN_LINE_MAX_CHARS = 15;

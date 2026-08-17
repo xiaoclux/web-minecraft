@@ -301,6 +301,7 @@ export const BlockId = {
   TRAPDOOR: 167,
   CAKE: 170,
   COCOA: 171,
+  SIGN: 172,
   BROWN_MUSHROOM: 168,
   RED_MUSHROOM: 169,
   LEVER: 69,
@@ -899,6 +900,17 @@ export const BLOCK_DEFS: BlockDef[] = [
       redstone: { repeater: true, source: REDSTONE_MAX_POWER, unlitBlockId: BlockId.REPEATER },
     }),
     shape: BlockShape.PRESSURE_PLATE,
+  },
+  {
+    ...cube(BlockId.SIGN, 'sign', '告示牌', same('sign'), 1, ToolType.AXE, {
+      render: RenderType.CUTOUT,
+      opaque: false,
+      solid: false,
+      needsSupport: true,
+      hasFacing: true,
+      drops: [{ item: 'sign', min: 1, max: 1 }],
+    }),
+    shape: BlockShape.SIGN,
   },
   {
     ...cube(BlockId.COCOA, 'cocoa', '可可果', same('cocoa_stage_2'), 0.2, ToolType.AXE, {
