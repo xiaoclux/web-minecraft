@@ -544,6 +544,9 @@ export class Mob extends LivingEntity {
     if (this.def.witherTicks) {
       ctx.player.addEffect(EffectId.WITHER, this.def.witherTicks, 0, ctx);
     }
+    if (this.def.poisonTicks) {
+      ctx.player.addEffect(EffectId.POISON, this.def.poisonTicks, 0, ctx);
+    }
   }
 
   private applyMovement(ctx: EntityContext, dt: number): void {

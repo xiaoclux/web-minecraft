@@ -6,6 +6,7 @@ import { chunkKey, type Chunk } from './Chunk';
 import type { ChunkGenerator, SpawnPoint } from './ChunkGenerator';
 import { DesertTempleGenerator } from './structures/DesertTempleGenerator';
 import { DungeonGenerator } from './structures/DungeonGenerator';
+import { MineshaftGenerator } from './structures/MineshaftGenerator';
 import { StrongholdGenerator } from './structures/StrongholdGenerator';
 import { VillageGenerator, VillageStyle } from './structures/VillageGenerator';
 import {
@@ -139,6 +140,7 @@ export class TerrainGenerator implements ChunkGenerator {
   /** 村庄生成器（关闭结构时为 null）。 */
   readonly villages: VillageGenerator | null;
   private readonly dungeons: DungeonGenerator | null;
+  private readonly mineshafts: MineshaftGenerator | null;
   /** 要塞（末影之眼指路用）。 */
   readonly strongholds: StrongholdGenerator | null;
   private readonly temples: DesertTempleGenerator | null;
@@ -160,6 +162,7 @@ export class TerrainGenerator implements ChunkGenerator {
     this.dungeons = generateStructures
       ? new DungeonGenerator(seed, (x, y, z) => y < this.heightAt(x, z) - DUNGEON_MIN_COVER)
       : null;
+    this.mineshafts = generateStructures ? new MineshaftGenerator(seed) : null;
     this.temples = generateStructures
       ? new DesertTempleGenerator(
           seed,
@@ -280,6 +283,7 @@ export class TerrainGenerator implements ChunkGenerator {
     this.generateSandPlants(chunk);
     this.strongholds?.placeInChunk(chunk);
     this.dungeons?.placeInChunk(chunk);
+    this.mineshafts?.placeInChunk(chunk);
     this.temples?.placeInChunk(chunk);
     this.villages?.placeInChunk(chunk);
   }

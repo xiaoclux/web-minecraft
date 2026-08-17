@@ -20,6 +20,7 @@ export const MobType = {
   MAGMA_CUBE: 'magma_cube',
   WITHER_SKELETON: 'wither_skeleton',
   VILLAGER: 'villager',
+  CAVE_SPIDER: 'cave_spider',
 } as const;
 export type MobType = (typeof MobType)[keyof typeof MobType];
 
@@ -65,6 +66,8 @@ export interface MobDef {
   igniteTicks?: number;
   /** 攻击时附带的凋零效果时长（凋灵骷髅）。 */
   witherTicks?: number;
+  /** 攻击时附带的中毒时长（洞穴蜘蛛）。 */
+  poisonTicks?: number;
   /** 只在这些维度里自然生成；不填表示只在主世界。 */
   dimensions?: readonly string[];
 }
@@ -127,6 +130,27 @@ export const MOB_DEFS: Record<MobType, MobDef> = {
     drops: [{ item: 'gunpowder', min: 0, max: 2 }],
     xp: 5,
     burnsInSunlight: false,
+  },
+  cave_spider: {
+    type: 'cave_spider',
+    label: '洞穴蜘蛛',
+    // 比普通蜘蛛小一圈，能钻进矿井的缝里
+    width: 0.7,
+    height: 0.5,
+    maxHealth: 12,
+    speed: 3.2,
+    hostile: true,
+    attackDamage: 2,
+    drops: [
+      { item: 'string', min: 0, max: 2 },
+      { item: 'spider_eye', min: 1, max: 1, chance: 1 / 3 },
+    ],
+    xp: 5,
+    burnsInSunlight: false,
+    neutralInDaylight: true,
+    noFallDamage: true,
+    // 1.8.9 普通难度下咬一口中毒 7 秒
+    poisonTicks: 140,
   },
   spider: {
     type: 'spider',

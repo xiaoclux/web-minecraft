@@ -497,6 +497,7 @@ export const MOB_MODELS: Record<MobType, MobModelSpec> = {
     ],
   },
   spider: SPIDER_MODEL,
+  cave_spider: SPIDER_MODEL,
   pig: quadruped([10, 8, 16], 6, 6, 4, '#f0a0a0', '#f0a0a0', {
     size: [8, 8, 8],
     y: 8,
