@@ -18,8 +18,11 @@ export const DEFAULT_RENDER_DISTANCE = 8;
 /** 加载半径 = 渲染距离 + 该值；卸载半径 = 渲染距离 + 该值。 */
 export const LOAD_DISTANCE_EXTRA = 1;
 export const UNLOAD_DISTANCE_EXTRA = 3;
-/** 每帧用于生成 / 点亮 chunk 的时间预算（毫秒）。 */
-export const CHUNK_LOAD_TIME_BUDGET_MS = 6;
+/**
+ * 每帧留给"后台活"（生成 / 点亮 chunk、重建网格）的总时间预算（毫秒）。
+ * 120Hz 屏一帧只有 8.3ms，这两样合起来超过一半就会掉帧发顿，所以按时间而不是按个数限速。
+ */
+export const FRAME_BACKGROUND_BUDGET_MS = 4;
 /** 新建 / 读档时同步预载出生点周围的 chunk 半径。 */
 export const SPAWN_PRELOAD_RADIUS = 2;
 /** 光照最大等级（0~15）。 */

@@ -302,6 +302,8 @@ export class TerrainGenerator implements ChunkGenerator {
     // 顺序固定：先取地表/土层用的随机数，再逐层填充，保证 surfaceBlockAt 与此处一致
     const biomeDef = BIOME_DEFS[biome];
     const surface = this.surfaceBlock(biome, height, rng);
+    // 雪块盖在地表上时下面铺泥土：草被不透光的雪压着迟早会退化，与其让随机 tick 一块块改（每次都重建网格），不如生成时就对
+    const isSnowCovered = biomeDef.snow && height >= SEA_LEVEL && height + 1 < WORLD_SIZE_Y;
     const bedrockJitter = rng() < BEDROCK_JITTER_CHANCE;
     const underwaterFill = rng() < 0.5 ? BlockId.SAND : BlockId.DIRT;
     for (let y = 0; y <= height; y++) {
@@ -314,7 +316,7 @@ export class TerrainGenerator implements ChunkGenerator {
       } else if (biomeDef.fillerDeep !== undefined && y > height - SAND_DEPTH) {
         id = y > height - 2 ? biomeDef.filler : biomeDef.fillerDeep;
       } else if (y === height) {
-        id = surface;
+        id = isSnowCovered && surface === BlockId.GRASS ? BlockId.DIRT : surface;
       } else if (y > height - DIRT_DEPTH) {
         id = height < SEA_LEVEL ? underwaterFill : biomeDef.filler;
       }
@@ -323,7 +325,7 @@ export class TerrainGenerator implements ChunkGenerator {
     for (let y = height + 1; y <= SEA_LEVEL; y++) {
       chunk.setLocal(lx, y, lz, BlockId.WATER);
     }
-    if (biomeDef.snow && height >= SEA_LEVEL && height + 1 < WORLD_SIZE_Y) {
+    if (isSnowCovered) {
       chunk.setLocal(lx, height + 1, lz, BlockId.SNOW);
     }
   }
@@ -445,6 +447,10 @@ export class TerrainGenerator implements ChunkGenerator {
       }
       chunk.setWorld(x, y, z, id, meta);
     });
+    // 树干底下换成泥土（1.8.9 同）：被树干压住的草会被随机 tick 退化掉，与其之后一块块改，不如生成时就对
+    if (chunk.getWorld(tree.x, tree.y - 1, tree.z) === BlockId.GRASS) {
+      chunk.setWorld(tree.x, tree.y - 1, tree.z, BlockId.DIRT);
+    }
   }
 
   private generatePlants(chunk: Chunk): void {

@@ -87,6 +87,7 @@ import { WATER_SOURCE_META, WATER_TICK_INTERVAL } from './constants/fluids';
 import {
   DAY_LENGTH_TICKS,
   DEFAULT_RENDER_DISTANCE,
+  FRAME_BACKGROUND_BUDGET_MS,
   WORLD_SIZE_Y,
   WorldType,
   MAX_LIGHT,
@@ -1009,9 +1010,11 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
         }
       }
     }
-    this.chunkManager.update(this.player.x, this.player.z, this.renderDistance);
+    // 生成 chunk 与重建网格共享同一份每帧预算：先补缺失的 chunk（生成不可拆分，一帧顶多一个），剩下的时间建网格
+    const backgroundDeadline = performance.now() + FRAME_BACKGROUND_BUDGET_MS;
+    this.chunkManager.update(this.player.x, this.player.z, this.renderDistance, backgroundDeadline);
     this.updateCamera();
-    this.renderer.chunks.update(this.player.x, this.player.z);
+    this.renderer.chunks.update(this.player.x, this.player.z, backgroundDeadline);
     const minLight = this.minLight();
     this.renderer.entities.updateRemotePlayers(this.remotePlayers);
     // 联机客户端的生物 / 掉落物都来自服务端快照

@@ -6,10 +6,10 @@ import { toChunkCoord } from '../world/Chunk';
 import type { World } from '../world/World';
 import { createChunkMaterials } from './ChunkMaterial';
 
-/** 每帧最多重建的 chunk 数。 */
-const MAX_REBUILDS_PER_FRAME = 3;
-/** 网格还不到这么多时（刚进世界）放开限速，尽快把眼前铺出来。 */
+/** 网格还不到这么多时（刚进世界）不看预算，尽快把眼前铺出来。 */
 const INITIAL_BURST_MESH_COUNT = 16;
+/** 离玩家这么近的脏 chunk 每帧至少重建一个（挖了方块得马上看见），不受预算限制。 */
+const ALWAYS_REBUILD_DISTANCE = 1;
 
 interface RebuildCandidate {
   key: number;
@@ -87,8 +87,9 @@ export class ChunkRenderer {
   /**
    * 每帧调用：按玩家位置显示/隐藏并重建脏 chunk。
    * 只看 world.dirtyChunks（chunk 加载 / 方块变化 / 切世界都会往里标），世界静止时这里几乎零开销。
+   * @param deadline performance.now() 时间戳；由近及远重建，到点就停，剩下的下一帧继续
    */
-  update(playerX: number, playerZ: number): void {
+  update(playerX: number, playerZ: number, deadline: number): void {
     const pcx = toChunkCoord(playerX);
     const pcz = toChunkCoord(playerZ);
     if (pcx !== this.lastCenterX || pcz !== this.lastCenterZ) {
@@ -118,10 +119,13 @@ export class ChunkRenderer {
       return;
     }
     candidates.sort((a, b) => a.dist - b.dist);
-    const limit = this.meshes.size < INITIAL_BURST_MESH_COUNT ? MAX_REBUILDS_PER_FRAME * 4 : MAX_REBUILDS_PER_FRAME;
-    const n = Math.min(limit, candidates.length);
-    for (let i = 0; i < n; i++) {
+    const isBurst = this.meshes.size < INITIAL_BURST_MESH_COUNT;
+    for (let i = 0; i < candidates.length; i++) {
       const c = candidates[i];
+      const mustRebuild = i === 0 && c.dist <= ALWAYS_REBUILD_DISTANCE;
+      if (!isBurst && !mustRebuild && performance.now() >= deadline) {
+        break;
+      }
       this.rebuild(c.key, c.cx, c.cz);
     }
     candidates.length = 0;

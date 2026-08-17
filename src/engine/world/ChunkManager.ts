@@ -1,4 +1,4 @@
-import { CHUNK_LOAD_TIME_BUDGET_MS, LOAD_DISTANCE_EXTRA, UNLOAD_DISTANCE_EXTRA } from '../constants/world';
+import { LOAD_DISTANCE_EXTRA, UNLOAD_DISTANCE_EXTRA } from '../constants/world';
 import { Chunk, toChunkCoord } from './Chunk';
 import type { ChunkGenerator } from './ChunkGenerator';
 import type { LightEngine } from './LightEngine';
@@ -38,8 +38,11 @@ export class ChunkManager {
     }
   }
 
-  /** 每帧调用：在时间预算内生成缺失 chunk，卸载过远 chunk。 */
-  update(playerX: number, playerZ: number, renderDistance: number): void {
+  /**
+   * 每帧调用：生成缺失 chunk，卸载过远 chunk。
+   * @param deadline performance.now() 时间戳；到点就停（一个 chunk 生成不可拆分，所以是"开工前看表"）
+   */
+  update(playerX: number, playerZ: number, renderDistance: number, deadline: number): void {
     const pcx = toChunkCoord(playerX);
     const pcz = toChunkCoord(playerZ);
     if (pcx !== this.lastCenterX || pcz !== this.lastCenterZ) {
@@ -51,11 +54,10 @@ export class ChunkManager {
     if (this.isAreaComplete) {
       return;
     }
-    const start = performance.now();
     const loadRadius = renderDistance + LOAD_DISTANCE_EXTRA;
     // 由近及远逐环扫描（只走环的周长），找到缺失的就生成，直到用完预算
     for (let r = 0; r <= loadRadius; r++) {
-      if (!this.loadRing(pcx, pcz, r, start)) {
+      if (!this.loadRing(pcx, pcz, r, deadline)) {
         return;
       }
     }
@@ -63,7 +65,7 @@ export class ChunkManager {
   }
 
   /** 加载半径 r 的一环；预算耗尽返回 false。 */
-  private loadRing(pcx: number, pcz: number, r: number, start: number): boolean {
+  private loadRing(pcx: number, pcz: number, r: number, deadline: number): boolean {
     const step = r === 0 ? 1 : 2 * r;
     for (let dz = -r; dz <= r; dz++) {
       // 上下两条边全走，中间行只走左右两端
@@ -72,10 +74,10 @@ export class ChunkManager {
         if (this.world.hasChunk(pcx + dx, pcz + dz)) {
           continue;
         }
-        this.loadChunk(pcx + dx, pcz + dz);
-        if (performance.now() - start >= CHUNK_LOAD_TIME_BUDGET_MS) {
+        if (performance.now() >= deadline) {
           return false;
         }
+        this.loadChunk(pcx + dx, pcz + dz);
       }
     }
     return true;
