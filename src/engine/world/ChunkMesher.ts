@@ -174,66 +174,90 @@ const CROSS_QUADS: readonly (readonly (readonly [number, number, number])[])[] =
   ],
 ];
 
-/** 增长式缓冲构建器。 */
-class BufferBuilder {
-  positions: number[] = [];
-  uvs: number[] = [];
-  lights: number[] = [];
-  indices: number[] = [];
-  private vertexCount = 0;
+/** 缓冲初始容量（顶点数），不够时翻倍。 */
+const INITIAL_VERTEX_CAPACITY = 4096;
 
-  quad(
-    corners: readonly (readonly [number, number, number])[],
-    uvRegion: { u0: number; v0: number; u1: number; v1: number },
-    lightPerVertex: readonly (readonly [number, number, number])[],
-    flip: boolean,
-  ): void {
-    for (let i = 0; i < 4; i++) {
-      const c = corners[i];
-      this.positions.push(c[0], c[1], c[2]);
-      const uv = UV_CORNERS[i];
-      this.uvs.push(uv[0] === 0 ? uvRegion.u0 : uvRegion.u1, uv[1] === 0 ? uvRegion.v0 : uvRegion.v1);
-      const l = lightPerVertex[i];
-      this.lights.push(l[0], l[1], l[2]);
-    }
-    const b = this.vertexCount;
-    if (flip) {
-      this.indices.push(b + 1, b + 2, b + 3, b + 1, b + 3, b);
-    } else {
-      this.indices.push(b, b + 1, b + 2, b, b + 2, b + 3);
-    }
-    this.vertexCount += 4;
+/**
+ * 增长式缓冲构建器：直接往可增长的 TypedArray 里写顶点，
+ * 每个 chunk 重建复用同一组缓冲，只在 build() 时按实际长度拷贝一份出去。
+ */
+class BufferBuilder {
+  private positions = new Float32Array(INITIAL_VERTEX_CAPACITY * 3);
+  private uvs = new Float32Array(INITIAL_VERTEX_CAPACITY * 2);
+  private lights = new Float32Array(INITIAL_VERTEX_CAPACITY * 3);
+  private indices = new Uint32Array(INITIAL_VERTEX_CAPACITY * 6);
+  private vertexCount = 0;
+  private indexCount = 0;
+
+  reset(): void {
+    this.vertexCount = 0;
+    this.indexCount = 0;
   }
 
-  /** 逐顶点指定 uv 的四边形（子盒面用，纹理按盒的实际范围裁切）。 */
-  quadUv(
-    corners: readonly (readonly [number, number, number])[],
-    uvs: readonly (readonly [number, number])[],
-    lightPerVertex: readonly (readonly [number, number, number])[],
-    flip: boolean,
-  ): void {
-    for (let i = 0; i < 4; i++) {
-      const c = corners[i];
-      this.positions.push(c[0], c[1], c[2]);
-      this.uvs.push(uvs[i][0], uvs[i][1]);
-      const l = lightPerVertex[i];
-      this.lights.push(l[0], l[1], l[2]);
+  /** 写入一个顶点：位置、纹理坐标、(sky, block, shade)。 */
+  vertex(x: number, y: number, z: number, u: number, v: number, sky: number, block: number, shade: number): void {
+    const n = this.vertexCount;
+    if ((n + 1) * 3 > this.positions.length) {
+      this.grow();
     }
-    const b = this.vertexCount;
+    const p = n * 3;
+    this.positions[p] = x;
+    this.positions[p + 1] = y;
+    this.positions[p + 2] = z;
+    this.uvs[n * 2] = u;
+    this.uvs[n * 2 + 1] = v;
+    this.lights[p] = sky;
+    this.lights[p + 1] = block;
+    this.lights[p + 2] = shade;
+    this.vertexCount = n + 1;
+  }
+
+  /** 为刚写入的 4 个顶点补上两个三角形的索引；flip 表示沿另一条对角线切分（AO 用）。 */
+  quadIndices(flip: boolean): void {
+    const b = this.vertexCount - 4;
+    const i = this.indexCount;
+    const idx = this.indices;
     if (flip) {
-      this.indices.push(b + 1, b + 2, b + 3, b + 1, b + 3, b);
+      idx[i] = b + 1;
+      idx[i + 1] = b + 2;
+      idx[i + 2] = b + 3;
+      idx[i + 3] = b + 1;
+      idx[i + 4] = b + 3;
+      idx[i + 5] = b;
     } else {
-      this.indices.push(b, b + 1, b + 2, b, b + 2, b + 3);
+      idx[i] = b;
+      idx[i + 1] = b + 1;
+      idx[i + 2] = b + 2;
+      idx[i + 3] = b;
+      idx[i + 4] = b + 2;
+      idx[i + 5] = b + 3;
     }
-    this.vertexCount += 4;
+    this.indexCount = i + 6;
+  }
+
+  private grow(): void {
+    const capacity = (this.positions.length / 3) * 2;
+    const positions = new Float32Array(capacity * 3);
+    positions.set(this.positions);
+    this.positions = positions;
+    const uvs = new Float32Array(capacity * 2);
+    uvs.set(this.uvs);
+    this.uvs = uvs;
+    const lights = new Float32Array(capacity * 3);
+    lights.set(this.lights);
+    this.lights = lights;
+    // 每 4 个顶点 6 个索引，索引容量按顶点容量的 1.5 倍走
+    const indices = new Uint32Array(capacity * 6);
+    indices.set(this.indices);
+    this.indices = indices;
   }
 
   build(): MeshBuffers {
     return {
-      positions: new Float32Array(this.positions),
-      uvs: new Float32Array(this.uvs),
-      lights: new Float32Array(this.lights),
-      indices: new Uint32Array(this.indices),
+      positions: this.positions.slice(0, this.vertexCount * 3),
+      uvs: this.uvs.slice(0, this.vertexCount * 2),
+      lights: this.lights.slice(0, this.vertexCount * 3),
+      indices: this.indices.slice(0, this.indexCount),
     };
   }
 }
@@ -402,6 +426,15 @@ function isFaceOnBoundary(face: FaceSpec, b: BlockBox): boolean {
 /** 把一个 chunk 转成顶点数据（面剔除 + 平滑光照 + AO）。 */
 export class ChunkMesher {
   private readonly snap = new ChunkSnapshot();
+  private readonly opaqueBuilder = new BufferBuilder();
+  private readonly cutoutBuilder = new BufferBuilder();
+  private readonly translucentBuilder = new BufferBuilder();
+  /** 一个面 4 个顶点的 (sky, block, shade)，逐面复用。 */
+  private readonly faceLights = new Float32Array(12);
+  /** 液面四角高度（索引 cornerX*2 + cornerZ）。 */
+  private readonly liquidHeights = new Float32Array(4);
+  /** 液体 3×3 邻域高度采样（-1 表示不是液体）。 */
+  private readonly liquidAround = new Float32Array(9);
 
   constructor(
     private readonly world: World,
@@ -410,9 +443,12 @@ export class ChunkMesher {
 
   /** 生成 chunk 网格。 */
   mesh(cx: number, cz: number): ChunkMeshData {
-    const opaque = new BufferBuilder();
-    const cutout = new BufferBuilder();
-    const translucent = new BufferBuilder();
+    const opaque = this.opaqueBuilder;
+    const cutout = this.cutoutBuilder;
+    const translucent = this.translucentBuilder;
+    opaque.reset();
+    cutout.reset();
+    translucent.reset();
     if (!this.snap.capture(this.world, cx, cz)) {
       return { opaque: opaque.build(), cutout: cutout.build(), translucent: translucent.build() };
     }
@@ -491,10 +527,26 @@ export class ChunkMesher {
         continue;
       }
       const region = this.atlas.region(textures[textureKeyFor(def, face, meta)]);
-      const corners = face.corners.map(([cx, cy, cz]) => [x + cx, y + cy, z + cz] as const);
-      const lights = face.corners.map((c) => this.vertexLight(x, y, z, face, c));
-      const flip = lights[0][2] + lights[2][2] < lights[1][2] + lights[3][2];
-      builder.quad(corners, region, lights, flip);
+      const lights = this.faceLights;
+      for (let i = 0; i < 4; i++) {
+        this.vertexLight(x, y, z, face, face.corners[i], lights, i * 3);
+      }
+      const flip = lights[2] + lights[8] < lights[5] + lights[11];
+      for (let i = 0; i < 4; i++) {
+        const c = face.corners[i];
+        const uv = UV_CORNERS[i];
+        builder.vertex(
+          x + c[0],
+          y + c[1],
+          z + c[2],
+          uv[0] === 0 ? region.u0 : region.u1,
+          uv[1] === 0 ? region.v0 : region.v1,
+          lights[i * 3],
+          lights[i * 3 + 1],
+          lights[i * 3 + 2],
+        );
+      }
+      builder.quadIndices(flip);
     }
   }
 
@@ -518,40 +570,54 @@ export class ChunkMesher {
           continue;
         }
         const region = this.atlas.region(textures[textureKeyFor(def, face, meta)]);
-        const corners: (readonly [number, number, number])[] = [];
-        const uvs: (readonly [number, number])[] = [];
-        for (const c of face.corners) {
-          const lx = c[0] === 0 ? b.x0 : b.x1;
-          const ly = c[1] === 0 ? b.y0 : b.y1;
-          const lz = c[2] === 0 ? b.z0 : b.z1;
-          corners.push([x + lx, y + ly, z + lz]);
-          const local = [lx, ly, lz];
-          const u = face.uFlip ? 1 - local[face.uAxis] : local[face.uAxis];
-          const v = face.vFlip ? 1 - local[face.vAxis] : local[face.vAxis];
-          uvs.push([region.u0 + (region.u1 - region.u0) * u, region.v0 + (region.v1 - region.v0) * v]);
-        }
-        let lights: (readonly [number, number, number])[];
+        const lights = this.faceLights;
         let flip = false;
         if (onBoundary) {
-          const smooth = face.corners.map((c) => this.vertexLight(x, y, z, face, c));
-          flip = smooth[0][2] + smooth[2][2] < smooth[1][2] + smooth[3][2];
-          lights = smooth;
+          for (let i = 0; i < 4; i++) {
+            this.vertexLight(x, y, z, face, face.corners[i], lights, i * 3);
+          }
+          flip = lights[2] + lights[8] < lights[5] + lights[11];
         } else {
           // 格子内部的面：取本格与法线方向邻格中较亮者（半砖顶面因此与地面一样亮）
           const nIdx = snap.at(x + nx, y + ny, z + nz);
-          const sky = Math.max(snap.sky[ownIdx], snap.opaque[nIdx] === 1 ? 0 : snap.sky[nIdx]);
-          const blockLight = Math.max(snap.blockLight[ownIdx], snap.opaque[nIdx] === 1 ? 0 : snap.blockLight[nIdx]);
-          const light = [sky / MAX_LIGHT, blockLight / MAX_LIGHT, face.shade] as const;
-          lights = [light, light, light, light];
+          const sky = Math.max(snap.sky[ownIdx], snap.opaque[nIdx] === 1 ? 0 : snap.sky[nIdx]) / MAX_LIGHT;
+          const blockLight =
+            Math.max(snap.blockLight[ownIdx], snap.opaque[nIdx] === 1 ? 0 : snap.blockLight[nIdx]) / MAX_LIGHT;
+          for (let i = 0; i < 4; i++) {
+            lights[i * 3] = sky;
+            lights[i * 3 + 1] = blockLight;
+            lights[i * 3 + 2] = face.shade;
+          }
         }
-        builder.quadUv(corners, uvs, lights, flip);
+        for (let i = 0; i < 4; i++) {
+          const c = face.corners[i];
+          const lx = c[0] === 0 ? b.x0 : b.x1;
+          const ly = c[1] === 0 ? b.y0 : b.y1;
+          const lz = c[2] === 0 ? b.z0 : b.z1;
+          const uLocal = face.uAxis === AXIS_X ? lx : face.uAxis === AXIS_Y ? ly : lz;
+          const vLocal = face.vAxis === AXIS_X ? lx : face.vAxis === AXIS_Y ? ly : lz;
+          const u = face.uFlip ? 1 - uLocal : uLocal;
+          const v = face.vFlip ? 1 - vLocal : vLocal;
+          builder.vertex(
+            x + lx,
+            y + ly,
+            z + lz,
+            region.u0 + (region.u1 - region.u0) * u,
+            region.v0 + (region.v1 - region.v0) * v,
+            lights[i * 3],
+            lights[i * 3 + 1],
+            lights[i * 3 + 2],
+          );
+        }
+        builder.quadIndices(flip);
       }
     }
   }
 
   private liquid(builder: BufferBuilder, def: BlockDef, x: number, y: number, z: number): void {
     const snap = this.snap;
-    const heights = this.liquidCornerHeights(def.id, x, y, z);
+    let heightsReady = false;
+    const heights = this.liquidHeights;
     for (const face of FACES) {
       const nx = x + face.normal[0];
       const ny = y + face.normal[1];
@@ -559,16 +625,31 @@ export class ChunkMesher {
       if (!this.shouldDrawFace(def, nx, ny, nz)) {
         continue;
       }
+      if (!heightsReady) {
+        // 四角高度只在真有面要画时才算（被水包围的水块六面全剔除，直接跳过）
+        this.liquidCornerHeights(def.id, x, y, z);
+        heightsReady = true;
+      }
       const region = this.atlas.region(def.textures[face.textureKey]);
-      const corners = face.corners.map(([cx, cy, cz]) => {
-        const top = heights[cx * 2 + cz];
-        return [x + cx, y + (cy === 1 ? top : 0), z + cz] as const;
-      });
       const idx = snap.at(nx, ny, nz);
       const sky = snap.sky[idx] / MAX_LIGHT;
       const block = snap.blockLight[idx] / MAX_LIGHT;
-      const light = [sky, block, face.shade] as const;
-      builder.quad(corners, region, [light, light, light, light], false);
+      for (let i = 0; i < 4; i++) {
+        const c = face.corners[i];
+        const uv = UV_CORNERS[i];
+        const top = heights[c[0] * 2 + c[2]];
+        builder.vertex(
+          x + c[0],
+          y + (c[1] === 1 ? top : 0),
+          z + c[2],
+          uv[0] === 0 ? region.u0 : region.u1,
+          uv[1] === 0 ? region.v0 : region.v1,
+          sky,
+          block,
+          face.shade,
+        );
+      }
+      builder.quadIndices(false);
     }
   }
 
@@ -584,41 +665,49 @@ export class ChunkMesher {
   }
 
   /**
-   * 液面四角高度（索引 cx*2+cz）：取该角周围 4 格同种液体高度的平均，形成 1.8 式斜面；
-   * 任一相邻格上方仍是同种液体则该角为满高。
+   * 液面四角高度写入 this.liquidHeights（索引 cx*2+cz）：取该角周围 4 格同种液体高度的平均，
+   * 形成 1.8 式斜面；任一相邻格上方仍是同种液体则该角为满高。
    */
-  private liquidCornerHeights(liquidId: number, x: number, y: number, z: number): [number, number, number, number] {
+  private liquidCornerHeights(liquidId: number, x: number, y: number, z: number): void {
+    const result = this.liquidHeights;
     const own = this.liquidHeightAt(liquidId, x, y, z);
     if (own >= 1) {
-      return [1, 1, 1, 1];
+      result.fill(1);
+      return;
     }
-    // 3×3 邻域高度采样一次（-1 表示不是水）
-    const around: number[] = [];
+    // 3×3 邻域高度采样一次（-1 表示不是水），索引 (dz+1)*3 + (dx+1)
+    const around = this.liquidAround;
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
-        around.push(dx === 0 && dz === 0 ? own : this.liquidHeightAt(liquidId, x + dx, y, z + dz));
+        around[(dz + 1) * 3 + (dx + 1)] =
+          dx === 0 && dz === 0 ? own : this.liquidHeightAt(liquidId, x + dx, y, z + dz);
       }
     }
-    const sampleAt = (dx: number, dz: number): number => around[(dz + 1) * 3 + (dx + 1)];
-    const result: [number, number, number, number] = [own, own, own, own];
     for (let i = 0; i < WATER_CORNER_OFFSETS.length; i++) {
       const [dx, dz] = WATER_CORNER_OFFSETS[i];
-      let sum = 0;
-      let count = 0;
-      let full = false;
-      for (const h of [own, sampleAt(dx, 0), sampleAt(0, dz), sampleAt(dx, dz)]) {
-        if (h < 0) {
-          continue;
-        }
-        if (h >= 1) {
-          full = true;
-        }
-        sum += h;
+      let sum = own;
+      let count = 1;
+      let full = own >= 1;
+      const h1 = around[4 + dx];
+      const h2 = around[4 + dz * 3];
+      const h3 = around[4 + dz * 3 + dx];
+      if (h1 >= 0) {
+        sum += h1;
         count++;
+        full ||= h1 >= 1;
       }
-      result[i] = full ? 1 : count === 0 ? own : sum / count;
+      if (h2 >= 0) {
+        sum += h2;
+        count++;
+        full ||= h2 >= 1;
+      }
+      if (h3 >= 0) {
+        sum += h3;
+        count++;
+        full ||= h3 >= 1;
+      }
+      result[i] = full ? 1 : sum / count;
     }
-    return result;
   }
 
   private cross(builder: BufferBuilder, def: BlockDef, x: number, y: number, z: number): void {
@@ -627,15 +716,28 @@ export class ChunkMesher {
     const region = this.atlas.region(texturesFor(def, snap.meta[idx]).north);
     const sky = snap.sky[idx] / MAX_LIGHT;
     const block = Math.max(snap.blockLight[idx], def.light) / MAX_LIGHT;
-    const light = [sky, block, 1] as const;
     for (const quad of CROSS_QUADS) {
-      const corners = quad.map(([cx, cy, cz]) => [x + cx, y + cy, z + cz] as const);
-      builder.quad(corners, region, [light, light, light, light], false);
+      for (let i = 0; i < 4; i++) {
+        const c = quad[i];
+        const uv = UV_CORNERS[i];
+        builder.vertex(
+          x + c[0],
+          y + c[1],
+          z + c[2],
+          uv[0] === 0 ? region.u0 : region.u1,
+          uv[1] === 0 ? region.v0 : region.v1,
+          sky,
+          block,
+          FACE_SHADE_TOP,
+        );
+      }
+      builder.quadIndices(false);
     }
   }
 
   /**
-   * 计算面上一个顶点的 (sky, block, shade)：光照取相邻 4 格平均，shade = 面朝向 × AO。
+   * 计算面上一个顶点的 (sky, block, shade) 并写入 out[offset..offset+2]：
+   * 光照取相邻 4 格平均，shade = 面朝向 × AO。
    */
   private vertexLight(
     x: number,
@@ -643,7 +745,9 @@ export class ChunkMesher {
     z: number,
     face: FaceSpec,
     corner: readonly [number, number, number],
-  ): [number, number, number] {
+    out: Float32Array,
+    offset: number,
+  ): void {
     const snap = this.snap;
     const [nx, ny, nz] = face.normal;
     // 面法线方向的相邻格
@@ -670,6 +774,7 @@ export class ChunkMesher {
     const iSide1 = snap.at(bx + ax, by + ay, bz);
     const iSide2 = snap.at(bx + cxo, by + cyo, bz + czo);
     const iCorner = snap.at(bx + ax + cxo, by + ay + cyo, bz + czo);
+    const frontOpaque = snap.opaque[iFront] === 1;
     const side1 = snap.opaque[iSide1] === 1;
     const side2 = snap.opaque[iSide2] === 1;
     const cornerOpaque = snap.opaque[iCorner] === 1;
@@ -678,22 +783,29 @@ export class ChunkMesher {
     let skySum = 0;
     let blockSum = 0;
     let count = 0;
-    const sample = (idx: number, opaque: boolean): void => {
-      if (opaque) {
-        return;
-      }
-      skySum += snap.sky[idx];
-      blockSum += snap.blockLight[idx];
+    if (!frontOpaque) {
+      skySum += snap.sky[iFront];
+      blockSum += snap.blockLight[iFront];
       count++;
-    };
-    sample(iFront, snap.opaque[iFront] === 1);
-    sample(iSide1, side1);
-    sample(iSide2, side2);
-    if (!(side1 && side2)) {
-      sample(iCorner, cornerOpaque);
     }
-    const sky = count > 0 ? skySum / count / MAX_LIGHT : 0;
-    const block = count > 0 ? blockSum / count / MAX_LIGHT : 0;
-    return [sky, block, face.shade * AO_FACTORS[aoLevel]];
+    if (!side1) {
+      skySum += snap.sky[iSide1];
+      blockSum += snap.blockLight[iSide1];
+      count++;
+    }
+    if (!side2) {
+      skySum += snap.sky[iSide2];
+      blockSum += snap.blockLight[iSide2];
+      count++;
+    }
+    // 两侧都被挡住时角格看不见，不参与平均
+    if (!(side1 && side2) && !cornerOpaque) {
+      skySum += snap.sky[iCorner];
+      blockSum += snap.blockLight[iCorner];
+      count++;
+    }
+    out[offset] = count > 0 ? skySum / count / MAX_LIGHT : 0;
+    out[offset + 1] = count > 0 ? blockSum / count / MAX_LIGHT : 0;
+    out[offset + 2] = face.shade * AO_FACTORS[aoLevel];
   }
 }
