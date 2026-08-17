@@ -22,6 +22,7 @@ import {
   SEMITONES_PER_OCTAVE,
   RailShape,
 } from '../constants/redstone';
+import { packPos, unpackPos } from '../world/posKey';
 import type { World } from '../world/World';
 
 /** 六个方向。 */
@@ -40,6 +41,14 @@ const HORIZONTAL: readonly (readonly [number, number, number])[] = [
   [0, 0, 1],
   [0, 0, -1],
 ];
+/** 红石粉能连到的 12 个相对位置：水平四邻各自的同层 / 上一格 / 下一格。 */
+const WIRE_LINKS: readonly (readonly [number, number, number])[] = HORIZONTAL.flatMap(([dx, , dz]) =>
+  [0, 1, -1].map((dy) => [dx, dy, dz] as const),
+);
+/** 沿轨道两个方向。 */
+const SIGNS = [1, -1] as const;
+/** unpackPos 的复用输出，避免热路径分配。 */
+const POS_OUT = [0, 0, 0];
 
 /**
  * 一个方块朝某个方向输出多强的信号。
@@ -172,8 +181,10 @@ export function isPoweredRailOn(world: World, x: number, y: number, z: number): 
   if (powerAt(world, x, y, z) > 0) {
     return true;
   }
-  const [ax, az] = (world.getMeta(x, y, z) & RAIL_SHAPE_MASK) === RailShape.NORTH_SOUTH ? [0, 1] : [1, 0];
-  for (const sign of [1, -1]) {
+  const alongZ = (world.getMeta(x, y, z) & RAIL_SHAPE_MASK) === RailShape.NORTH_SOUTH;
+  const ax = alongZ ? 0 : 1;
+  const az = alongZ ? 1 : 0;
+  for (const sign of SIGNS) {
     for (let i = 1; i <= POWERED_RAIL_CHAIN; i++) {
       const nx = x + ax * i * sign;
       const nz = z + az * i * sign;
@@ -209,14 +220,17 @@ export function repeaterInputPower(world: World, x: number, y: number, z: number
  */
 export function updateWires(world: World, x: number, y: number, z: number): [number, number, number][] {
   const wires = collectWires(world, x, y, z);
-  if (wires.size === 0) {
+  if (wires.length === 0) {
     return [];
   }
   // 先算每根粉从"非粉来源"能拿到的初始强度
-  const power = new Map<string, number>();
-  const queue: [number, number, number][] = [];
+  const power = new Map<number, number>();
+  const queue: number[] = [];
   for (const key of wires) {
-    const [wx, wy, wz] = key.split(',').map(Number);
+    unpackPos(key, POS_OUT);
+    const wx = POS_OUT[0];
+    const wy = POS_OUT[1];
+    const wz = POS_OUT[2];
     let best = 0;
     for (const [dx, dy, dz] of NEIGHBORS) {
       best = Math.max(best, sourcePowerTo(world, wx + dx, wy + dy, wz + dz, wx, wy, wz));
@@ -226,36 +240,36 @@ export function updateWires(world: World, x: number, y: number, z: number): [num
     }
     power.set(key, best);
     if (best > 0) {
-      queue.push([wx, wy, wz]);
+      queue.push(key);
     }
   }
-  // 逐格衰减扩散
-  while (queue.length > 0) {
-    const [wx, wy, wz] = queue.shift() as [number, number, number];
-    const current = power.get(wireKey(wx, wy, wz)) ?? 0;
+  // 逐格衰减扩散（读指针代替 shift，避免每次搬移数组）
+  for (let head = 0; head < queue.length; head++) {
+    const currentKey = queue[head];
+    const current = power.get(currentKey) ?? 0;
     if (current <= 1) {
       continue;
     }
-    for (const [dx, , dz] of HORIZONTAL) {
-      for (const dy of [0, 1, -1]) {
-        const nx = wx + dx;
-        const ny = wy + dy;
-        const nz = wz + dz;
-        const key = wireKey(nx, ny, nz);
-        if (!wires.has(key)) {
-          continue;
-        }
-        if ((power.get(key) ?? 0) >= current - 1) {
-          continue;
-        }
-        power.set(key, current - 1);
-        queue.push([nx, ny, nz]);
+    unpackPos(currentKey, POS_OUT);
+    const wx = POS_OUT[0];
+    const wy = POS_OUT[1];
+    const wz = POS_OUT[2];
+    for (const [dx, dy, dz] of WIRE_LINKS) {
+      const key = packPos(wx + dx, wy + dy, wz + dz);
+      const known = power.get(key);
+      if (known === undefined || known >= current - 1) {
+        continue;
       }
+      power.set(key, current - 1);
+      queue.push(key);
     }
   }
   const changed: [number, number, number][] = [];
   for (const [key, value] of power) {
-    const [wx, wy, wz] = key.split(',').map(Number);
+    unpackPos(key, POS_OUT);
+    const wx = POS_OUT[0];
+    const wy = POS_OUT[1];
+    const wz = POS_OUT[2];
     if (world.getMeta(wx, wy, wz) !== value) {
       world.setBlock(wx, wy, wz, BlockId.REDSTONE_WIRE, value);
       changed.push([wx, wy, wz]);
@@ -273,15 +287,10 @@ function strongPowerOf(world: World, x: number, y: number, z: number): number {
   return power;
 }
 
-function wireKey(x: number, y: number, z: number): string {
-  return `${x},${y},${z}`;
-}
-
-/** 收集变更点附近相连的全部红石粉。 */
-function collectWires(world: World, x: number, y: number, z: number): Set<string> {
-  const found = new Set<string>();
-  const seen = new Set<string>();
-  const queue: [number, number, number][] = [];
+/** 收集变更点附近相连的全部红石粉（packPos 键，顺序即发现顺序）。 */
+function collectWires(world: World, x: number, y: number, z: number): number[] {
+  const found: number[] = [];
+  const seen = new Set<number>();
   // 从变更点周围一圈开始找粉
   for (let dy = -REDSTONE_UPDATE_RADIUS; dy <= REDSTONE_UPDATE_RADIUS; dy++) {
     for (let dz = -REDSTONE_UPDATE_RADIUS; dz <= REDSTONE_UPDATE_RADIUS; dz++) {
@@ -290,32 +299,31 @@ function collectWires(world: World, x: number, y: number, z: number): Set<string
         const ny = y + dy;
         const nz = z + dz;
         if (world.getBlock(nx, ny, nz) === BlockId.REDSTONE_WIRE) {
-          const key = wireKey(nx, ny, nz);
+          const key = packPos(nx, ny, nz);
           if (!seen.has(key)) {
             seen.add(key);
-            found.add(key);
-            queue.push([nx, ny, nz]);
+            found.push(key);
           }
         }
       }
     }
   }
-  // 顺着相连的粉扩出去，保证整条线一起重算
-  while (queue.length > 0) {
-    const [wx, wy, wz] = queue.shift() as [number, number, number];
-    for (const [dx, , dz] of HORIZONTAL) {
-      for (const dy of [0, 1, -1]) {
-        const nx = wx + dx;
-        const ny = wy + dy;
-        const nz = wz + dz;
-        const key = wireKey(nx, ny, nz);
-        if (seen.has(key) || world.getBlock(nx, ny, nz) !== BlockId.REDSTONE_WIRE) {
-          continue;
-        }
-        seen.add(key);
-        found.add(key);
-        queue.push([nx, ny, nz]);
+  // 顺着相连的粉扩出去，保证整条线一起重算；found 自身就是 BFS 队列
+  for (let head = 0; head < found.length; head++) {
+    unpackPos(found[head], POS_OUT);
+    const wx = POS_OUT[0];
+    const wy = POS_OUT[1];
+    const wz = POS_OUT[2];
+    for (const [dx, dy, dz] of WIRE_LINKS) {
+      const nx = wx + dx;
+      const ny = wy + dy;
+      const nz = wz + dz;
+      const key = packPos(nx, ny, nz);
+      if (seen.has(key) || world.getBlock(nx, ny, nz) !== BlockId.REDSTONE_WIRE) {
+        continue;
       }
+      seen.add(key);
+      found.push(key);
     }
   }
   return found;

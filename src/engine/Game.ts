@@ -135,6 +135,7 @@ import {
   BUTTON_PRESS_TICKS,
   PRESSURE_PLATE_RANGE,
   REDSTONE_POWERED_BIT,
+  REDSTONE_UPDATE_RADIUS,
   REPEATER_DELAYS,
   REPEATER_DELAY_MASK,
   REPEATER_DELAY_SHIFT,
@@ -511,7 +512,12 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
         : createDimensionGenerator(id, this.meta);
     const dimension = new Dimension(DIMENSION_DEFS[id], generator, this);
     dimension.world.onChunkLoad((chunk) => this.applyPendingBlockEntities(chunk));
-    dimension.world.onBlockChange((x, y, z) => this.onRedstoneRelevantChange(x, y, z));
+    dimension.world.onBlockChange((x, y, z, oldId, newId) => {
+      // 水流 / 火 / 作物每 tick 大量 setBlock，只有变更点周围真有红石元件时才值得跑一遍红石重算
+      if (getBlock(oldId).redstone || getBlock(newId).redstone || this.hasRedstoneNeighbor(x, y, z)) {
+        this.onRedstoneRelevantChange(x, y, z);
+      }
+    });
     dimension.world.onChunkUnload((chunk) => this.onChunkUnloaded(chunk));
     this.dimensions.set(id, dimension);
     return dimension;
@@ -2266,6 +2272,20 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
    * 方块变化后重算红石：先更新红石粉的强度，再让用电器（红石灯 / 门）跟上。
    * 由 world 的变更事件驱动，因此手动放置、活塞推动、爆炸都会触发。
    */
+  /** 变更点周围一圈（含斜角）里有没有红石元件。 */
+  private hasRedstoneNeighbor(x: number, y: number, z: number): boolean {
+    for (let dy = -REDSTONE_UPDATE_RADIUS; dy <= REDSTONE_UPDATE_RADIUS; dy++) {
+      for (let dz = -REDSTONE_UPDATE_RADIUS; dz <= REDSTONE_UPDATE_RADIUS; dz++) {
+        for (let dx = -REDSTONE_UPDATE_RADIUS; dx <= REDSTONE_UPDATE_RADIUS; dx++) {
+          if (getBlock(this.world.getBlock(x + dx, y + dy, z + dz)).redstone) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   private onRedstoneRelevantChange(x: number, y: number, z: number): void {
     if (this.redstoneUpdating) {
       return;
