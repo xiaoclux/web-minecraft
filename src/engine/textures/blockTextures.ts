@@ -767,6 +767,27 @@ function repeater(lit: boolean): Painter {
   };
 }
 
+/** 铁栏杆：竖直的铁条。 */
+const ironBars: Painter = (c) => {
+  c.fill(TRANSPARENT);
+  const iron = hex('#c8c8c8');
+  c.rect(6, 0, 2, 16, iron);
+  c.rect(8, 0, 1, 16, shade(iron, 0.75));
+};
+
+/** 活板门：几块木板 + 铁合页。 */
+const trapdoor: Painter = (c, rng) => {
+  c.noise(hex('#9b7442'), 0.07, rng);
+  const gap = hex('#6b4f2c');
+  c.rect(0, 5, 16, 1, gap);
+  c.rect(0, 10, 16, 1, gap);
+  const iron = hex('#8a8a8a');
+  c.rect(1, 1, 3, 2, iron);
+  c.rect(12, 1, 3, 2, iron);
+  c.rect(1, 13, 3, 2, iron);
+  c.rect(12, 13, 3, 2, iron);
+};
+
 /** 绊线钩：木底座 + 铁钩。 */
 const tripwireHook: Painter = (c, rng) => {
   c.fill(TRANSPARENT);
@@ -1188,6 +1209,8 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   daylight_sensor_top: daylightSensorTop,
   daylight_sensor_side: daylightSensorSide,
   comparator,
+  iron_bars: ironBars,
+  trapdoor,
   tripwire_hook: tripwireHook,
   tripwire,
   trapped_chest_front: trappedChestFront,

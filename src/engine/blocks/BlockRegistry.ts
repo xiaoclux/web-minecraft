@@ -289,6 +289,9 @@ export const BlockId = {
   TRAPPED_CHEST: 162,
   TRIPWIRE_HOOK: 163,
   TRIPWIRE: 164,
+  GLASS_PANE: 165,
+  IRON_BARS: 166,
+  TRAPDOOR: 167,
   LEVER: 69,
   STONE_BUTTON: 77,
   STONE_PRESSURE_PLATE: 70,
@@ -882,6 +885,33 @@ export const BLOCK_DEFS: BlockDef[] = [
       redstone: { repeater: true, source: REDSTONE_MAX_POWER, unlitBlockId: BlockId.REPEATER },
     }),
     shape: BlockShape.PRESSURE_PLATE,
+  },
+  {
+    ...cube(BlockId.GLASS_PANE, 'glass_pane', '玻璃板', same('glass'), 0.3, null, {
+      render: RenderType.CUTOUT,
+      opaque: false,
+      connectGroup: 'pane',
+    }),
+    shape: BlockShape.PANE,
+  },
+  {
+    ...cube(BlockId.IRON_BARS, 'iron_bars', '铁栏杆', same('iron_bars'), 5, ToolType.PICKAXE, {
+      render: RenderType.CUTOUT,
+      opaque: false,
+      minTier: ToolTier.WOOD,
+      connectGroup: 'pane',
+    }),
+    shape: BlockShape.PANE,
+  },
+  {
+    ...cube(BlockId.TRAPDOOR, 'trapdoor', '活板门', same('trapdoor'), 3, ToolType.AXE, {
+      render: RenderType.CUTOUT,
+      opaque: false,
+      interactive: true,
+      hasFacing: true,
+      redstone: { opensWhenPowered: true },
+    }),
+    shape: BlockShape.TRAPDOOR,
   },
   {
     ...cube(BlockId.TRIPWIRE_HOOK, 'tripwire_hook', '绊线钩', same('tripwire_hook'), 0.5, null, {

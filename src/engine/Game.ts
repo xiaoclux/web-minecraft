@@ -5,6 +5,7 @@ import {
   BED_HEAD_BIT,
   BlockShape,
   DOOR_OPEN_BIT,
+  TRAPDOOR_TOP_BIT,
   DOOR_UPPER_BIT,
   FACINGS,
   FACING_MASK,
@@ -3735,6 +3736,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
         return true;
       case BlockId.WOODEN_DOOR:
       case BlockId.FENCE_GATE:
+      case BlockId.TRAPDOOR:
         this.toggleDoor(hit.x, hit.y, hit.z);
         return true;
       case BlockId.TNT:
@@ -3767,6 +3769,12 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       // 正面朝向玩家：与视线方向相反
       const [dx, dz] = this.lookHorizontal();
       return facingIndexOf(-dx, -dz);
+    }
+    if (def.shape === BlockShape.TRAPDOOR) {
+      // 铰链朝玩家点的那面墙；点上半格就装在格子上沿
+      const upper = hit.ny < 0 || (hit.ny === 0 && hit.hy - Math.floor(hit.hy) >= 0.5);
+      const [dx, dz] = this.lookHorizontal();
+      return facingIndexOf(-dx, -dz) | (upper ? TRAPDOOR_TOP_BIT : 0);
     }
     if (def.shape !== BlockShape.SLAB && def.shape !== BlockShape.STAIRS) {
       return 0;

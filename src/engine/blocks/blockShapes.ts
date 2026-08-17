@@ -55,6 +55,10 @@ export const BlockShape = {
   BUTTON: 'button',
   /** 压力板：薄薄一层，无碰撞。 */
   PRESSURE_PLATE: 'pressure_plate',
+  /** 玻璃板 / 铁栏杆：竖直的薄片，朝相连的邻居伸出去。 */
+  PANE: 'pane',
+  /** 活板门：贴在格子上 / 下沿的薄板，打开时立起来贴到一侧。 */
+  TRAPDOOR: 'trapdoor',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -190,6 +194,11 @@ const DOOR_BOXES: readonly BlockBox[][][] = FACINGS.map(([fx, fz]) => [
   [panelBox(-fz, fx, DOOR_THICKNESS)],
 ]);
 
+/** 活板门 meta：该位为 1 表示门是开着的。 */
+export const TRAPDOOR_OPEN_BIT = 4;
+/** 活板门 meta：该位为 1 表示装在格子上沿。 */
+export const TRAPDOOR_TOP_BIT = 8;
+
 /** 栅栏：中心柱 4/16 见方，横杆在 6~9 与 12~15 两层。 */
 const FENCE_POST_MIN = 6 / 16;
 const FENCE_POST_MAX = 10 / 16;
@@ -226,6 +235,56 @@ function buildFenceBoxes(mask: number, postTop: number): BlockBox[] {
 const FENCE_BOXES: readonly BlockBox[][] = Array.from({ length: CONNECTION_COUNT }, (_, mask) =>
   buildFenceBoxes(mask, 1),
 );
+
+/** 玻璃板 / 铁栏杆：中心柱 2/16 见方，朝相连方向伸到格子边。 */
+const PANE_MIN = 7 / 16;
+const PANE_MAX = 9 / 16;
+
+function buildPaneBoxes(mask: number): BlockBox[] {
+  const boxes: BlockBox[] = [box(PANE_MIN, 0, PANE_MIN, PANE_MAX, 1, PANE_MAX)];
+  for (let facing = 0; facing < FACINGS.length; facing++) {
+    if ((mask & connectionBit(facing)) === 0) {
+      continue;
+    }
+    const [dx, dz] = FACINGS[facing];
+    if (dx !== 0) {
+      boxes.push(box(dx > 0 ? PANE_MAX : 0, 0, PANE_MIN, dx > 0 ? 1 : PANE_MIN, 1, PANE_MAX));
+    } else {
+      boxes.push(box(PANE_MIN, 0, dz > 0 ? PANE_MAX : 0, PANE_MAX, 1, dz > 0 ? 1 : PANE_MIN));
+    }
+  }
+  return boxes;
+}
+
+const PANE_BOXES: readonly BlockBox[][] = Array.from({ length: CONNECTION_COUNT }, (_, mask) =>
+  buildPaneBoxes(mask),
+);
+
+/** 活板门：厚 3/16。关着时平铺在上 / 下沿，开着时立起来贴在朝向那一侧。 */
+const TRAPDOOR_THICKNESS = 3 / 16;
+
+function buildTrapdoorBoxes(): readonly BlockBox[][][] {
+  // [facing][closedBottom / closedTop / open]
+  return FACINGS.map(([fx, fz]) => [
+    [box(0, 0, 0, 1, TRAPDOOR_THICKNESS, 1)],
+    [box(0, 1 - TRAPDOOR_THICKNESS, 0, 1, 1, 1)],
+    [
+      fx !== 0
+        ? box(fx > 0 ? 1 - TRAPDOOR_THICKNESS : 0, 0, 0, fx > 0 ? 1 : TRAPDOOR_THICKNESS, 1, 1)
+        : box(0, 0, fz > 0 ? 1 - TRAPDOOR_THICKNESS : 0, 1, 1, fz > 0 ? 1 : TRAPDOOR_THICKNESS),
+    ],
+  ]);
+}
+
+const TRAPDOOR_BOXES = buildTrapdoorBoxes();
+
+/** 活板门当前状态对应的子盒下标。 */
+function trapdoorVariant(meta: number): number {
+  if ((meta & TRAPDOOR_OPEN_BIT) !== 0) {
+    return 2;
+  }
+  return (meta & TRAPDOOR_TOP_BIT) !== 0 ? 1 : 0;
+}
 const FENCE_COLLISION_BOXES: readonly BlockBox[][] = Array.from({ length: CONNECTION_COUNT }, (_, mask) =>
   buildFenceBoxes(mask, FENCE_COLLISION_HEIGHT),
 );
@@ -296,6 +355,10 @@ export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readon
   switch (def.shape) {
     case BlockShape.FENCE:
       return FENCE_BOXES[connections & (CONNECTION_COUNT - 1)];
+    case BlockShape.PANE:
+      return PANE_BOXES[connections & (CONNECTION_COUNT - 1)];
+    case BlockShape.TRAPDOOR:
+      return TRAPDOOR_BOXES[meta & FACING_MASK][trapdoorVariant(meta)];
     case BlockShape.CROSS:
       return CROSS_BOXES;
     case BlockShape.SLAB:
@@ -389,7 +452,7 @@ export function isFullCube(def: BlockDef): boolean {
 
 /** 形状是否需要知道四邻的连接情况。 */
 export function needsConnections(def: BlockDef): boolean {
-  return def.shape === BlockShape.FENCE;
+  return def.shape === BlockShape.FENCE || def.shape === BlockShape.PANE;
 }
 
 /** 按四邻算出连接掩码；getNeighbor 返回该方向相邻方块的定义。 */

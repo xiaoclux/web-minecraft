@@ -8,6 +8,8 @@ import {
   DOOR_UPPER_BIT,
   FENCE_COLLISION_HEIGHT,
   SLAB_TOP_BIT,
+  TRAPDOOR_OPEN_BIT,
+  TRAPDOOR_TOP_BIT,
   FACINGS,
   STAIRS_FLIP_BIT,
   canConnect,
@@ -154,5 +156,46 @@ describe('半砖与楼梯配方', () => {
     for (const id of ['stone_slab', 'oak_slab', 'oak_stairs', 'cobblestone_stairs', 'sandstone_stairs']) {
       expect(results.has(id)).toBe(true);
     }
+  });
+});
+
+describe('玻璃板 / 铁栏杆 / 活板门', () => {
+  const pane = getBlock(BlockId.GLASS_PANE);
+  const trapdoor = getBlock(BlockId.TRAPDOOR);
+
+  it('玻璃板孤零零时只有中间一根柱子，连上邻居后朝那边伸出去', () => {
+    const alone = shapeBoxes(pane, 0, 0);
+    expect(alone.length).toBe(1);
+    // 连接 +x 后多一段伸到格子边的板
+    const connected = shapeBoxes(pane, 0, connectionBit(0));
+    expect(connected.length).toBe(2);
+    expect(connected[1].x1).toBe(1);
+  });
+
+  it('玻璃板与同组方块及实心方块相连，与空气不相连', () => {
+    expect(canConnect(pane, getBlock(BlockId.IRON_BARS))).toBe(true);
+    expect(canConnect(pane, getBlock(BlockId.STONE))).toBe(true);
+    expect(canConnect(pane, getBlock(BlockId.AIR))).toBe(false);
+  });
+
+  it('活板门关着是薄薄一层，开着立起来贴在朝向那一侧', () => {
+    const closed = shapeBoxes(trapdoor, 0)[0];
+    expect(closed.y0).toBe(0);
+    expect(closed.y1).toBeLessThan(0.2);
+
+    const top = shapeBoxes(trapdoor, TRAPDOOR_TOP_BIT)[0];
+    expect(top.y1).toBe(1);
+    expect(top.y0).toBeGreaterThan(0.8);
+
+    const open = shapeBoxes(trapdoor, TRAPDOOR_OPEN_BIT)[0];
+    expect(open.y0).toBe(0);
+    expect(open.y1).toBe(1);
+    // FACINGS[0] = +x，开着的门贴在 +x 那一侧
+    expect(open.x1).toBe(1);
+    expect(open.x0).toBeGreaterThan(0.8);
+  });
+
+  it('开着的活板门仍然挡人（1.8.9 里可以站在竖起来的门上）', () => {
+    expect(collisionBoxes(trapdoor, TRAPDOOR_OPEN_BIT).length).toBe(1);
   });
 });
