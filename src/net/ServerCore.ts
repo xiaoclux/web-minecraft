@@ -52,8 +52,8 @@ export interface ServerWorldSource {
    */
   onBroadcast?(message: NetMessage): void;
   /**
-   * 世界里当前的实体（生物 / 掉落物）。Node 专用服务端目前不跑生物 AI，可以不实现；
-   * 浏览器主机则把自己这局的实体给出来，客人才能看见怪。
+   * 世界里当前的实体（生物 / 掉落物）。
+   * Node 专用服务端用 ServerEntityWorld 提供，浏览器主机则把自己这局的实体给出来。
    */
   entities?(): SnapshotEntity[];
   /**
@@ -280,6 +280,15 @@ export class ServerCore {
   }
 
   /** 给所有人发一条消息。 */
+  /** 在线玩家的位置（服务端跑生物 AI 时要知道追谁）。 */
+  playerPositions(): { id: number; x: number; y: number; z: number }[] {
+    const out: { id: number; x: number; y: number; z: number }[] = [];
+    for (const player of this.players.values()) {
+      out.push({ id: player.id, x: player.x, y: player.y, z: player.z });
+    }
+    return out;
+  }
+
   broadcast(message: NetMessage): void {
     this.source.onBroadcast?.(message);
     if (this.players.size === 0) {

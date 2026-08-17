@@ -13,6 +13,7 @@ import { ChunkManager } from '../src/engine/world/ChunkManager';
 import { LightEngine } from '../src/engine/world/LightEngine';
 import { World } from '../src/engine/world/World';
 import { ServerCore, TIME_SYNC_INTERVAL_MS, type Connection } from '../src/net/ServerCore';
+import { ServerEntityWorld } from '../src/net/ServerEntityWorld';
 import { loadWorld, saveWorld } from './worldStorage';
 
 /** 默认端口。 */
@@ -21,6 +22,9 @@ const DEFAULT_PORT = 8080;
 const TICKS_PER_SECOND = 20;
 /** 开服时先生成出生点周围多少 chunk。 */
 const SPAWN_PRELOAD = 2;
+
+/** 实体快照广播间隔（毫秒）：比 tick 稀疏，够客户端插值就行。 */
+const ENTITY_SYNC_INTERVAL_MS = 200;
 
 /** 自动存盘间隔（毫秒）。 */
 const AUTOSAVE_INTERVAL_MS = 30000;
@@ -72,6 +76,7 @@ chunkManager.ensureLoaded(spawn.x, spawn.z, SPAWN_PRELOAD);
 // 读回上次的存档（玩家改过的方块与世界时间）
 const restored = loadWorld(options.savePath, chunkManager, true);
 let timeTick = restored?.timeTick ?? 0;
+let mobs: ServerEntityWorld | null = null;
 const server = new ServerCore({
   world,
   chunkManager,
@@ -79,6 +84,13 @@ const server = new ServerCore({
   worldType: options.worldType,
   currentTime: () => timeTick,
   spawnPoint: () => spawn,
+  entities: () => mobs?.snapshot() ?? [],
+});
+// 生物住在服务端：刷怪、追人、掉落都在这里跑，客户端只收快照
+mobs = new ServerEntityWorld({
+  world,
+  currentTime: () => timeTick,
+  playerPositions: () => server.playerPositions(),
 });
 
 const wss = new WebSocketServer({ port: options.port });
@@ -104,7 +116,9 @@ wss.on('connection', (socket: WebSocket) => {
 // 世界时间照常推进；chunk 由客户端按需索取，服务端不必自己 update
 setInterval(() => {
   timeTick++;
+  mobs?.tickWorld();
 }, 1000 / TICKS_PER_SECOND);
+setInterval(() => server.syncEntities(), ENTITY_SYNC_INTERVAL_MS);
 setInterval(() => server.syncTime(), TIME_SYNC_INTERVAL_MS);
 setInterval(() => {
   const saved = saveWorld(options.savePath, world, timeTick);
