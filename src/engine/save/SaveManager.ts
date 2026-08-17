@@ -61,6 +61,8 @@ export interface WorldSave {
   dimensions?: DimensionSaveData[];
   /** 玩家所在维度（旧存档没有，按主世界处理）。 */
   playerDimension?: string;
+  /** 末影龙是否已经被打死（决定走返回传送门时放不放终末之诗）。 */
+  dragonDefeated?: boolean;
 }
 
 /** 一个非主世界维度的存档数据。 */

@@ -1447,3 +1447,52 @@ button:disabled {
     padding: 16px 8px;
   }
 }
+
+/* 终末之诗字幕 */
+.overlay.credits {
+  background: #000;
+  overflow: hidden;
+  z-index: 30;
+  cursor: pointer;
+}
+
+.credits-scroll {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: min(680px, 86vw);
+  transform: translateX(-50%);
+  text-align: center;
+  color: #b8a6ff;
+  font-size: 18px;
+  line-height: 1.9;
+  text-shadow: 0 0 8px rgba(150, 110, 255, 0.5);
+  animation-name: credits-roll;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+.credits-scroll p {
+  margin: 0;
+}
+
+.credits-gap {
+  height: 1.2em;
+}
+
+.credits-hint {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  color: #6a5a9a;
+  font-size: 13px;
+}
+
+@keyframes credits-roll {
+  from {
+    top: 100%;
+  }
+  to {
+    top: -180%;
+  }
+}

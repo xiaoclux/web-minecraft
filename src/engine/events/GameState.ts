@@ -24,6 +24,8 @@ export const Screen = {
   CHEST: 'chest',
   PAUSE: 'pause',
   DEATH: 'death',
+  /** 终末之诗（打完龙从返回传送门离开末地时滚动播放）。 */
+  CREDITS: 'credits',
 } as const;
 export type Screen = (typeof Screen)[keyof typeof Screen];
 

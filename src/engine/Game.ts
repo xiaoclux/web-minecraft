@@ -598,6 +598,8 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   private pressedButtons: { x: number; y: number; z: number; ticks: number }[] = [];
   /** 正在重算红石：避免 setBlock 触发的变更事件递归。 */
   private redstoneUpdating = false;
+  /** 末影龙是否已被击败（决定走返回传送门时放不放终末之诗）。 */
+  private dragonDefeated = false;
   /** 末地 Boss 战是否已布置过（每次进末地只布置一次）。 */
   private endFightStarted = false;
   /** 站在传送门里的累计 tick 与传送后的冷却。 */
@@ -807,6 +809,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       }
       dimension.blockEntities.load(data.blockEntities);
     }
+    this.dragonDefeated = save.dragonDefeated === true;
     const playerDimension = save.playerDimension;
     if (playerDimension && isDimensionId(playerDimension) && playerDimension !== this.current.id) {
       const target = this.dimensionOf(playerDimension);
@@ -857,6 +860,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       achievements: this.achievements.serialize(),
       dimensions: others,
       playerDimension: this.current.id,
+      dragonDefeated: this.dragonDefeated,
     };
   }
 
@@ -1173,6 +1177,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
         Math.floor(this.player.spawnZ),
         false,
       );
+      // 打完龙之后从返回传送门走，才放终末之诗（还没打龙就掉进传送门不算通关）
+      if (this.dragonDefeated) {
+        this.openScreen(Screen.CREDITS);
+      }
       return;
     }
     const target = this.dimensionOf(DimensionId.END);
@@ -1293,6 +1301,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
 
   /** 末影龙被打死：给经验、开返回传送门、放龙蛋、解成就。 */
   private onDragonKilled(dragon: EnderDragonEntity): void {
+    this.dragonDefeated = true;
     this.dropXp(dragon.x, END_ISLAND_SURFACE_Y + 2, dragon.z, DRAGON_KILL_XP);
     this.buildExitPortal();
     this.achievements.onDragonKilled();
@@ -2737,6 +2746,14 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
    * 合成格与光标上的物品必须先收回背包；背包放不下时保持界面打开并提示，
    * 避免玩家正在挪动的物品被丢进世界。
    */
+  /** 字幕放完 / 被跳过：回到游戏。 */
+  closeCredits(): void {
+    if (this.store.get().screen === Screen.CREDITS) {
+      this.openScreen(Screen.NONE);
+      this.requestPointerLock();
+    }
+  }
+
   closeScreen(): void {
     const leftover = this.containers.returnCraftingItems() + this.containers.returnCursor();
     if (leftover > 0) {
