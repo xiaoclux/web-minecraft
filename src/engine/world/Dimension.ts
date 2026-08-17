@@ -6,6 +6,7 @@
 import type { Entity } from '../entities/Entity';
 import { RandomTickSystem } from '../systems/RandomTickSystem';
 import { ComparatorSystem } from '../systems/ComparatorSystem';
+import { TriggerSystem } from '../systems/TriggerSystem';
 import { DaylightSensorSystem } from '../systems/DaylightSensorSystem';
 import { BlockEntityStore } from './BlockEntityStore';
 import type { ChunkGenerator } from './ChunkGenerator';
@@ -91,6 +92,8 @@ export interface DimensionHost {
   readonly daylight: number;
   /** 是否在下雨（只影响有天气的维度）。 */
   readonly isRaining: boolean;
+  /** 逐个访问玩家与生物的位置，回调返回 true 表示"找到了、可以停"（压力板 / 绊线用）。 */
+  someEntityAt(visit: (x: number, y: number, z: number) => boolean): boolean;
 }
 
 /** 一个维度的全部世界状态。 */
@@ -102,6 +105,7 @@ export class Dimension {
   readonly randomTicks: RandomTickSystem;
   readonly daylightSensors: DaylightSensorSystem;
   readonly comparators: ComparatorSystem;
+  readonly triggers: TriggerSystem;
   readonly blockEntities = new BlockEntityStore();
   readonly entities = new Map<number, Entity>();
 
@@ -123,6 +127,10 @@ export class Dimension {
       },
     });
     this.comparators = new ComparatorSystem({ world: this.world, blockEntities: this.blockEntities });
+    this.triggers = new TriggerSystem({
+      world: this.world,
+      someEntityAt: (visit) => this.host.someEntityAt(visit),
+    });
     this.daylightSensors = new DaylightSensorSystem({
       world: this.world,
       get daylight(): number {

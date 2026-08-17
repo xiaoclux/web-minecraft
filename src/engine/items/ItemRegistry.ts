@@ -214,6 +214,20 @@ const BLOCK_ITEM_EXTRAS: Record<string, Partial<ItemDef>> = {
   gold_ore: { smeltsInto: 'gold_ingot' },
 };
 
+/**
+ * 材料物品放下去会变成哪种方块。
+ * 这些方块自己不作为物品存在（noItem），玩家手里拿的是掉落物形态的材料。
+ */
+const BLOCK_BY_MATERIAL: Record<string, number> = {
+  redstone: BlockId.REDSTONE_WIRE,
+  string: BlockId.TRIPWIRE,
+};
+
+/** 材料物品对应的可放置方块；不能放置返回 null。 */
+export function blockForMaterial(itemId: string): number | null {
+  return BLOCK_BY_MATERIAL[itemId] ?? null;
+}
+
 /** 一个方块（含其所有变种）对应的物品。 */
 function blockItems(def: BlockDef): ItemDef[] {
   const variants = def.variants ?? [def];

@@ -139,7 +139,6 @@ import { containerSlots, extractOne, insertOne, isEmpty } from './systems/Hopper
 import { extendPiston, pistonDirection, retractPiston } from './systems/PistonSystem';
 import {
   BUTTON_PRESS_TICKS,
-  PRESSURE_PLATE_RANGE,
   COMPARATOR_DELAY_TICKS,
   COMPARATOR_MODE_BIT,
   REDSTONE_POWERED_BIT,
@@ -201,7 +200,7 @@ import {
   type EnchantOption,
 } from './items/EnchantingTable';
 export type { SlotRef } from './items/ContainerController';
-import { getAttackDamage, getItem, ITEM_DEFS, ItemKind } from './items/ItemRegistry';
+import { blockForMaterial, getAttackDamage, getItem, ITEM_DEFS, ItemKind } from './items/ItemRegistry';
 import { prewarmItemIcons } from './textures/IconRegistry';
 import {
   EnchantmentId,
@@ -349,7 +348,6 @@ const MINECART_ITEM = 'minecart';
 const MINECART_HIT_TOLERANCE = 1;
 const RIDE_EYE_OFFSET = 0.3;
 /** 压力板多久检查一次。 */
-const PRESSURE_PLATE_CHECK_TICKS = 5;
 /** 方块变更后重算用电器的半径。 */
 const REDSTONE_CONSUMER_RADIUS = 2;
 /** 凋灵召唤阵的两个可能轴向（沿 X 或沿 Z 摆）。 */
@@ -598,8 +596,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   private scheduledUpdates: { x: number; y: number; z: number; ticks: number }[] = [];
   /** 按下的按钮（到时间弹回）。 */
   private pressedButtons: { x: number; y: number; z: number; ticks: number }[] = [];
-  /** 世界里已知的压力板坐标（放置时登记）。 */
-  private readonly knownPlates = new Set<string>();
   /** 正在重算红石：避免 setBlock 触发的变更事件递归。 */
   private redstoneUpdating = false;
   /** 末地 Boss 战是否已布置过（每次进末地只布置一次）。 */
@@ -1990,7 +1986,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   /** 每 tick：按钮弹回、压力板感应、延迟更新（火把 / 中继器）。 */
   private tickRedstone(): void {
     this.tickButtons();
-    this.tickPressurePlates();
+    this.current.triggers.tick();
     this.tickScheduledUpdates();
   }
 
@@ -2250,44 +2246,16 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.pressedButtons = remaining;
   }
 
-  /** 压力板：玩家或生物站上去就通电，离开一会儿后断电。 */
-  private tickPressurePlates(): void {
-    if (this.tick % PRESSURE_PLATE_CHECK_TICKS !== 0) {
-      return;
-    }
-    for (const plate of this.knownPlates) {
-      const [x, y, z] = plate.split(',').map(Number);
-      if (this.world.getBlock(x, y, z) !== BlockId.STONE_PRESSURE_PLATE) {
-        this.knownPlates.delete(plate);
-        continue;
-      }
-      const pressed = this.isPlatePressed(x, y, z);
-      const meta = this.world.getMeta(x, y, z);
-      const powered = (meta & REDSTONE_POWERED_BIT) !== 0;
-      if (pressed === powered) {
-        continue;
-      }
-      this.world.setBlock(
-        x,
-        y,
-        z,
-        BlockId.STONE_PRESSURE_PLATE,
-        pressed ? meta | REDSTONE_POWERED_BIT : meta & ~REDSTONE_POWERED_BIT,
-      );
-    }
-  }
-
-  /** 板子上有没有站人 / 站生物。 */
-  private isPlatePressed(x: number, y: number, z: number): boolean {
-    const cx = x + 0.5;
-    const cz = z + 0.5;
-    const onPlate = (ex: number, ey: number, ez: number): boolean =>
-      Math.abs(ex - cx) <= PRESSURE_PLATE_RANGE && Math.abs(ez - cz) <= PRESSURE_PLATE_RANGE && Math.abs(ey - y) < 1;
-    if (onPlate(this.player.x, this.player.y, this.player.z)) {
+  /**
+   * 逐个访问玩家与生物的位置，交给压力板 / 绊线判断有没有人踩上去。
+   * @returns 只要有一个位置让 visit 返回 true 就是 true
+   */
+  someEntityAt(visit: (x: number, y: number, z: number) => boolean): boolean {
+    if (visit(this.player.x, this.player.y, this.player.z)) {
       return true;
     }
     for (const e of this.entities.values()) {
-      if (e instanceof Mob && !e.isDead && onPlate(e.x, e.y, e.z)) {
+      if (e instanceof Mob && !e.isDead && visit(e.x, e.y, e.z)) {
         return true;
       }
     }
@@ -2737,11 +2705,31 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   /** 打开界面。 */
   openScreen(screen: Screen, openBlock: { x: number; y: number; z: number } | null = null): void {
     this.craftGridSize = screen === Screen.CRAFTING ? 3 : 2;
+    this.setTrappedChestPowered(this.store.get().openBlock, false);
+    this.setTrappedChestPowered(openBlock, true);
     this.store.patch({ screen, openBlock });
     this.isPaused = screen === Screen.PAUSE || screen === Screen.STATS;
     if (screen !== Screen.NONE) {
       this.controls.exitLock();
     }
+  }
+
+  /** 陷阱箱被打开 / 关闭时切换它的通电位（1.8.9 按查看人数输出，这里只有本地玩家）。 */
+  private setTrappedChestPowered(at: { x: number; y: number; z: number } | null, powered: boolean): void {
+    if (!at || this.world.getBlock(at.x, at.y, at.z) !== BlockId.TRAPPED_CHEST) {
+      return;
+    }
+    const meta = this.world.getMeta(at.x, at.y, at.z);
+    if (((meta & REDSTONE_POWERED_BIT) !== 0) === powered) {
+      return;
+    }
+    this.world.setBlock(
+      at.x,
+      at.y,
+      at.z,
+      BlockId.TRAPPED_CHEST,
+      powered ? meta | REDSTONE_POWERED_BIT : meta & ~REDSTONE_POWERED_BIT,
+    );
   }
 
   /**
@@ -2756,6 +2744,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       return;
     }
     this.isPaused = false;
+    this.setTrappedChestPowered(this.store.get().openBlock, false);
     this.store.patch({ screen: Screen.NONE, openBlock: null });
     this.requestPointerLock();
   }
@@ -3230,6 +3219,12 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     }
     if (def.kind === ItemKind.BLOCK && def.blockId !== undefined && hit) {
       this.tryPlaceBlock(def.blockId, hit, def.blockMeta ?? 0);
+      return;
+    }
+    // 红石粉 / 线：方块本身没有物品形态，手里的材料放下去变成对应方块
+    const materialBlock = blockForMaterial(def.id);
+    if (materialBlock !== null && hit) {
+      this.tryPlaceBlock(materialBlock, hit);
     }
   }
 
@@ -3652,6 +3647,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
         this.openScreen(Screen.CRAFTING, { x: hit.x, y: hit.y, z: hit.z });
         return true;
       case BlockId.CHEST:
+      case BlockId.TRAPPED_CHEST:
         this.blockEntities.getOrCreate(hit.x, hit.y, hit.z, () => ({
           type: BlockEntityType.CHEST,
           items: new Array<ItemStack | null>(CHEST_SLOT_COUNT).fill(null),
@@ -3895,9 +3891,6 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.playBlockSound(placeSound(soundGroupOf(def)), px, py, pz, 'place');
     if (blockId === BlockId.WITHER_SKULL) {
       this.trySummonWither(px, py, pz);
-    }
-    if (blockId === BlockId.STONE_PRESSURE_PLATE) {
-      this.knownPlates.add(`${px},${py},${pz}`);
     }
     this.achievements.addStat(StatId.BLOCKS_PLACED);
     if (def.shape === BlockShape.BED) {

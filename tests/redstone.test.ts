@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BlockId } from '../src/engine/blocks/BlockRegistry';
 import { FACINGS } from '../src/engine/blocks/blockShapes';
+import { TriggerSystem } from '../src/engine/systems/TriggerSystem';
 import {
   COMPARATOR_MODE_BIT,
   COMPARATOR_OUTPUT_SHIFT,
@@ -8,6 +9,7 @@ import {
   NOTE_COUNT,
   REDSTONE_MAX_POWER,
   REDSTONE_POWERED_BIT,
+  TRIGGER_CHECK_INTERVAL_TICKS,
 } from '../src/engine/constants/redstone';
 import {
   comparatorOutput,
@@ -320,5 +322,54 @@ describe('比较器', () => {
     expect(sourcePowerTo(world, 0, 10, 0, 1, 10, 0)).toBe(11);
     expect(sourcePowerTo(world, 0, 10, 0, -1, 10, 0)).toBe(0);
     expect(sourcePowerTo(world, 0, 10, 0, 0, 10, 1)).toBe(0);
+  });
+});
+
+describe('绊线与陷阱箱', () => {
+  it('绊线钩沿朝向读整条线，线被踩到时钩通电', () => {
+    const world = testWorld();
+    const facingEast = FACINGS.findIndex(([fx, fz]) => fx === 1 && fz === 0);
+    world.setBlock(0, 10, 0, BlockId.TRIPWIRE_HOOK, facingEast);
+    for (let i = 1; i <= 3; i++) {
+      world.setBlock(i, 10, 0, BlockId.TRIPWIRE);
+    }
+    // 站在第 2 根线上
+    const occupied = { x: 2, z: 0 };
+    const system = new TriggerSystem({
+      world,
+      someEntityAt: (visit) => visit(occupied.x + 0.5, 10, occupied.z + 0.5),
+    });
+    for (let i = 0; i < TRIGGER_CHECK_INTERVAL_TICKS * 2; i++) {
+      system.tick();
+    }
+    expect(world.getMeta(2, 10, 0) & REDSTONE_POWERED_BIT).not.toBe(0);
+    expect(world.getMeta(0, 10, 0) & REDSTONE_POWERED_BIT).not.toBe(0);
+    expect(sourcePower(world, 0, 10, 0)).toBe(REDSTONE_MAX_POWER);
+
+    // 走到线外：整条线与钩都断电
+    occupied.x = 8;
+    for (let i = 0; i < TRIGGER_CHECK_INTERVAL_TICKS * 2; i++) {
+      system.tick();
+    }
+    expect(world.getMeta(2, 10, 0) & REDSTONE_POWERED_BIT).toBe(0);
+    expect(world.getMeta(0, 10, 0) & REDSTONE_POWERED_BIT).toBe(0);
+  });
+
+  it('压力板也走同一套触发检测（读档放下的板子同样有效）', () => {
+    const world = testWorld();
+    world.setBlock(5, 10, 5, BlockId.STONE_PRESSURE_PLATE);
+    const system = new TriggerSystem({ world, someEntityAt: (visit) => visit(5.5, 10, 5.5) });
+    for (let i = 0; i < TRIGGER_CHECK_INTERVAL_TICKS; i++) {
+      system.tick();
+    }
+    expect(world.getMeta(5, 10, 5) & REDSTONE_POWERED_BIT).not.toBe(0);
+  });
+
+  it('陷阱箱按通电位输出信号', () => {
+    const world = testWorld();
+    world.setBlock(0, 10, 0, BlockId.TRAPPED_CHEST, 0);
+    expect(sourcePower(world, 0, 10, 0)).toBe(0);
+    world.setBlock(0, 10, 0, BlockId.TRAPPED_CHEST, REDSTONE_POWERED_BIT);
+    expect(sourcePower(world, 0, 10, 0)).toBe(REDSTONE_MAX_POWER);
   });
 });

@@ -22,6 +22,10 @@ export class BlockPositionTracker {
     });
     world.onChunkLoad((chunk) => this.scanChunk(chunk));
     world.onChunkUnload((chunk) => this.forgetChunk(chunk));
+    // 构造时世界里可能已经有 chunk（读档、或系统在世界之后创建）
+    for (const chunk of world.chunks.values()) {
+      this.scanChunk(chunk);
+    }
   }
 
   get size(): number {

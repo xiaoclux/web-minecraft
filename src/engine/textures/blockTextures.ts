@@ -767,6 +767,28 @@ function repeater(lit: boolean): Painter {
   };
 }
 
+/** 绊线钩：木底座 + 铁钩。 */
+const tripwireHook: Painter = (c, rng) => {
+  c.fill(TRANSPARENT);
+  c.noise(hex('#8a6a3f'), 0.08, rng);
+  c.rect(6, 2, 4, 6, hex('#b8b8b8'));
+  c.rect(7, 8, 2, 6, hex('#6f6f6f'));
+};
+
+/** 绊线：一根细线。 */
+const tripwire: Painter = (c) => {
+  c.fill(TRANSPARENT);
+  c.rect(0, 7, 16, 2, hex('#d8d8d8'));
+};
+
+/** 陷阱箱正面：和普通箱子一样，但锁扣是红的。 */
+const trappedChestFront: Painter = (c, rng) => {
+  c.noise(hex('#8a6a3f'), 0.08, rng);
+  c.rect(0, 0, 16, 1, hex('#6b4f2c'));
+  c.rect(0, 15, 16, 1, hex('#6b4f2c'));
+  c.rect(6, 6, 4, 4, hex('#c03028'));
+};
+
 /** 比较器：石板 + 前后两个火把点 + 中间的模式指示灯（1.8.9 用石英柱表示）。 */
 const comparator: Painter = (c, rng) => {
   c.noise(hex('#a8a8a8'), 0.06, rng);
@@ -1166,6 +1188,9 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   daylight_sensor_top: daylightSensorTop,
   daylight_sensor_side: daylightSensorSide,
   comparator,
+  tripwire_hook: tripwireHook,
+  tripwire,
+  trapped_chest_front: trappedChestFront,
   repeater: repeater(false),
   repeater_on: repeater(true),
   lever,

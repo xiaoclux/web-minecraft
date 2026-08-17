@@ -287,6 +287,8 @@ export const BlockId = {
   DAYLIGHT_SENSOR: 160,
   COMPARATOR: 161,
   TRAPPED_CHEST: 162,
+  TRIPWIRE_HOOK: 163,
+  TRIPWIRE: 164,
   LEVER: 69,
   STONE_BUTTON: 77,
   STONE_PRESSURE_PLATE: 70,
@@ -882,6 +884,26 @@ export const BLOCK_DEFS: BlockDef[] = [
     shape: BlockShape.PRESSURE_PLATE,
   },
   {
+    ...cube(BlockId.TRIPWIRE_HOOK, 'tripwire_hook', '绊线钩', same('tripwire_hook'), 0.5, null, {
+      solid: false,
+      opaque: false,
+      needsSupport: true,
+      hasFacing: true,
+      redstone: { source: REDSTONE_MAX_POWER, poweredBit: REDSTONE_POWERED_BIT },
+    }),
+    shape: BlockShape.PRESSURE_PLATE,
+  },
+  {
+    ...cube(BlockId.TRIPWIRE, 'tripwire', '绊线', same('tripwire'), 0, null, {
+      solid: false,
+      opaque: false,
+      needsSupport: true,
+      noItem: true,
+      drops: [{ item: 'string', min: 1, max: 1 }],
+    }),
+    shape: BlockShape.PRESSURE_PLATE,
+  },
+  {
     ...cube(BlockId.COMPARATOR, 'comparator', '红石比较器', same('comparator'), 0.5, null, {
       solid: false,
       opaque: false,
@@ -1154,6 +1176,29 @@ export const BLOCK_DEFS: BlockDef[] = [
       2.5,
       ToolType.AXE,
       { interactive: true },
+    ),
+    hasFacing: true,
+  },
+  {
+    ...cube(
+      BlockId.TRAPPED_CHEST,
+      'trapped_chest',
+      '陷阱箱',
+      {
+        top: 'chest_top',
+        bottom: 'chest_top',
+        north: 'trapped_chest_front',
+        south: 'chest_side',
+        east: 'chest_side',
+        west: 'chest_side',
+      },
+      2.5,
+      ToolType.AXE,
+      {
+        interactive: true,
+        // 有人打开着就通电（1.8.9 按查看人数给强度，这里只有本地玩家，开着即满强度）
+        redstone: { source: REDSTONE_MAX_POWER, poweredBit: REDSTONE_POWERED_BIT },
+      },
     ),
     hasFacing: true,
   },

@@ -80,3 +80,8 @@ export const COMPARATOR_OUTPUT_MASK = 15;
 export const COMPARATOR_DELAY_TICKS = 2;
 /** 容器满载时比较器的输出强度（1.8.9 满箱输出 15，空箱 0，非空最低 1）。 */
 export const CONTAINER_SIGNAL_MAX = 15;
+
+/** 绊线最长能连多少格（1.8.9 是 40）。 */
+export const TRIPWIRE_MAX_LENGTH = 40;
+/** 绊线 / 压力板多久检测一次有没有人踩上去。 */
+export const TRIGGER_CHECK_INTERVAL_TICKS = 5;
