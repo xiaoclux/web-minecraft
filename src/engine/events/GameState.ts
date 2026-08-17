@@ -28,6 +28,8 @@ export const Screen = {
   CREDITS: 'credits',
   /** 刚放下告示牌时的编辑界面。 */
   SIGN: 'sign',
+  /** 和村民交易。 */
+  TRADE: 'trade',
 } as const;
 export type Screen = (typeof Screen)[keyof typeof Screen];
 
@@ -73,6 +75,8 @@ export interface GameUiState {
   inventoryVersion: number;
   /** 告示牌文字的版本号（改一行就 +1，驱动编辑界面重渲染）。 */
   signVersion: number;
+  /** 交易的版本号（成交一笔就 +1）。 */
+  tradeVersion: number;
   screen: Screen;
   isPointerLocked: boolean;
   isFlying: boolean;

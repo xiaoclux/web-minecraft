@@ -82,6 +82,8 @@ interface OreConfig {
   /** 每 chunk 尝试次数。 */
   attempts: number;
   size: number;
+  /** 只在这些群系里出现；不填表示到处都有。 */
+  biomes?: readonly Biome[];
 }
 /** 矿脉分布高度取自 1.8.9（煤 ≤128、铁 ≤64、金 ≤32、钻石 ≤16）。 */
 const ORES: OreConfig[] = [
@@ -95,6 +97,8 @@ const ORES: OreConfig[] = [
   { block: BlockId.GOLD_ORE, minY: 2, maxY: 32, attempts: 3, size: 5 },
   { block: BlockId.REDSTONE_ORE, minY: 1, maxY: 16, attempts: 8, size: 7 },
   { block: BlockId.DIAMOND_ORE, minY: 1, maxY: 16, attempts: 2, size: 5 },
+  // 绿宝石只在山地出现、而且是单颗单颗地埋（1.8.9 同）
+  { block: BlockId.EMERALD_ORE, minY: 4, maxY: 32, attempts: 6, size: 1, biomes: [Biome.MOUNTAINS] },
   { block: BlockId.GRAVEL, minY: 4, maxY: 60, attempts: 8, size: 12 },
 ];
 
@@ -340,6 +344,9 @@ export class TerrainGenerator implements ChunkGenerator {
         const x = chunk.originX + Math.floor(rng() * CHUNK_SIZE);
         const z = chunk.originZ + Math.floor(rng() * CHUNK_SIZE);
         const y = ore.minY + Math.floor(rng() * (ore.maxY - ore.minY));
+        if (ore.biomes && !ore.biomes.includes(this.biomeAt(x, z))) {
+          continue;
+        }
         this.placeVein(chunk, x, y, z, ore, rng);
       }
     }

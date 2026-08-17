@@ -302,6 +302,8 @@ export const BlockId = {
   CAKE: 170,
   COCOA: 171,
   SIGN: 172,
+  EMERALD_ORE: 173,
+  EMERALD_BLOCK: 174,
   BROWN_MUSHROOM: 168,
   RED_MUSHROOM: 169,
   LEVER: 69,
@@ -672,6 +674,11 @@ export const BLOCK_DEFS: BlockDef[] = [
     drops: [{ item: 'diamond', min: 1, max: 1 }],
     xp: [3, 7],
   }),
+  cube(BlockId.EMERALD_ORE, 'emerald_ore', '绿宝石矿石', same('emerald_ore'), 3, ToolType.PICKAXE, {
+    minTier: ToolTier.IRON,
+    drops: [{ item: 'emerald', min: 1, max: 1 }],
+    xp: [3, 7],
+  }),
   cube(
     BlockId.CRAFTING_TABLE,
     'crafting_table',
@@ -764,6 +771,9 @@ export const BLOCK_DEFS: BlockDef[] = [
   }),
   cube(BlockId.IRON_BLOCK, 'iron_block', '铁块', same('iron_block'), 5, ToolType.PICKAXE, {
     minTier: ToolTier.STONE,
+  }),
+  cube(BlockId.EMERALD_BLOCK, 'emerald_block', '绿宝石块', same('emerald_block'), 5, ToolType.PICKAXE, {
+    minTier: ToolTier.IRON,
   }),
   cube(BlockId.DIAMOND_BLOCK, 'diamond_block', '钻石块', same('diamond_block'), 5, ToolType.PICKAXE, {
     minTier: ToolTier.IRON,

@@ -44,6 +44,7 @@ import { EnchantmentId, enchantLevel } from '../items/enchantments';
 import { AABB } from '../physics/AABB';
 import { isBoxBlocked } from '../physics/collision';
 import { findPath, type PathNode } from './ai/Pathfinder';
+import { rollTrades, type TradeOffer, type VillagerProfession } from './villagerTrades';
 import { ArrowEntity } from './ArrowEntity';
 import type { Entity, EntitySaveData } from './Entity';
 import type { EntityContext } from './EntityContext';
@@ -103,6 +104,9 @@ export class Mob extends LivingEntity {
   /** 追击时被卡住的 tick 数与绕行剩余 tick。 */
   /** 距离下一次下蛋还有多少 tick（只有鸡用）；-1 表示还没随机过。 */
   private eggTicks = -1;
+  /** 村民的职业与交易表（只有村民有）。 */
+  profession: VillagerProfession | null = null;
+  trades: TradeOffer[] = [];
   private stuckTicks = 0;
   private detourTicks = 0;
   /** 当前寻路路径（方块坐标的落脚点序列）与进度。 */
@@ -180,6 +184,12 @@ export class Mob extends LivingEntity {
       this.handleSunlight(ctx);
     }
     super.tick(ctx);
+  }
+
+  /** 给村民安排职业与交易表。 */
+  setProfession(profession: VillagerProfession): void {
+    this.profession = profession;
+    this.trades = rollTrades(profession);
   }
 
   /** 成年鸡每隔 5~10 分钟下一个蛋（1.8.9 同）。 */
@@ -697,6 +707,8 @@ export class Mob extends LivingEntity {
       woolRegrowTicks: this.woolRegrowTicks,
       isBaby: this.isBaby,
       growTicks: this.growTicks,
+      profession: this.profession,
+      trades: this.trades,
     };
   }
 
@@ -708,6 +720,11 @@ export class Mob extends LivingEntity {
     mob.age = data.age;
     if (typeof data.health === 'number') {
       mob.health = data.health;
+    }
+    if (typeof data.profession === 'string') {
+      mob.profession = data.profession as VillagerProfession;
+      // 交易次数是玩家的进度，存档里带回来；老存档没有就按职业重新发一份
+      mob.trades = Array.isArray(data.trades) ? (data.trades as TradeOffer[]) : rollTrades(mob.profession);
     }
     if (typeof data.hasWool === 'boolean') {
       mob.hasWool = data.hasWool;

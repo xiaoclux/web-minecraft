@@ -67,6 +67,15 @@ export class ChunkSection {
   }
 }
 
+/** 世界生成留下的生物标记。 */
+export interface PendingMob {
+  x: number;
+  y: number;
+  z: number;
+  /** 生物类型（用字符串，避免 Chunk 依赖 MobDefs 的具体枚举）。 */
+  type: string;
+}
+
 /** 世界生成留下的方块实体标记。 */
 export interface PendingBlockEntity {
   x: number;
@@ -90,6 +99,11 @@ export class Chunk {
    * chunk 加入世界时由 Game 补上对应的方块实体，已经有实体的位置不会被覆盖。
    */
   readonly pendingBlockEntities: PendingBlockEntity[] = [];
+  /**
+   * 世界生成留下的生物：chunk 加入世界时由 Game 生成一次（村民等）。
+   * 生成过就清空，免得来回加载刷出一群。
+   */
+  readonly pendingMobs: PendingMob[] = [];
   /** 玩家 / 实体改动过 → 必须存档、不可卸载。 */
   isModified = false;
   /** 上次序列化之后又有改动（存档时据此决定能不能复用缓存的序列化结果）。 */

@@ -5,6 +5,7 @@ import { isContainerScreen, Screen } from '../engine/events/GameState';
 import type { SaveManager, WorldMeta, WorldSave } from '../engine/save/SaveManager';
 import { CreditsScreen } from './CreditsScreen';
 import { SignScreen } from './SignScreen';
+import { TradeScreen } from './TradeScreen';
 import { DeathScreen } from './DeathScreen';
 import { DebugOverlay } from './DebugOverlay';
 import { Hud } from './Hud';
@@ -108,6 +109,7 @@ function GameOverlays({ game }: { game: Game }) {
       {state.screen === Screen.DEATH && <DeathScreen game={game} state={state} />}
       {state.screen === Screen.CREDITS && <CreditsScreen game={game} />}
       {state.screen === Screen.SIGN && <SignScreen game={game} state={state} />}
+      {state.screen === Screen.TRADE && <TradeScreen game={game} state={state} />}
       {!game.isTouch && !state.isPointerLocked && state.screen === Screen.NONE && (
         <div className="overlay center click-hint" onClick={() => game.requestPointerLock()}>
           <div className="loading-text">点击画面开始</div>

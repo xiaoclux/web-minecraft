@@ -19,6 +19,7 @@ export const MobType = {
   BLAZE: 'blaze',
   MAGMA_CUBE: 'magma_cube',
   WITHER_SKELETON: 'wither_skeleton',
+  VILLAGER: 'villager',
 } as const;
 export type MobType = (typeof MobType)[keyof typeof MobType];
 
@@ -72,6 +73,19 @@ export interface MobDef {
 const PIGMAN_SWORD_DROP_CHANCE = 0.085;
 
 export const MOB_DEFS: Record<MobType, MobDef> = {
+  villager: {
+    type: 'villager',
+    label: '村民',
+    width: 0.6,
+    height: 1.95,
+    maxHealth: 20,
+    speed: 2.4,
+    hostile: false,
+    attackDamage: 0,
+    drops: [],
+    xp: 0,
+    burnsInSunlight: false,
+  },
   zombie: {
     type: 'zombie',
     label: '僵尸',

@@ -1510,3 +1510,60 @@ button:disabled {
   border: 2px solid #6b4f2c;
   padding: 4px 6px;
 }
+
+/* 村民交易 */
+.trade-panel {
+  min-width: 420px;
+}
+
+.trade-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.trade-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #4a4a4a;
+  border: 2px solid #2b2b2b;
+  color: #eee;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.trade-row:hover:not(.disabled) {
+  background: #5c5c5c;
+}
+
+.trade-row.disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.trade-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trade-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.trade-arrow {
+  color: #b8b8b8;
+}
+
+.trade-uses {
+  font-size: 12px;
+  color: #b8b8b8;
+}

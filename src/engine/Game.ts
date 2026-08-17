@@ -109,6 +109,7 @@ import {
 } from './systems/PortalSystem';
 import { breakSound, digSound, placeSound, soundGroupOf, stepSound } from './blocks/blockSounds';
 import { AchievementSystem, StatId } from './systems/Achievements';
+import { VILLAGER_PROFESSIONS, type TradeOffer } from './entities/villagerTrades';
 import { potionOfItem } from './items/potions';
 import { biomeHasSnowfall, biomeLabel } from './world/biomes';
 import { ArrowEntity } from './entities/ArrowEntity';
@@ -403,6 +404,8 @@ const FOOTSTEP_INTERVAL_BLOCKS = 2.2;
 const DIG_SOUND_INTERVAL_TICKS = 5;
 /** 夜视把世界亮度托到的下限（1 = 满亮，略低一点保留一点氛围）。 */
 const NIGHT_VISION_MIN_LIGHT = 0.9;
+/** 没在交易时返回的空交易表。 */
+const EMPTY_TRADES: readonly TradeOffer[] = [];
 /** 弓与箭的物品 id。 */
 const BOW_ITEM_ID = 'bow';
 const ARROW_ITEM_ID = 'arrow';
@@ -546,7 +549,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
         ? new RemoteGenerator(this.meta.seed, (cx, cz) => this.requestChunkFromServer(cx, cz), this.player)
         : createDimensionGenerator(id, this.meta);
     const dimension = new Dimension(DIMENSION_DEFS[id], generator, this);
-    dimension.world.onChunkLoad((chunk) => this.applyPendingBlockEntities(chunk));
+    dimension.world.onChunkLoad((chunk) => {
+      this.applyPendingBlockEntities(chunk);
+      this.spawnPendingMobs(chunk);
+    });
     dimension.world.onBlockChange((x, y, z, oldId, newId) => {
       // 水流 / 火 / 作物每 tick 大量 setBlock，只有变更点周围真有红石元件时才值得跑一遍红石重算
       if (getBlock(oldId).redstone || getBlock(newId).redstone || this.hasRedstoneNeighbor(x, y, z)) {
@@ -624,6 +630,8 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   private scheduledUpdates: { x: number; y: number; z: number; ticks: number }[] = [];
   /** 按下的按钮（到时间弹回）。 */
   private pressedButtons: { x: number; y: number; z: number; ticks: number }[] = [];
+  /** 正在交易的村民；没在交易时为 null。 */
+  private tradingVillager: Mob | null = null;
   /** 拉弓已经拉了多少 tick；-1 表示没在拉。 */
   private bowDrawTicks = -1;
   /** 正在重算红石：避免 setBlock 触发的变更事件递归。 */
@@ -691,6 +699,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       selectedSlot: 0,
       inventoryVersion: 0,
       signVersion: 0,
+      tradeVersion: 0,
       screen: Screen.NONE,
       isPointerLocked: false,
       isFlying: false,
@@ -717,7 +726,10 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       this.createNewWorld();
     }
     this.fluids.onWashed((x, y, z, id, meta) => this.onBlockWashed(x, y, z, id, meta));
-    this.world.onChunkLoad((chunk) => this.applyPendingBlockEntities(chunk));
+    this.world.onChunkLoad((chunk) => {
+      this.applyPendingBlockEntities(chunk);
+      this.spawnPendingMobs(chunk);
+    });
     this.world.onChunkUnload((chunk) => this.onChunkUnloaded(chunk));
     this.player.inventory.subscribe(() =>
       this.store.patch({ inventoryVersion: this.store.get().inventoryVersion + 1 }),
@@ -3281,6 +3293,9 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     if (this.tryToggleRide()) {
       return;
     }
+    if (this.tryTradeWithVillager()) {
+      return;
+    }
     const hit = this.currentHit;
     const held = this.player.heldItem;
     const p = this.player;
@@ -3723,6 +3738,50 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   }
 
   /** 用手里的食物喂准星里的动物，让它进入求爱状态。 */
+  /** 右键村民：打开交易界面。 */
+  private tryTradeWithVillager(): boolean {
+    const target = this.findEntityInCrosshair();
+    if (!(target instanceof Mob) || target.type !== MobType.VILLAGER || target.isDead) {
+      return false;
+    }
+    this.tradingVillager = target;
+    this.openScreen(Screen.TRADE);
+    return true;
+  }
+
+  /** 正在交易的村民（UI 读它的交易表）。 */
+  get villagerTrades(): readonly TradeOffer[] {
+    return this.tradingVillager?.trades ?? EMPTY_TRADES;
+  }
+
+  /**
+   * 做第 index 笔交易：付得起就换，付不起什么也不做。
+   * @returns 是否成交
+   */
+  tradeWith(index: number): boolean {
+    const villager = this.tradingVillager;
+    const offer = villager?.trades[index];
+    if (!villager || !offer || offer.uses <= 0) {
+      return false;
+    }
+    const inventory = this.player.inventory;
+    if (!offer.give.every((need) => inventory.countOf(need.id) >= need.count)) {
+      return false;
+    }
+    for (const need of offer.give) {
+      inventory.removeItems(need.id, need.count);
+    }
+    const leftover = inventory.add({ id: offer.receive.id, count: offer.receive.count });
+    if (leftover > 0) {
+      this.dropItem(this.player.x, this.player.eyeY, this.player.z, { id: offer.receive.id, count: leftover }, 0.2);
+    }
+    offer.uses--;
+    this.sound.play('pop');
+    this.bumpInventory();
+    this.store.patch({ tradeVersion: this.store.get().tradeVersion + 1 });
+    return true;
+  }
+
   private tryFeedMob(itemId: string): boolean {
     const target = this.findEntityInCrosshair();
     if (!(target instanceof Mob) || !target.canBreedWith(itemId)) {
@@ -4520,6 +4579,26 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
    * chunk 加入世界后补上世界生成留下的方块实体（战利品箱、刷怪笼）。
    * 已经存在实体的位置不覆盖——否则 chunk 卸载再加载时箱子会重新装满。
    */
+  /** chunk 加载时把世界生成留下的生物放出来（村民）。 */
+  private spawnPendingMobs(chunk: Chunk): void {
+    if (chunk.pendingMobs.length === 0) {
+      return;
+    }
+    for (const pending of chunk.pendingMobs) {
+      if (!isMobType(pending.type)) {
+        continue;
+      }
+      const mob = new Mob(pending.type);
+      mob.setPosition(pending.x + 0.5, pending.y, pending.z + 0.5);
+      if (pending.type === MobType.VILLAGER) {
+        mob.setProfession(VILLAGER_PROFESSIONS[Math.floor(this.rng() * VILLAGER_PROFESSIONS.length)]);
+      }
+      this.spawnEntity(mob);
+    }
+    // 只生成一次：chunk 再次加载时不该又冒出一批
+    chunk.pendingMobs.length = 0;
+  }
+
   private applyPendingBlockEntities(chunk: Chunk): void {
     for (const pending of chunk.pendingBlockEntities) {
       const { x, y, z } = pending;

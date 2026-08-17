@@ -1,7 +1,7 @@
 import { BlockId } from '../../blocks/BlockRegistry';
 import { CHUNK_SIZE, WORLD_SIZE_Y } from '../../constants/world';
 import { createRng, hashCoords, hashString } from '../../textures/PixelCanvas';
-import { chunkKey, toChunkCoord, type Chunk } from '../Chunk';
+import { chunkKey, toChunkCoord, type Chunk, type PendingMob } from '../Chunk';
 import {
   StructureBuilder,
   boundsIntersectXZ,
@@ -77,6 +77,9 @@ export interface VillagePiece {
   blocks: StructureBlock[];
 }
 
+/** 村民的生物类型（写成常量，免得生成器依赖 MobDefs）。 */
+const VILLAGER_MOB_TYPE = 'villager';
+
 /** 一座村庄。 */
 export interface Village {
   cellX: number;
@@ -89,6 +92,8 @@ export interface Village {
   pieces: VillagePiece[];
   /** 全部建筑的 XZ 包围盒并集。 */
   bounds: Bounds;
+  /** 住在这里的村民（chunk 加载时生成）。 */
+  villagers: PendingMob[];
 }
 
 /** 地面高度查询（最高实心方块 y）。 */
@@ -142,6 +147,11 @@ export class VillageGenerator {
           placeBlocksInChunk(chunk, piece.blocks);
         }
       }
+      for (const villager of village.villagers) {
+        if (chunk.containsColumn(villager.x, villager.z)) {
+          chunk.pendingMobs.push(villager);
+        }
+      }
     }
   }
 
@@ -188,6 +198,7 @@ export class VillageGenerator {
     const groundY = this.groundHeight(centerX, centerZ);
     const palette = PALETTES[style];
     const pieces: VillagePiece[] = [];
+    const villagers: PendingMob[] = [];
     pieces.push(this.buildWell(centerX, centerZ, groundY, palette));
     const houseCount = HOUSE_MIN_COUNT + Math.floor(rng() * (HOUSE_MAX_COUNT - HOUSE_MIN_COUNT + 1));
     const houseBounds: Bounds[] = [pieces[0].bounds];
@@ -216,6 +227,8 @@ export class VillageGenerator {
       houseBounds.push(house.bounds);
       pieces.push(house);
       pieces.push(this.buildPath(centerX, centerZ, doorFront.x, doorFront.z, facing, palette));
+      // 每间房门口住一个村民
+      villagers.push({ x: doorFront.x, y: hy + 1, z: doorFront.z, type: VILLAGER_MOB_TYPE });
     }
     const bounds = pieces.reduce<Bounds>(
       (acc, p) => ({
@@ -228,7 +241,7 @@ export class VillageGenerator {
       }),
       { ...pieces[0].bounds },
     );
-    return { cellX, cellZ, centerX, centerZ, groundY, style, pieces, bounds };
+    return { cellX, cellZ, centerX, centerZ, groundY, style, pieces, bounds, villagers };
   }
 
   /** 房屋朝向：门开在朝向村庄中心的那一面（0=+z,1=-z,2=+x,3=-x）。 */

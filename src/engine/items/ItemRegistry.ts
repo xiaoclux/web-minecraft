@@ -312,6 +312,7 @@ export const ITEM_DEFS: ItemDef[] = [
   material('lapis_lazuli', '青金石'),
   material('sugar', '糖'),
   material('cocoa_beans', '可可豆'),
+  material('emerald', '绿宝石'),
   material('bowl', '碗'),
   material('gold_nugget', '金粒'),
   material('book', '书'),

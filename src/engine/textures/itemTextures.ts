@@ -247,6 +247,20 @@ const HAND_DRAWN_ICONS: Record<string, Painter> = {
     '................',
     '................',
   ]),
+  emerald: blob(hex('#3ddc6a'), [
+    '................',
+    '................',
+    '.....LLLLLL.....',
+    '....LLXXXXXD....',
+    '...LLXXXXXXXD...',
+    '...LXXXXXXXXD...',
+    '....XXXXXXXD....',
+    '.....XXXXXD.....',
+    '......XXXD......',
+    '.......XD.......',
+    '................',
+    '................',
+  ]),
   wheat_seeds: (c) => {
     const s = hex('#3d9c2a');
     c.draw(['.X..X...', 'X..X..X.', '..X..X..', '.X..X.X.', 'X.X..X..'], { X: s }, 4, 5);

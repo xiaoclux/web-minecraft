@@ -55,6 +55,10 @@ const ZOMBIE_PANTS = '#3c3f8f';
 const ZOMBIE_FACE = ['........', '........', '.KK..KK.', '.KK..KK.', '........', '...KK...', '...KK...', '........'];
 const SKELETON_BONE = '#c8c8c8';
 const SKELETON_FACE = ['........', '........', '.KK..KK.', '.KK..KK.', '........', '..K..K..', '...KK...', '........'];
+/** 村民：褐色长袍 + 大鼻子（N 是鼻子的肤色块）。 */
+const VILLAGER_SKIN = '#c69b7b';
+const VILLAGER_ROBE = '#8a6a45';
+const VILLAGER_FACE = ['........', '........', '.KK..KK.', '.KK..KK.', '..NNNN..', '..NNNN..', '...NN...', '........'];
 const CREEPER_GREEN = '#4f9c3a';
 const CREEPER_FACE = ['........', '.KK..KK.', '.KK..KK.', '...KK...', '..KKKK..', '..KKKK..', '..K..K..', '........'];
 
@@ -425,6 +429,10 @@ export const MOB_MODELS: Record<MobType, MobModelSpec> = {
   squid: SQUID_MODEL,
   bat: BAT_MODEL,
   slime: SLIME_MODEL,
+  villager: humanoid(VILLAGER_SKIN, VILLAGER_ROBE, VILLAGER_ROBE, VILLAGER_FACE, PartAnim.ARM_L, 4, {
+    K: '#101010',
+    N: '#a97b5c',
+  }),
   zombie: humanoid(ZOMBIE_SKIN, ZOMBIE_SHIRT, ZOMBIE_PANTS, ZOMBIE_FACE, PartAnim.ZOMBIE_ARM),
   skeleton: humanoid(SKELETON_BONE, '#a8a8a8', SKELETON_BONE, SKELETON_FACE, PartAnim.ZOMBIE_ARM, 2),
   creeper: {

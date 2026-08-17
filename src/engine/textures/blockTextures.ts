@@ -1200,6 +1200,8 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   iron_ore: ore(hex('#d8af93')),
   coal_ore: ore(hex('#2b2b2b'), 10),
   diamond_ore: ore(hex('#5ce6e0'), 6),
+  emerald_ore: ore(hex('#3ddc6a'), 5),
+  emerald_block: mineralBlock('#3ddc6a'),
   log_top: logTop,
   log_side: logSide,
   leaves,
