@@ -193,7 +193,8 @@ import {
   type EnchantOption,
 } from './items/EnchantingTable';
 export type { SlotRef } from './items/ContainerController';
-import { getAttackDamage, getItem, ItemKind } from './items/ItemRegistry';
+import { getAttackDamage, getItem, ITEM_DEFS, ItemKind } from './items/ItemRegistry';
+import { prewarmItemIcons } from './textures/IconRegistry';
 import {
   EnchantmentId,
   FIRE_ASPECT_TICKS_PER_LEVEL,
@@ -545,6 +546,8 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
   private lastFrame = 0;
   private accumulator = 0;
   private running = false;
+  /** 取消空闲时的图标预热。 */
+  private cancelIconPrewarm: (() => void) | null = null;
   private isPaused = false;
   private isDisposed = false;
   private readonly unsubscribeSettings: () => void;
@@ -705,6 +708,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     this.lastFrame = performance.now();
     this.fpsLastSample = this.lastFrame;
     this.store.patch({ isLoading: false, loadingText: '' });
+    this.cancelIconPrewarm = prewarmItemIcons(ITEM_DEFS.map((d) => d.id));
     const loop = (now: number): void => {
       if (!this.running) {
         return;
@@ -722,6 +726,7 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
     }
     this.isDisposed = true;
     this.running = false;
+    this.cancelIconPrewarm?.();
     cancelAnimationFrame(this.rafId);
     this.controls.exitLock();
     this.controls.detach();

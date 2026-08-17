@@ -106,3 +106,30 @@ export function getItemIcon(itemId: string): string {
   cache.set(itemId, url);
   return url;
 }
+
+/** 每个空闲回调里最多预热多少个图标（每个约 0.2~1ms，别把一帧塞满）。 */
+const PREWARM_BATCH = 8;
+
+/**
+ * 利用浏览器空闲时间提前把物品图标画好，免得第一次打开创造物品栏时同步生成上百个 data URL 卡一下。
+ * @param itemIds 要预热的物品 id（已缓存的会跳过）
+ * @returns 取消函数
+ */
+export function prewarmItemIcons(itemIds: readonly string[]): () => void {
+  const idle = typeof requestIdleCallback === 'function' ? requestIdleCallback : null;
+  const schedule = (fn: () => void): number => (idle ? idle(fn) : window.setTimeout(fn, 0));
+  const cancel = idle ? cancelIdleCallback : window.clearTimeout;
+  let index = 0;
+  let handle = 0;
+  const step = (): void => {
+    const end = Math.min(itemIds.length, index + PREWARM_BATCH);
+    for (; index < end; index++) {
+      getItemIcon(itemIds[index]);
+    }
+    if (index < itemIds.length) {
+      handle = schedule(step);
+    }
+  };
+  handle = schedule(step);
+  return () => cancel(handle);
+}
