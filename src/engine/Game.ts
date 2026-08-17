@@ -5,6 +5,7 @@ import {
   BED_HEAD_BIT,
   BlockShape,
   DOOR_OPEN_BIT,
+  CAKE_BITES,
   TRAPDOOR_TOP_BIT,
   DOOR_UPPER_BIT,
   FACINGS,
@@ -395,6 +396,9 @@ const FOOTSTEP_INTERVAL_BLOCKS = 2.2;
 const DIG_SOUND_INTERVAL_TICKS = 5;
 /** 夜视把世界亮度托到的下限（1 = 满亮，略低一点保留一点氛围）。 */
 const NIGHT_VISION_MIN_LIGHT = 0.9;
+/** 蛋糕每一口回多少饥饿与饱和度（1.8.9 为 2 点饥饿）。 */
+const CAKE_SLICE_HUNGER = 2;
+const CAKE_SLICE_SATURATION = 0.4;
 /** 可以直接扔出去的物品。 */
 const THROWN_ITEM_IDS: ReadonlySet<string> = new Set(['snowball', 'egg']);
 /** 扔一次的冷却（tick）。 */
@@ -3804,6 +3808,8 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       case BlockId.TRAPDOOR:
         this.toggleDoor(hit.x, hit.y, hit.z);
         return true;
+      case BlockId.CAKE:
+        return this.eatCakeSlice(hit.x, hit.y, hit.z);
       case BlockId.TNT:
         this.primeTnt(hit.x, hit.y, hit.z);
         return true;
@@ -4631,6 +4637,28 @@ export class Game implements EntityContext, ContainerHost, CommandHost {
       apply(partner.x, partner.y, partner.z);
     }
     this.sound.play('door');
+  }
+
+  /**
+   * 吃一口蛋糕：饿了才吃得下，吃完最后一口蛋糕就没了。
+   * @returns 是否真的吃了（吃饱时返回 false，让右键落到别的处理上）
+   */
+  private eatCakeSlice(x: number, y: number, z: number): boolean {
+    const p = this.player;
+    if (!p.canEat && this.rules.usesHunger) {
+      return false;
+    }
+    p.eat(CAKE_SLICE_HUNGER, CAKE_SLICE_SATURATION);
+    const bites = this.world.getMeta(x, y, z) + 1;
+    if (bites >= CAKE_BITES) {
+      this.world.setBlock(x, y, z, BlockId.AIR);
+    } else {
+      this.world.setBlock(x, y, z, BlockId.CAKE, bites);
+    }
+    this.sound.play('eat');
+    this.useCooldown = EAT_COOLDOWN_TICKS;
+    this.renderer.hand.swing();
+    return true;
   }
 
   /** 右键音符盒：音高 +1（循环）并试听一下。 */

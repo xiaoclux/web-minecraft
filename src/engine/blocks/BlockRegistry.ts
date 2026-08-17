@@ -292,6 +292,7 @@ export const BlockId = {
   GLASS_PANE: 165,
   IRON_BARS: 166,
   TRAPDOOR: 167,
+  CAKE: 170,
   BROWN_MUSHROOM: 168,
   RED_MUSHROOM: 169,
   LEVER: 69,
@@ -890,6 +891,25 @@ export const BLOCK_DEFS: BlockDef[] = [
       redstone: { repeater: true, source: REDSTONE_MAX_POWER, unlitBlockId: BlockId.REPEATER },
     }),
     shape: BlockShape.PRESSURE_PLATE,
+  },
+  {
+    ...cube(
+      BlockId.CAKE,
+      'cake',
+      '蛋糕',
+      { top: 'cake_top', bottom: 'cake_bottom', north: 'cake_side', south: 'cake_side', east: 'cake_side', west: 'cake_side' },
+      0.5,
+      null,
+      {
+        render: RenderType.CUTOUT,
+        opaque: false,
+        interactive: true,
+        needsSupport: true,
+        // 吃掉就没了，打碎也不掉东西（1.8.9 同）
+        drops: [],
+      },
+    ),
+    shape: BlockShape.CAKE,
   },
   {
     ...cube(BlockId.GLASS_PANE, 'glass_pane', '玻璃板', same('glass'), 0.3, null, {

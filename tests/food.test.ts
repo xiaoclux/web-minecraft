@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BlockId } from '../src/engine/blocks/BlockRegistry';
+import { BlockId, getBlock } from '../src/engine/blocks/BlockRegistry';
+import { CAKE_BITES, shapeBoxes } from '../src/engine/blocks/blockShapes';
 import { RandomTickSystem } from '../src/engine/systems/RandomTickSystem';
 import { matchRecipe } from '../src/engine/items/Recipes';
 import { World } from '../src/engine/world/World';
@@ -67,5 +68,30 @@ describe('蘑菇', () => {
     expect(stew?.id).toBe('mushroom_stew');
     const { getItem } = await import('../src/engine/items/ItemRegistry');
     expect(getItem('mushroom_stew')?.food?.leftover).toBe('bowl');
+  });
+});
+
+describe('蛋糕', () => {
+  it('每吃一口就从一边缺一块，最后一口之后没得吃了', () => {
+    const cake = getBlock(BlockId.CAKE);
+    const whole = shapeBoxes(cake, 0)[0];
+    const halfEaten = shapeBoxes(cake, 3)[0];
+    const last = shapeBoxes(cake, CAKE_BITES - 1)[0];
+    expect(whole.y1).toBeCloseTo(0.5);
+    // 缺角只从 -x 那一侧啃，右边缘始终不动
+    expect(halfEaten.x0).toBeGreaterThan(whole.x0);
+    expect(last.x0).toBeGreaterThan(halfEaten.x0);
+    expect(halfEaten.x1).toBe(whole.x1);
+  });
+
+  it('南瓜派与蛋糕都能合出来', () => {
+    expect(matchRecipe([{ id: 'pumpkin', count: 1 }, { id: 'sugar', count: 1 }, { id: 'egg', count: 1 }, null], 2)?.id).toBe(
+      'pumpkin_pie',
+    );
+    const milk = { id: 'milk_bucket', count: 1 };
+    const wheat = { id: 'wheat', count: 1 };
+    const sugar = { id: 'sugar', count: 1 };
+    const cake = matchRecipe([milk, milk, milk, sugar, { id: 'egg', count: 1 }, sugar, wheat, wheat, wheat], 3);
+    expect(cake?.id).toBe('cake');
   });
 });

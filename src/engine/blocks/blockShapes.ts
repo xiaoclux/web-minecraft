@@ -59,6 +59,8 @@ export const BlockShape = {
   PANE: 'pane',
   /** 活板门：贴在格子上 / 下沿的薄板，打开时立起来贴到一侧。 */
   TRAPDOOR: 'trapdoor',
+  /** 蛋糕：半格高，每吃一口就从一边缺一块。 */
+  CAKE: 'cake',
 } as const;
 export type BlockShape = (typeof BlockShape)[keyof typeof BlockShape];
 
@@ -192,6 +194,17 @@ function panelBox(dx: number, dz: number, t: number): BlockBox {
 const DOOR_BOXES: readonly BlockBox[][][] = FACINGS.map(([fx, fz]) => [
   [panelBox(-fx, -fz, DOOR_THICKNESS)],
   [panelBox(-fz, fx, DOOR_THICKNESS)],
+]);
+
+/** 蛋糕总共能吃几口（1.8.9 为 7 口，meta 0~6）。 */
+export const CAKE_BITES = 7;
+/** 蛋糕的高度与四周留白。 */
+const CAKE_HEIGHT = 8 / 16;
+const CAKE_INSET = 1 / 16;
+
+/** 蛋糕：按已经吃掉的口数从 -x 那一侧缺角。 */
+const CAKE_BOXES: readonly (readonly BlockBox[])[] = Array.from({ length: CAKE_BITES }, (_, bites) => [
+  box(CAKE_INSET + (bites / CAKE_BITES) * (1 - CAKE_INSET * 2), 0, CAKE_INSET, 1 - CAKE_INSET, CAKE_HEIGHT, 1 - CAKE_INSET),
 ]);
 
 /** 活板门 meta：该位为 1 表示门是开着的。 */
@@ -357,6 +370,8 @@ export function shapeBoxes(def: BlockDef, meta: number, connections = 0): readon
       return FENCE_BOXES[connections & (CONNECTION_COUNT - 1)];
     case BlockShape.PANE:
       return PANE_BOXES[connections & (CONNECTION_COUNT - 1)];
+    case BlockShape.CAKE:
+      return CAKE_BOXES[Math.min(meta, CAKE_BITES - 1)];
     case BlockShape.TRAPDOOR:
       return TRAPDOOR_BOXES[meta & FACING_MASK][trapdoorVariant(meta)];
     case BlockShape.CROSS:

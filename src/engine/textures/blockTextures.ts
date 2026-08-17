@@ -767,6 +767,21 @@ function repeater(lit: boolean): Painter {
   };
 }
 
+/** 蛋糕：白色奶油底 + 顶上一层红色果酱。 */
+const cakeTop: Painter = (c, rng) => {
+  c.noise(hex('#f0f0f0'), 0.04, rng);
+  c.rect(1, 1, 14, 14, hex('#c94f4f'));
+  c.speckle(hex('#e07070'), 20, rng);
+};
+const cakeSide: Painter = (c, rng) => {
+  c.noise(hex('#efe5d4'), 0.05, rng);
+  c.rect(0, 0, 16, 2, hex('#c94f4f'));
+  c.rect(0, 12, 16, 4, hex('#d8cbb4'));
+};
+const cakeBottom: Painter = (c, rng) => {
+  c.noise(hex('#d8cbb4'), 0.05, rng);
+};
+
 /** 蘑菇：一根白柄 + 一顶伞盖。 */
 function mushroom(cap: Rgba): Painter {
   return (c) => {
@@ -1221,6 +1236,9 @@ export const BLOCK_TEXTURE_PAINTERS: Record<string, Painter> = {
   daylight_sensor_top: daylightSensorTop,
   daylight_sensor_side: daylightSensorSide,
   comparator,
+  cake_top: cakeTop,
+  cake_side: cakeSide,
+  cake_bottom: cakeBottom,
   brown_mushroom: mushroom(hex('#a1734f')),
   red_mushroom: mushroom(hex('#c93a34')),
   iron_bars: ironBars,

@@ -340,6 +340,7 @@ export const ITEM_DEFS: ItemDef[] = [
   material('lava_bucket', '岩浆桶', { maxStack: 1 }),
   material('milk_bucket', '牛奶桶', { maxStack: 1 }),
   food('apple', '苹果', 4, 2.4),
+  food('pumpkin_pie', '南瓜派', 8, 4.8),
   food('mushroom_stew', '蘑菇煲', 6, 7.2, { maxStack: 1, food: { hunger: 6, saturation: 7.2, leftover: 'bowl' } }),
   food('bread', '面包', 5, 6),
   food('porkchop', '生猪排', 3, 1.8, { smeltsInto: 'cooked_porkchop' }),
